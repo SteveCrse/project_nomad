@@ -1,0 +1,158 @@
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Barlow+Condensed:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+/*
+ * Bridge the design tokens into Tailwind's theme.
+ * `inline` means utilities emit `var(--token)` straight from tokens.css
+ * instead of Tailwind re-declaring its own copy — one source of truth.
+ *
+ * Spacing is deliberately not remapped: the design scale
+ * (4/8/12/16/24/32/48/64px) is already Tailwind's default 4px scale
+ * (1/2/3/4/6/8/12/16), so `gap-3` === var(--space-3).
+ */
+@theme inline {
+  --color-n-950: var(--n-950);
+  --color-n-900: var(--n-900);
+  --color-n-800: var(--n-800);
+  --color-n-700: var(--n-700);
+  --color-n-600: var(--n-600);
+  --color-n-500: var(--n-500);
+  --color-n-400: var(--n-400);
+  --color-n-300: var(--n-300);
+  --color-n-200: var(--n-200);
+  --color-n-100: var(--n-100);
+  --color-n-050: var(--n-050);
+
+  --color-cream-100: var(--cream-100);
+  --color-cream-200: var(--cream-200);
+  --color-cream-300: var(--cream-300);
+
+  --color-putty-100: var(--putty-100);
+  --color-putty-200: var(--putty-200);
+  --color-putty-300: var(--putty-300);
+  --color-putty-400: var(--putty-400);
+  --color-putty-500: var(--putty-500);
+  --color-putty-600: var(--putty-600);
+  --color-putty-700: var(--putty-700);
+  --color-putty-800: var(--putty-800);
+
+  --color-crt-glass: var(--crt-glass);
+  --color-crt-glass-raised: var(--crt-glass-raised);
+  --color-crt-white: var(--crt-white);
+  --color-crt-green-300: var(--crt-green-300);
+  --color-crt-green-500: var(--crt-green-500);
+  --color-crt-green-700: var(--crt-green-700);
+
+  --color-toggle-red-300: var(--toggle-red-300);
+  --color-toggle-red-500: var(--toggle-red-500);
+  --color-toggle-red-700: var(--toggle-red-700);
+  --color-amber-300: var(--amber-300);
+  --color-amber-500: var(--amber-500);
+  --color-amber-700: var(--amber-700);
+  --color-steel-300: var(--steel-300);
+  --color-steel-500: var(--steel-500);
+  --color-steel-700: var(--steel-700);
+
+  --color-surface-bg: var(--surface-bg);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-panel-raised: var(--surface-panel-raised);
+  --color-surface-inset: var(--surface-inset);
+  --color-surface-cream: var(--surface-cream);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverse: var(--text-inverse);
+  --color-text-on-crt: var(--text-on-crt);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-primary-text: var(--accent-primary-text);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-status-danger: var(--status-danger);
+  --color-status-warning: var(--status-warning);
+  --color-status-success: var(--status-success);
+
+  --color-role-gen: var(--role-gen);
+  --color-role-wpn: var(--role-wpn);
+  --color-role-shd: var(--role-shd);
+  --color-role-rds: var(--role-rds);
+  --color-role-oth: var(--role-oth);
+
+  --color-console-bg: var(--console-bg);
+  --color-console-bg-deep: var(--console-bg-deep);
+  --color-console-line: var(--console-line);
+  --color-console-border: var(--console-border);
+  --color-console-text: var(--console-text);
+  --color-console-dim: var(--console-dim);
+  --color-console-faint: var(--console-faint);
+  --color-console-accent: var(--console-accent);
+  --color-console-value: var(--console-value);
+  --color-console-off: var(--console-off);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  --tracking-label: var(--letter-label);
+  --tracking-console: 0.14em;
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-panel: var(--shadow-panel);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-card: var(--shadow-card);
+  --shadow-deck: var(--shadow-deck);
+
+  --ease-snap: var(--ease-snap);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-bg);
+    color: var(--text-primary);
+    font: var(--text-body-md);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The design's square-cornered, high-contrast readouts read as UI chrome,
+     not web content — kill the default rounding/focus glow across the board. */
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  input[type='range'] {
+    accent-color: var(--console-accent);
+  }
+}
+
+@layer components {
+  /* Reusable type ramp lifted from tokens/typography.css. */
+  .type-display-md {
+    font: var(--text-display-md);
+  }
+
+  .type-body-sm {
+    font: var(--text-body-sm);
+  }
+
+  .type-mono-sm {
+    font: var(--text-mono-sm);
+  }
+
+  .type-label {
+    font: var(--text-label);
+    letter-spacing: var(--letter-label);
+    text-transform: uppercase;
+  }
+}

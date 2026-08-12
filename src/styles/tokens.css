@@ -1,0 +1,163 @@
+/*
+ * Project N.O.M.A.D. design tokens.
+ * Ported verbatim from the Claude Design system bundle
+ * (_ds/project-nomad-design-system-1e4b4894.../tokens/*.css).
+ * Keep these as the single source of truth — index.css maps them into
+ * Tailwind's theme so they are reachable both as var(--x) and as utilities.
+ */
+
+:root {
+  /* ---- colors: neutrals ---- */
+  --n-950: #0d0f0c;
+  --n-900: #14170f;
+  --n-800: #1e2318;
+  --n-700: #2a3122;
+  --n-600: #3b4530;
+  --n-500: #545f41;
+  --n-400: #7a8563;
+  --n-300: #a8af8c;
+  --n-200: #cdd1b8;
+  --n-100: #e8e9da;
+  --n-050: #f4f3e7;
+
+  /* ---- colors: cream (card stock) ---- */
+  --cream-100: #f4eedc;
+  --cream-200: #e8dcb8;
+  --cream-300: #d9c896;
+
+  /* ---- colors: putty (table surface) ---- */
+  --putty-100: #ede6d6;
+  --putty-200: #e1d8c2;
+  --putty-300: #d2c7ac;
+  --putty-400: #bfb294;
+  --putty-500: #a89877;
+  --putty-600: #8c7f63;
+  --putty-700: #6e6450;
+  --putty-800: #4f483a;
+
+  /* ---- colors: CRT glass ---- */
+  --crt-glass: #0b0d08;
+  --crt-glass-raised: #15170f;
+  --crt-white: #edead9;
+  --crt-green-300: #c9ebc2;
+  --crt-green-500: #9fd9a0;
+  --crt-green-700: #5c8a5e;
+
+  /* ---- colors: signal ---- */
+  --toggle-red-300: #e08578;
+  --toggle-red-500: #b33b2e;
+  --toggle-red-700: #7a2a20;
+  --amber-300: #f0c77a;
+  --amber-500: #d99a3e;
+  --amber-700: #9c6c24;
+  --steel-300: #c4c8b7;
+  --steel-500: #9ba08f;
+  --steel-700: #6b6f5f;
+
+  /* ---- semantic surfaces / text / borders ---- */
+  --surface-bg: var(--putty-300);
+  --surface-panel: var(--putty-200);
+  --surface-panel-raised: var(--putty-100);
+  --surface-inset: var(--crt-glass);
+  --surface-cream: var(--cream-100);
+  --text-primary: var(--n-900);
+  --text-secondary: var(--putty-700);
+  --text-muted: var(--putty-500);
+  --text-inverse: var(--putty-100);
+  --text-on-cream: var(--n-900);
+  --text-on-crt: var(--crt-white);
+  --text-on-crt-accent: var(--crt-green-500);
+  --border-default: var(--putty-500);
+  --border-strong: var(--putty-700);
+  --accent-primary: var(--crt-green-500);
+  --accent-primary-hover: var(--crt-green-700);
+  --accent-primary-tint: var(--crt-green-300);
+  --accent-primary-text: var(--crt-green-700);
+  --accent-secondary: var(--steel-500);
+  --status-danger: var(--toggle-red-500);
+  --status-warning: var(--amber-500);
+  --status-success: var(--crt-green-500);
+
+  /* ---- module role colors (from the test tool's ROLE map) ---- */
+  --role-gen: #5c8a5e;
+  --role-wpn: #b33b2e;
+  --role-shd: #6b6f5f;
+  --role-rds: #d99a3e;
+  --role-oth: #8c7f63;
+
+  /* ---- rarity ramp: common → legendary ---- */
+  --rarity-1: #a89877;
+  --rarity-2: #5c8a5e;
+  --rarity-3: #5e7c96;
+  --rarity-4: #d99a3e;
+  --rarity-5: #b33b2e;
+
+  /* ---- debug console palette (config sidebar) ---- */
+  --console-bg: #14170f;
+  --console-bg-deep: #0d0f0c;
+  --console-line: #2a3122;
+  --console-border: #3b4530;
+  --console-text: #c8cbba;
+  --console-dim: #7a8563;
+  --console-faint: #545f41;
+  --console-accent: #9fd9a0;
+  --console-value: #edead9;
+  --console-off: #1e2318;
+
+  /* ---- typography ---- */
+  --font-display: 'Unbounded', sans-serif;
+  --font-body: 'Barlow Condensed', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  --text-display-xl: 48px/1.05 var(--font-display);
+  --text-display-lg: 34px/1.1 var(--font-display);
+  --text-display-md: 24px/1.15 var(--font-display);
+  --text-body-lg: 19px/1.35 var(--font-body);
+  --text-body-md: 16px/1.4 var(--font-body);
+  --text-body-sm: 13px/1.4 var(--font-body);
+  --text-label: 12px/1.2 var(--font-body);
+  --letter-label: 0.12em;
+  --text-mono-xl: 32px/1.1 var(--font-mono);
+  --text-mono-lg: 24px/1.15 var(--font-mono);
+  --text-mono-md: 16px/1.3 var(--font-mono);
+  --text-mono-sm: 13px/1.3 var(--font-mono);
+
+  /* ---- spacing ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ---- effects ---- */
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --border-w: 1px;
+  --border-w-thick: 2px;
+  --shadow-panel: inset 0 0 0 1px rgb(255 255 255 / 0.15), 0 2px 0 rgb(0 0 0 / 0.25);
+  --shadow-raised: 0 2px 0 rgb(0 0 0 / 0.3), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  --shadow-card: 3px 3px 0 rgb(0 0 0 / 0.25);
+  --shadow-deck: 3px 3px 0 var(--putty-500);
+  --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ---- effect helper classes, ported from tokens/effects.css ---- */
+.hazard-stripe {
+  background: repeating-linear-gradient(45deg, var(--status-warning) 0 10px, var(--n-950) 10px 20px);
+}
+
+.scanline-overlay {
+  position: relative;
+}
+
+.scanline-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.15) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
