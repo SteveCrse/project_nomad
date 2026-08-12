@@ -24,6 +24,7 @@
 
     "paths": {
       "@/*": ["./src/*"],
+      "@engine": ["./src/engine/index.ts"],
       "@engine/*": ["./src/engine/*"],
       "@data": ["./src/data/index.ts"],
       "@data/*": ["./src/data/*"]

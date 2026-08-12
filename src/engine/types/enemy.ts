@@ -12,8 +12,8 @@ export interface EnemyStatBlock {
   /** Win condition: reduce to 0. */
   hpPool: number;
   /**
-   * Damage this enemy must deal within one set of downs to earn a fresh set.
-   * Per-enemy, and overridable from the config sidebar for tuning.
+   * Damage an attacker must deal within one set of downs to earn a fresh set
+   * against this enemy. Per-enemy, and overridable from the config sidebar.
    */
   convThreshold: number;
   /** Parts drawn past the cockpit at 1 player, before multiplayer scaling. */
@@ -28,7 +28,10 @@ export interface EnemyStatBlock {
 
 /** A spawned enemy: stat block joined to the ship rolled for it. */
 export interface EnemyInstance {
+  /** Unique per spawn — two Scavenger Chains on the table are two sides. */
+  instanceId: EnemyId;
   statBlockId: EnemyId;
+  name: string;
   ship: Ship;
   hp: number;
   hpMax: number;
@@ -37,4 +40,9 @@ export interface EnemyInstance {
   /** Damage dealt so far in the current set of downs. */
   damageThisDownSet: number;
   downsUsed: number;
+  /** Downs per set for this enemy — stat block override, else config. */
+  downCount: number;
+  isBoss: boolean;
+  /** Parts that came off the Parts deck for this ship, for the loot phase. */
+  drawnPartIds: PartId[];
 }

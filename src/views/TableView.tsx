@@ -1,63 +1,198 @@
-import { SEED_PLAYERS, SEED_TABLE } from '@data';
+import type { GameState } from '@engine/types';
 import { EnemyPanel } from '@/components/game/EnemyPanel';
 import { PlayerPanel } from '@/components/game/PlayerPanel';
+import { ActionBar } from '@/components/game/ActionBar';
+import { LogPanel } from '@/components/game/LogPanel';
 import { DeckStack, DiscardStack, LootBag } from '@/components/game/DeckStack';
+import { Button } from '@/components/ds';
 import { RARITY_COLOR } from '@/lib/palette';
+import { downsOf, moduleOptions } from '@/lib/combatView';
+import { combat } from '@engine';
 import { useConfig } from '@/store/configStore';
+import { useGame, useGameStore } from '@/store/gameStore';
+import { useUiStore } from '@/store/uiStore';
 
 /**
- * The table: enemy ship up top, the three decks and the loot bag in the
- * middle, player seats around the edge. Seats shown follow config.playerCount.
+ * The table during a fight: enemy ships up top, the active seat's controls in
+ * the middle, seats along the bottom, transcript down the right.
+ *
+ * Out of combat it falls back to the deck counters, so the table is still
+ * worth looking at between steps.
  */
 export function TableView() {
-  const config = useConfig();
-  const players = SEED_PLAYERS.slice(0, config.playerCount);
-  const half = Math.ceil(players.length / 2);
-  const topPlayers = players.slice(0, half);
-  const bottomPlayers = players.slice(half);
+  const state = useGame();
+  const newRun = useGameStore((s) => s.newRun);
+
+  if (!state) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4">
+        <div className="font-display text-[20px] font-bold">NOTHING ON THE TABLE</div>
+        <Button onClick={() => newRun()}>Start a run</Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-3.5 flex flex-none justify-center">
-        <EnemyPanel />
+    <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {state.combat ? <CombatSurface state={state} /> : <IdleTable state={state} />}
       </div>
-
-      <div className="relative min-h-0 flex-1">
-        {/* the table's edge — purely decorative */}
-        <div className="absolute top-1/2 left-1/2 h-[78%] w-[92%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-2 border-dashed border-putty-500 opacity-70" />
-
-        <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3.5">
-          <DeckStack
-            label="LOOT"
-            accent="var(--crt-green-700)"
-            caption={`${SEED_TABLE.lootRemaining} LEFT`}
-          />
-          <DeckStack
-            label={'ENCOUN­TER'}
-            accent="var(--amber-500)"
-            caption={`${SEED_TABLE.encounterRemaining} LEFT`}
-          />
-          <DeckStack
-            label="ENEMY"
-            accent="var(--toggle-red-500)"
-            caption={`DRAW ${SEED_TABLE.enemyDraw}`}
-          />
-          <DiscardStack count={SEED_TABLE.discard} />
-          <LootBag maxRarity={config.maxRarityNow} colors={RARITY_COLOR} />
-        </div>
-
-        <div className="absolute top-0 right-0 left-0 flex justify-between gap-5">
-          {topPlayers.map((p) => (
-            <PlayerPanel key={p.id} player={p} />
-          ))}
-        </div>
-
-        <div className="absolute right-0 bottom-0 left-0 flex justify-between gap-5">
-          {bottomPlayers.map((p) => (
-            <PlayerPanel key={p.id} player={p} />
-          ))}
-        </div>
-      </div>
+      <LogPanel log={state.log} className="w-[380px] flex-none" />
     </div>
+  );
+}
+
+function CombatSurface({ state }: { state: GameState }) {
+  const config = useConfig();
+  const targetSlot = useUiStore((s) => s.targetSlot);
+  const setTargetSlot = useUiStore((s) => s.setTargetSlot);
+  const setTarget = useUiStore((s) => s.setTarget);
+  const targetEnemyId = useUiStore((s) => s.targetEnemyId);
+
+  const side = state.combat ? combat.currentSide(state.combat) : undefined;
+  const downs = downsOf(state, side);
+  const enemies = state.combat?.enemies ?? [];
+  // The seat holding the turn sits directly under the action bar; the rest
+  // keep seat order behind it.
+  const participants = state.party.players
+    .filter((p) => state.combat?.participants.includes(p.id))
+    .sort((a, b) =>
+      Number(side?.kind === 'player' && side.id === b.id) -
+      Number(side?.kind === 'player' && side.id === a.id),
+    );
+
+  // Which of the active seat's modules could fire right now — drives the
+  // green outline on the grid so the seat's real options are visible at a glance.
+  const armed =
+    side?.kind === 'player'
+      ? moduleOptions(state, config, side, {
+          ...(targetEnemyId ? { target: { kind: 'enemy', id: targetEnemyId } } : {}),
+          ...(targetSlot !== null ? { targetSlot } : {}),
+        })
+          .filter((m) => !m.error)
+          .map((m) => m.slot)
+      : [];
+
+  return (
+    <>
+      {/* A wide enemy grid scrolls in place rather than pushing the seats off-screen. */}
+      <div className="flex flex-none gap-3 overflow-x-auto pb-1">
+        {enemies.map((enemy) => (
+          <EnemyPanel
+            key={enemy.instanceId}
+            enemy={enemy}
+            active={side?.kind === 'enemy' && side.id === enemy.instanceId}
+            targeted={targetEnemyId === enemy.instanceId}
+            {...(side?.kind === 'enemy' && side.id === enemy.instanceId && downs
+              ? { downs }
+              : {})}
+            onSelect={() => setTarget(enemy.instanceId)}
+            onSlotClick={(slot) => {
+              setTarget(enemy.instanceId);
+              setTargetSlot(slot === targetSlot ? null : slot);
+            }}
+            targetSlot={targetEnemyId === enemy.instanceId ? targetSlot : null}
+          />
+        ))}
+      </div>
+
+      <TurnBanner state={state} />
+
+      {side && <ActionBar state={state} side={side} />}
+
+      <div className="flex min-h-0 flex-1 flex-wrap content-start gap-3 overflow-auto">
+        {participants.map((player) => (
+          <PlayerPanel
+            key={player.id}
+            player={player}
+            active={side?.kind === 'player' && side.id === player.id}
+            {...(side?.kind === 'player' && side.id === player.id && downs ? { downs } : {})}
+            armedSlots={side?.kind === 'player' && side.id === player.id ? armed : []}
+            compact
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function TurnBanner({ state }: { state: GameState }) {
+  const side = state.combat ? combat.currentSide(state.combat) : undefined;
+  const downs = downsOf(state, side);
+  const battle = state.combat ? { party: state.party, combat: state.combat } : null;
+  const name = battle && side ? combat.sideName(battle, side) : '—';
+  const toGo = downs ? Math.max(0, downs.threshold - downs.damageThisSet) : 0;
+
+  return (
+    <div className="flex flex-none items-center gap-4 border-2 border-border-strong bg-crt-glass px-3 py-2 font-mono text-[12px] text-crt-white">
+      <span className="text-crt-green-500">ROUND {state.combat?.round ?? 0}</span>
+      <span>
+        TURN <span className="text-crt-green-500">{name}</span>
+      </span>
+      {downs && (
+        <>
+          <span>
+            DOWN {Math.min(downs.used + 1, downs.total)}/{downs.total}
+          </span>
+          <span>
+            SET {downs.damageThisSet}/{downs.threshold}
+          </span>
+          <span className={toGo === 0 ? 'text-crt-green-500' : 'text-amber-300'}>
+            {toGo === 0 ? 'CONVERTS ON END SET' : `${toGo}⚔ TO CONVERT`}
+          </span>
+          {downs.conversions > 0 && (
+            <span className="text-crt-green-500">CHAINED ×{downs.conversions}</span>
+          )}
+        </>
+      )}
+      {state.combat?.outcome && (
+        <span className="ml-auto text-amber-300">{state.combat.outcome.toUpperCase()}</span>
+      )}
+    </div>
+  );
+}
+
+/** Between fights: the decks, the loot bag and the seats as they stand. */
+function IdleTable({ state }: { state: GameState }) {
+  const config = useConfig();
+  return (
+    <>
+      <div className="flex flex-none items-center justify-center gap-3.5 py-2">
+        <DeckStack
+          label="PARTS"
+          accent="var(--role-gen)"
+          caption={`${state.decks.parts.drawPile.length} LEFT`}
+        />
+        <DeckStack
+          label="LOOT"
+          accent="var(--crt-green-700)"
+          caption={`${state.decks.items.drawPile.length} LEFT`}
+        />
+        <DeckStack
+          label={'EVENTS'}
+          accent="var(--amber-500)"
+          caption={`${state.decks.events.drawPile.length} LEFT`}
+        />
+        <DiscardStack
+          count={
+            state.decks.parts.discardPile.length +
+            state.decks.items.discardPile.length +
+            state.decks.events.discardPile.length
+          }
+        />
+        <LootBag maxRarity={state.maxRarityNow} colors={RARITY_COLOR} />
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-wrap content-start gap-3 overflow-auto">
+        {state.party.players.map((player) => (
+          <PlayerPanel key={player.id} player={player} compact />
+        ))}
+      </div>
+
+      <div className="flex-none font-mono text-[11px] text-putty-700">
+        PHASE {state.phase.toUpperCase()} · HAND SIZE {config.handSize} · SCRAP CAP{' '}
+        {config.scrapCap}
+      </div>
+    </>
   );
 }

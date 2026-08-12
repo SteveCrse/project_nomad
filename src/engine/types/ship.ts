@@ -17,6 +17,17 @@ export interface ShipSlot {
 }
 
 /**
+ * Combat effects a ship is carrying that outlive a single down but not the
+ * fight: a charged Defense Turret, armed Mines. Cleared when combat ends.
+ */
+export interface ShipFlags {
+  /** Attacks that will be fully negated (Defense Turret). */
+  negateNext: number;
+  /** Damage returned to the next attacker (Mines). */
+  retaliate: number;
+}
+
+/**
  * A ship is a cockpit plus module slots. Capacity comes from the cockpit,
  * so swapping cockpits (Loot option A) can resize the grid.
  */
@@ -30,6 +41,7 @@ export interface Ship {
   slots: ShipSlot[];
   hp: number;
   hpMax: number;
+  flags: ShipFlags;
 }
 
 /** Adjacency chain bonus (GEN → RDS → WPN), evaluated by the engine. */

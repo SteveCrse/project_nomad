@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173.
+Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
 
 | Script              | Does                                  |
 | ------------------- | ------------------------------------- |
@@ -17,60 +17,97 @@ Then open http://localhost:5173.
 | `npm run build`     | Typecheck + production build          |
 | `npm run typecheck` | Types only                            |
 
+## Playing a round
+
+1. **Mission** — press *Start a run*. A board is generated from the config:
+   length, branching, checkpoint cadence, enemy scaling, rarity ceiling.
+2. Click a reachable step. With 2+ seats, the *split party* switch turns the
+   branch into the rules' higher-risk choice — seats move one at a time and
+   each occupied node resolves its own encounter, with only the seats standing
+   there in the fight.
+3. **Table** — the view follows the run, so walking into a combat step puts you
+   on the table. Spend downs from the action bar; every button is gated by the
+   engine's own legality check, and the refusal reason is the tooltip. *End set*
+   converts if the set beat the defender's threshold, otherwise it passes the
+   turn. The enemy plays itself, one down or one turn at a time.
+4. Wrecks open the **loot phase**: A (take the whole ship, keep one module) or
+   B (strip one module into the Scrap Deck).
+5. Checkpoints raise the rarity ceiling, shuffle the newly unlocked tiers into
+   all three decks, and double as a **rearrangement point** — slot hoarded
+   modules, and buy an own-threshold upgrade if that switch is on.
+6. Kill the boss to end the mission; *Next sector* rolls the next one forward.
+
+Everything lands in the run transcript on the right — rolls, soaks,
+conversions, refusals — which is the artefact a playtest actually produces.
+
 ## Layout
 
 ```
 src/
   engine/      rules engine — plain TS, no React (see engine/README.md)
-  data/        cards, enemies, seeded ships — content, not logic
-  store/       Zustand: config (tuning) + ui (view state)
+  data/        cards, enemies, starting loadouts — content, not logic
+  store/       Zustand: config (tuning) + game (the run) + ui (view state)
   components/
     ds/        design-system primitives ported from Claude Design
-    game/      module tiles, player/enemy panels, decks, card faces
+    game/      module tiles, panels, action bar, log, prompt overlay
     layout/    top bar + config sidebar
-  views/       Table, Ship Builder, Card Browser
+  views/       Mission, Table, Ship Builder, Card Browser
   styles/      design tokens as CSS custom properties
 ```
 
 Three boundaries hold this together:
 
-1. **Engine never imports UI.** It takes state + `GameConfig` and returns new
-   state, so the same rules can run headless for balance sweeps.
-2. **Content lives in `src/data`.** Adding a card or enemy is a data edit.
+1. **Engine never imports UI — or content.** It takes state, `GameConfig` and a
+   `Content` bundle and returns new state, so the same rules can run headless
+   for balance sweeps.
+2. **Content lives in `src/data`.** Adding a card or enemy is a data edit. The
+   structured fields on each card (`energyCost`, `effect`, `dice`, …) are what
+   the engine resolves; anything outside that vocabulary is marked `manual` and
+   left to the table.
 3. **Tunables live in `GameConfig`.** If a playtester might want to change a
    number, it belongs there — not as a literal in engine code.
-
-## Design system
-
-Imported from the Claude Design project `NOMAD Test Tool.dc.html`. Tokens
-(colors, typography, spacing, effects) are ported verbatim into
-`src/styles/tokens.css` and bridged into Tailwind's theme in `src/index.css`
-via `@theme inline`, so every token is reachable both as `var(--putty-300)` and
-as a utility (`bg-putty-300`). Tailwind's default 4px spacing scale already
-matches the design's scale, so it is deliberately not remapped.
-
-The design's `support.js` is the Claude Design preview runtime — it interprets
-`<x-dc>`, `sc-if`, `sc-for` and the `{{ }}` bindings in the `.dc.html`. React
-replaces it wholesale, so it was not ported.
 
 ## Config sidebar
 
 A live editor over the Zustand config store, rendered from the field
 descriptors in `src/store/configFields.ts`. Adding a tunable is: add it to
-`GameConfig` + `DEFAULT_CONFIG`, add a descriptor, done.
-
-Nothing downstream consumes the config yet — the engine will. The Table view
-does already read a few values (seat count, downs, scrap cap, enemy hull
-scaling, rarity ceiling) so the knobs visibly bite. Config persists to
-localStorage; `EXPORT JSON` copies it to the clipboard.
+`GameConfig` + `DEFAULT_CONFIG`, add a descriptor, done. Config persists to
+localStorage; `EXPORT JSON` copies it to the clipboard. A new run picks up the
+current config; changes mid-run bite from the next turn.
 
 ## Status
 
-Scaffolding pass. Types and folder structure are in place; every engine
-function throws `not implemented` on purpose. Combat resolution, the board, and
-the loot phase come next.
+Playable end to end: generate a mission, walk it, fight, loot, cross a
+checkpoint, kill the boss, roll into the next sector. Solo and up to four
+seats, together or split.
 
-Open questions from `ship-dungeon-card-game-rules-v2.md` that affect the model:
-board vs. deck-built campaign, conversion-threshold upgrades, and whether the
-Scrap Deck is really one pool. All three are modelled the way the doc leans and
-flagged in comments where they bite.
+### What the first playthroughs turned up
+
+Findings, not bugs — they're decisions for the rules doc:
+
+- **Conversion is unreachable for a one-weapon ship.** Offensive modules fire
+  once per fresh set, so the most a side can deal in a set is the sum of its
+  weapons' power. A starting ship with a single 4⚔ gun cannot hit a threshold
+  of 12 no matter how the downs are spent. Either thresholds scale to weapon
+  count, or something other than raw damage counts toward conversion.
+- **Printed energy costs outrun generation.** Generators make 1–2⚡ a turn into
+  their own pools; weapons cost 3–4⚡ a shot and rerouting used to cost a down.
+  Fights stalled with both sides unable to fire. Two changes make it run:
+  `energy_per_turn` (a reactor baseline spread across the grid at upkeep,
+  default 6) and free rerouting on any ship carrying a redistributor. Both are
+  tunable — `energy_per_turn: 0` puts you back on generator modules alone.
+- **Enemy size is drawn, not dialled.** "Draw until the next cockpit" means an
+  enemy can arrive with 3 modules or 9. `enemy_parts_base` acts as a floor
+  rather than a count. That variance is the rule as written; worth confirming
+  it's wanted.
+- **Infested Railgun can't pay its own cost** — printed pool 1⚡, printed cost
+  2⚡. Raised to 4 in the data with a comment; the card text needs a decision.
+
+### Rules questions, as modelled
+
+- **Board vs. deck-built campaign** (#1) — modelled as a board, since the split
+  choice needs one.
+- **Threshold upgrades** (#2) — threshold is a defensive stat, and a seat can
+  buy `+threshold_step` at a cost of `threshold_cost`⚔ per attack at any
+  rearrangement point. Switch it off with `threshold_upgrades`.
+- **One Scrap Deck or two** (#3) — one pool, as the doc leans.

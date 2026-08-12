@@ -12,5 +12,6 @@ export default defineConfig({
       '@data': fileURLToPath(new URL('./src/data', import.meta.url)),
     },
   },
-  server: { port: 5173 },
+  // 5173 by default; PORT lets a second dev server run alongside the first.
+  server: { port: Number(process.env.PORT) || 5173 },
 });

@@ -25,12 +25,23 @@ export interface PlayerState {
   /** Loose energy not yet committed to a module pool. */
   energy: number;
 
+  /**
+   * Rules open question #2: a player may buy a higher own-threshold, making
+   * enemies work harder to convert, and pay for it in attack power.
+   */
+  thresholdBonus: number;
+  /** Flat power lost per attack, the price paid for `thresholdBonus`. */
+  powerPenalty: number;
+
   /** Hoarded modules + the module kept when abandoning a ship. Capped by config. */
   scrapDeck: CardId[];
   /** Items in hand from Loot steps. */
   hand: CardId[];
   /** Carried-but-unequipped parts, capped so parts can't be hoarded freely. */
   carriedParts: CardId[];
+
+  /** Out of the fight: hull at 0. Stays on the board for the post-mortem. */
+  destroyed: boolean;
 }
 
 /** The party as a whole. Splitting the party is tracked per node, not here. */

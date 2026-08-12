@@ -4,6 +4,7 @@ export type * from './enemy';
 export type * from './player';
 export type * from './combat';
 export type * from './board';
+export type * from './game';
 
 export type {
   Card,
@@ -12,6 +13,7 @@ export type {
   ItemCard,
   EventCard,
   ModuleRole,
+  ModuleEffect,
   Specialization,
   Rarity,
   DieKind,
@@ -20,4 +22,10 @@ export type {
 export { isPart, isItem, isEvent, isCockpit } from './card';
 
 export type { GameConfig } from './config';
-export { DEFAULT_CONFIG, effectiveThreshold, partsForSpawn, scaledEnemyHp } from './config';
+export {
+  DEFAULT_CONFIG,
+  effectiveThreshold,
+  playerThreshold,
+  partsForSpawn,
+  scaledEnemyHp,
+} from './config';

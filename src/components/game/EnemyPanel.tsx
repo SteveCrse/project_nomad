@@ -1,51 +1,94 @@
-import { ENEMIES_BY_ID, SEED_ENEMY } from '@data';
+import type { EnemyInstance, SlotIndex } from '@engine/types';
 import { StatGauge } from '@/components/ds';
 import { ModuleTile } from './ModuleTile';
 import { useConfig } from '@/store/configStore';
-import { effectiveThreshold, scaledEnemyHp } from '@engine/types';
+
+interface EnemyPanelProps {
+  enemy: EnemyInstance;
+  active?: boolean;
+  targeted?: boolean;
+  downs?: { used: number; total: number; damageThisSet: number; threshold: number };
+  onSelect?: () => void;
+  onSlotClick?: (slot: SlotIndex) => void;
+  targetSlot?: SlotIndex | null;
+}
 
 /**
- * The enemy ship on the table. Hull scales with player count and the
- * threshold honours any per-enemy override, both straight off the config —
- * this is the clearest place to watch the tuning knobs bite.
+ * An enemy ship on the table. Hull, threshold and downs are the three numbers
+ * a playtester watches: the threshold is what the party has to beat in one
+ * set to keep the turn, and the downs strip is how close the enemy is to
+ * chaining another one.
  */
-export function EnemyPanel() {
+export function EnemyPanel({
+  enemy,
+  active,
+  targeted,
+  downs,
+  onSelect,
+  onSlotClick,
+  targetSlot,
+}: EnemyPanelProps) {
   const config = useConfig();
-  const statBlock = ENEMIES_BY_ID[SEED_ENEMY.statBlockId];
-  if (!statBlock) return null;
-
-  const hpMax = scaledEnemyHp(config, statBlock.hpPool);
-  const hp = Math.min(SEED_ENEMY.hp, hpMax);
-  const threshold = effectiveThreshold(config, statBlock.id, statBlock.convThreshold);
-  const partCount = SEED_ENEMY.slots.filter((s) => s.partId).length;
+  const dead = enemy.hp <= 0;
+  const used = downs?.used ?? enemy.downsUsed;
+  const total = downs?.total ?? enemy.downCount ?? config.downCount;
+  const partCount = enemy.ship.slots.filter(
+    (s) => s.partId && s.partId !== enemy.ship.cockpitId,
+  ).length;
 
   return (
-    <div className="flex items-stretch gap-5 border-2 border-border-strong bg-surface-panel px-4 py-3 shadow-raised">
+    <div
+      className={`flex flex-none items-stretch gap-5 border-2 bg-surface-panel px-4 py-3 shadow-raised ${
+        active ? 'border-toggle-red-500' : targeted ? 'border-accent-primary' : 'border-border-strong'
+      } ${dead ? 'opacity-50' : ''} ${onSelect ? 'cursor-pointer' : ''}`}
+      onClick={onSelect}
+    >
       <div className="flex w-[236px] flex-col gap-2">
-        <div className="font-display text-[14px] font-bold">{statBlock.name.toUpperCase()}</div>
-        <div className="flex items-center gap-2 font-mono text-[11px] text-putty-700">
-          <span>ENEMY · {partCount} PARTS</span>
-          <span className="text-toggle-red-500">THRESHOLD {threshold}</span>
+        <div className="flex items-baseline gap-2">
+          <div className="font-display text-[14px] font-bold">{enemy.name.toUpperCase()}</div>
+          {enemy.isBoss && (
+            <span className="font-mono text-[10px] tracking-[0.1em] text-amber-700">BOSS</span>
+          )}
+          {dead && (
+            <span className="font-mono text-[10px] tracking-[0.1em] text-putty-700">WRECK</span>
+          )}
         </div>
-        <StatGauge label="Hull" value={hp} max={hpMax} tone="danger" className="w-[220px]" />
+        <div className="flex items-center gap-2 font-mono text-[11px] text-putty-700">
+          <span>{partCount} PARTS</span>
+          <span className="text-toggle-red-500">THRESHOLD {enemy.convThreshold}</span>
+        </div>
+        <StatGauge label="Hull" value={enemy.hp} max={enemy.hpMax} tone="danger" className="w-[220px]" />
         <div className="flex items-center gap-2">
           <span className="text-[12px] tracking-label text-text-secondary uppercase">Downs</span>
           <div className="flex gap-1.5">
-            {Array.from({ length: config.downCount }, (_, i) => (
+            {Array.from({ length: total }, (_, i) => (
               <div
                 key={i}
                 className="h-4 w-4 border-2 border-border-strong"
-                style={{
-                  background:
-                    i < SEED_ENEMY.downsUsed ? 'var(--toggle-red-500)' : 'var(--crt-glass)',
-                }}
+                style={{ background: i < used ? 'var(--toggle-red-500)' : 'var(--crt-glass)' }}
               />
             ))}
           </div>
           <span className="font-mono text-[11px] text-putty-700">
-            {SEED_ENEMY.downsUsed}/{config.downCount}
+            {used}/{total}
           </span>
         </div>
+        {downs && (
+          <div className="font-mono text-[11px] text-putty-700">
+            SET DMG{' '}
+            <span
+              style={{
+                color:
+                  downs.damageThisSet >= downs.threshold
+                    ? 'var(--toggle-red-500)'
+                    : 'var(--n-900)',
+              }}
+            >
+              {downs.damageThisSet}
+            </span>
+            /{downs.threshold} TO CONVERT
+          </div>
+        )}
       </div>
 
       <div className="w-0.5 bg-putty-400" />
@@ -53,12 +96,18 @@ export function EnemyPanel() {
       <div
         className="grid gap-1.5"
         style={{
-          gridTemplateColumns: `repeat(${SEED_ENEMY.gridCols}, 96px)`,
-          gridAutoRows: '74px',
+          gridTemplateColumns: `repeat(${enemy.ship.gridCols}, 96px)`,
+          gridAutoRows: '68px',
         }}
       >
-        {SEED_ENEMY.slots.map((slot, i) => (
-          <ModuleTile key={i} slot={slot} variant="compact" />
+        {enemy.ship.slots.map((slot) => (
+          <ModuleTile
+            key={slot.index}
+            slot={slot}
+            variant="compact"
+            targeted={targetSlot === slot.index}
+            {...(onSlotClick ? { onClick: () => onSlotClick(slot.index) } : {})}
+          />
         ))}
       </div>
     </div>
