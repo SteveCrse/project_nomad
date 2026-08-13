@@ -21,21 +21,39 @@ Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
 
 1. **Mission** — press *Start a run*. A board is generated from the config:
    length, branching, checkpoint cadence, enemy scaling, rarity ceiling.
-2. Click a reachable step. With 2+ seats, the *split party* switch turns the
+2. **Ship Builder** — the run opens in the draft. Each seat pulls
+   `starting_draws` parts off the shared Parts deck, one card at a time and
+   round the table, and the card that comes up lands in that seat's hold. The
+   first cockpit a seat draws takes over its hull, because capacity is the
+   cockpit's. Then lay the grid out: drag a part from the hold onto a position
+   (or click the part, then the position), drag fitted modules around to
+   reorder them, and drag one back to the hold to pull it off. **A part has to
+   attach next to something already fitted** — legal positions light up while
+   you're holding one — so a hull grows outward from its cockpit and adjacency
+   is a decision. Then *Start the mission*; parts left in the hold ride along
+   in the Scrap Deck up to its cap, and the overflow is shuffled back into the
+   deck. Set `starting_draws` to 0 to skip the draft and
+   roll out on the authored loadouts instead. The same grid editing is
+   available at every rearrangement point.
+3. Click a reachable step. With 2+ seats, the *split party* switch turns the
    branch into the rules' higher-risk choice — seats move one at a time and
    each occupied node resolves its own encounter, with only the seats standing
    there in the fight.
-3. **Table** — the view follows the run, so walking into a combat step puts you
+4. **Table** — the view follows the run, so walking into a combat step puts you
    on the table. Spend downs from the action bar; every button is gated by the
-   engine's own legality check, and the refusal reason is the tooltip. *End set*
-   converts if the set beat the defender's threshold, otherwise it passes the
-   turn. The enemy plays itself, one down or one turn at a time.
-4. Wrecks open the **loot phase**: A (take the whole ship, keep one module) or
+   engine's own legality check, and the refusal reason is the tooltip. A module
+   fires as often as its pool can pay for, one down a shot. To reload, build a
+   **reroute pass** on your own grid — click a charged module, then the
+   neighbour it feeds, as many links as you like — and commit it for a single
+   down; each module may be drained once, and ⚡ only moves between neighbours.
+   *End set* converts if the set beat the defender's threshold, otherwise it
+   passes the turn. The enemy plays itself, one down or one turn at a time.
+5. Wrecks open the **loot phase**: A (take the whole ship, keep one module) or
    B (strip one module into the Scrap Deck).
-5. Checkpoints raise the rarity ceiling, shuffle the newly unlocked tiers into
+6. Checkpoints raise the rarity ceiling, shuffle the newly unlocked tiers into
    all three decks, and double as a **rearrangement point** — slot hoarded
    modules, and buy an own-threshold upgrade if that switch is on.
-6. Kill the boss to end the mission; *Next sector* rolls the next one forward.
+7. Kill the boss to end the mission; *Next sector* rolls the next one forward.
 
 Everything lands in the run transcript on the right — rolls, soaks,
 conversions, refusals — which is the artefact a playtest actually produces.
@@ -85,17 +103,21 @@ seats, together or split.
 
 Findings, not bugs — they're decisions for the rules doc:
 
-- **Conversion is unreachable for a one-weapon ship.** Offensive modules fire
-  once per fresh set, so the most a side can deal in a set is the sum of its
-  weapons' power. A starting ship with a single 4⚔ gun cannot hit a threshold
-  of 12 no matter how the downs are spent. Either thresholds scale to weapon
-  count, or something other than raw damage counts toward conversion.
+- **Conversion was unreachable for a one-weapon ship** while offensive modules
+  fired once per fresh set: the most a side could deal in a set was the sum of
+  its weapons' power, so a single 4⚔ gun could never reach a threshold of 12.
+  Settled by letting a module fire as often as its pool can pay for — charge
+  and AP ration a volley now, not a per-set flag. `once_per_set` puts the old
+  rule back for comparison.
 - **Printed energy costs outrun generation.** Generators make 1–2⚡ a turn into
   their own pools; weapons cost 3–4⚡ a shot and rerouting used to cost a down.
   Fights stalled with both sides unable to fire. Two changes make it run:
   `energy_per_turn` (a reactor baseline spread across the grid at upkeep,
   default 6) and free rerouting on any ship carrying a redistributor. Both are
   tunable — `energy_per_turn: 0` puts you back on generator modules alone.
+  Weapons sit outside that baseline (`reactor_feeds_wpn`, off by default): a
+  gun is loaded by rerouting into it from a neighbour, which is what makes
+  where the generators sit on the grid matter.
 - **Enemy size is drawn, not dialled.** "Draw until the next cockpit" means an
   enemy can arrive with 3 modules or 9. `enemy_parts_base` acts as a floor
   rather than a count. That variance is the rule as written; worth confirming

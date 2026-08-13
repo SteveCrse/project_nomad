@@ -1,6 +1,7 @@
-import type { Battle, DownAction, SideRef } from '../types/combat';
+import type { Battle, DownAction, EnergyTransfer, SideRef } from '../types/combat';
 import type { GameConfig } from '../types/config';
 import type { PartCard } from '../types/card';
+import type { Ship } from '../types/ship';
 import type { Content } from '../content';
 import type { Rng } from '../rng';
 import {
@@ -9,7 +10,7 @@ import {
   downsFor,
   shipOf,
 } from '../combat';
-import { capacityOf, diceCountOf, effectOf, isAbsorber, liveModules } from '../ship';
+import { areAdjacent, capacityOf, diceCountOf, effectOf, isAbsorber, liveModules } from '../ship';
 
 /**
  * Enemy decision-making — enough for one side of the table to play itself so
@@ -72,24 +73,45 @@ export function chooseEnemyAction(
     if (legal(action)) return action;
   }
 
-  // 4. Feed the biggest empty gun from the fullest generator.
-  const dry = liveModules(content, ship)
-    .filter((m) => effectOf(m.part).kind === 'damage' && m.slot.energy < (m.part.energyCost ?? 0))
-    .sort((a, b) => (b.part.power ?? 0) - (a.part.power ?? 0))[0];
-  const source = liveModules(content, ship)
-    .filter((m) => m.part.role === 'GEN' && m.slot.energy > 0)
-    .sort((a, b) => b.slot.energy - a.slot.energy)[0];
-  if (dry && source) {
-    const action: DownAction = {
-      type: 'reroute-energy',
-      from: source.slot.index,
-      to: dry.slot.index,
-      amount: source.slot.energy,
-    };
+  // 4. Reload: one down hands charge along the grid into the dry guns.
+  const transfers = planReroute(content, ship);
+  if (transfers.length > 0) {
+    const action: DownAction = { type: 'reroute-energy', transfers };
     if (legal(action)) return action;
   }
 
   return { type: 'pass' };
+}
+
+/**
+ * Plan a reroute pass: for each gun that can't pay for a shot, pull from the
+ * fullest charged neighbour that hasn't been drained yet.
+ *
+ * One hop only. A player can chain a generator through a redistributor into a
+ * gun in a single down; the enemy doesn't bother, and that gap is deliberate —
+ * the tool should lose to a sharp table, not out-optimise it.
+ */
+function planReroute(content: Content, ship: Ship): EnergyTransfer[] {
+  const modules = liveModules(content, ship);
+  const dryGuns = modules
+    .filter((m) => effectOf(m.part).kind === 'damage' && m.slot.energy < (m.part.energyCost ?? 0))
+    .sort((a, b) => (b.part.power ?? 0) - (a.part.power ?? 0));
+
+  const drained = new Set<number>();
+  const transfers: EnergyTransfer[] = [];
+
+  for (const gun of dryGuns) {
+    if (capacityOf(content, gun.slot) - gun.slot.energy <= 0) continue;
+    const source = modules
+      .filter((m) => m.slot.energy > 0 && !drained.has(m.slot.index))
+      .filter((m) => m.part.role !== 'WPN')
+      .filter((m) => areAdjacent(ship, m.slot.index, gun.slot.index))
+      .sort((a, b) => b.slot.energy - a.slot.energy)[0];
+    if (!source) continue;
+    drained.add(source.slot.index);
+    transfers.push({ from: source.slot.index, to: gun.slot.index, amount: source.slot.energy });
+  }
+  return transfers;
 }
 
 function maxAffordableDice(energy: number, perDie: number): number {

@@ -283,11 +283,11 @@ function CombatLogPlaceholder() {
 
 function Footer() {
   const reset = useConfigStore((s) => s.reset);
-  const toJSON = useConfigStore((s) => s.toJSON);
+  const exportJson = useConfigStore((s) => s.exportJson);
   const [copied, setCopied] = useState(false);
 
-  const exportJson = async () => {
-    const json = toJSON();
+  const copyJson = async () => {
+    const json = exportJson();
     try {
       await navigator.clipboard.writeText(json);
       setCopied(true);
@@ -304,7 +304,7 @@ function Footer() {
   return (
     <div className="flex flex-none gap-2 border-t border-console-line bg-console-bg-deep px-3 py-2.5">
       <FooterButton onClick={reset}>RESET DEFAULTS</FooterButton>
-      <FooterButton onClick={exportJson}>{copied ? 'COPIED ✓' : 'EXPORT JSON'}</FooterButton>
+      <FooterButton onClick={copyJson}>{copied ? 'COPIED ✓' : 'EXPORT JSON'}</FooterButton>
     </div>
   );
 }

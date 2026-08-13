@@ -10,7 +10,7 @@ import type { EnemyInstance } from './enemy';
  * back to `map`.
  */
 export type Phase =
-  /** Between missions: build a ship from the scrap deck. */
+  /** Before the mission: draft parts off the Parts deck and assemble a ship. */
   | 'setup'
   /** Choosing the next step on the board. */
   | 'map'
@@ -45,6 +45,24 @@ export interface Loadout {
   partIds: CardId[];
 }
 
+/**
+ * The pre-mission draft.
+ *
+ * Every seat pulls parts off the shared Parts deck one card at a time, so the
+ * order matters and the tool has to know whose turn it is. Once the draws are
+ * spent the seats assemble, and the mission only starts when they say so.
+ */
+export interface SetupState {
+  /** Draws each seat still owes, by seat. */
+  drawsLeft: Record<PlayerId, number>;
+  /** Seats now flying a cockpit they drafted rather than their default hull. */
+  anchored: PlayerId[];
+  /** Last part off the deck, so the table can see what was just revealed. */
+  lastDrawn: CardId | null;
+  /** Who drew it — the tool stays on that seat until the next card is pulled. */
+  lastDrawnBy: PlayerId | null;
+}
+
 export type LogTone = 'info' | 'damage' | 'convert' | 'system' | 'loot';
 
 export interface LogEntry {
@@ -69,6 +87,8 @@ export interface GameState {
   /** Rarity ceiling right now — raised by checkpoints, not by config alone. */
   maxRarityNow: number;
   prompt: Prompt | null;
+  /** The draft, while it's running. Null once the mission is under way. */
+  setup: SetupState | null;
   log: LogEntry[];
   /** Monotonic, so log ids stay unique across a run. */
   logCounter: number;

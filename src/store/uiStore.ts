@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CardId, PlayerId, SlotIndex } from '@engine/types';
+import type { CardId, EnergyTransfer, PlayerId, SlotIndex } from '@engine/types';
 
 export type TabId = 'mission' | 'table' | 'builder' | 'cards';
 
@@ -32,6 +32,16 @@ interface UiStore {
   /** Damage entered by hand for cards the engine leaves to the table. */
   manualDamage: number;
 
+  // ---- reroute pass ----
+  /**
+   * Legs queued for the current down's reroute pass. One down moves charge out
+   * of every module at most once, so this is built up on the grid and then
+   * committed in one go.
+   */
+  rerouteTransfers: EnergyTransfer[];
+  /** Module picked as the next leg's source, waiting on a neighbour. */
+  rerouteFrom: SlotIndex | null;
+
   setTab: (tab: TabId) => void;
   toggleConfig: () => void;
   setRarityFilter: (rarity: number) => void;
@@ -42,6 +52,10 @@ interface UiStore {
   setDiceCount: (n: number) => void;
   setManualDamage: (n: number) => void;
   setAutoFollow: (on: boolean) => void;
+  pickRerouteFrom: (slot: SlotIndex | null) => void;
+  queueTransfer: (transfer: EnergyTransfer) => void;
+  dropTransfer: (index: number) => void;
+  clearReroute: () => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -56,6 +70,8 @@ export const useUiStore = create<UiStore>((set) => ({
   targetSlot: null,
   diceCount: 1,
   manualDamage: 0,
+  rerouteTransfers: [],
+  rerouteFrom: null,
 
   setTab: (tab) => set({ tab }),
   toggleConfig: () => set((s) => ({ configOpen: !s.configOpen })),
@@ -67,4 +83,19 @@ export const useUiStore = create<UiStore>((set) => ({
   setDiceCount: (diceCount) => set({ diceCount: Math.max(1, diceCount) }),
   setManualDamage: (manualDamage) => set({ manualDamage: Math.max(0, manualDamage) }),
   setAutoFollow: (autoFollow) => set({ autoFollow }),
+
+  pickRerouteFrom: (rerouteFrom) => set({ rerouteFrom }),
+  queueTransfer: (transfer) =>
+    set((s) => ({
+      // One drain per module per down: a second leg off the same source
+      // replaces the first rather than stacking.
+      rerouteTransfers: [
+        ...s.rerouteTransfers.filter((t) => t.from !== transfer.from),
+        transfer,
+      ],
+      rerouteFrom: null,
+    })),
+  dropTransfer: (index) =>
+    set((s) => ({ rerouteTransfers: s.rerouteTransfers.filter((_, i) => i !== index) })),
+  clearReroute: () => set({ rerouteTransfers: [], rerouteFrom: null }),
 }));

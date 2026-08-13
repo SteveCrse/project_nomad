@@ -92,6 +92,12 @@ export interface PartCard extends CardBase {
   power?: number;
   /** Cards that raise the scrap deck cap declare it here. */
   scrapCapBonus?: number;
+  /**
+   * Fires at most once per fresh set of downs. The default is unlimited: a
+   * module can be activated as often as its pool can pay for, one down each,
+   * so a card only carries this when its own text says otherwise.
+   */
+  oncePerSet?: boolean;
 
   // ---- structured behaviour: what the engine actually resolves ----
   /**

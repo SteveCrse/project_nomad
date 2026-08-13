@@ -1,10 +1,12 @@
 import type {
   Battle,
   DownAction,
+  EnergyTransfer,
   GameConfig,
   GameState,
   PartCard,
   PlayerState,
+  Ship,
   SideRef,
   SlotIndex,
 } from '@engine/types';
@@ -143,3 +145,22 @@ export function adjacencyFor(player: PlayerState) {
 
 export const scrapCapacityFor = (player: PlayerState, config: GameConfig): number =>
   config.scrapCap + shipEngine.scrapCapBonus(CONTENT, player.ship);
+
+/**
+ * What a pool will hold once the legs already queued for this reroute pass
+ * land — a leg drains whatever its source is holding *at its turn in the
+ * order*, so a generator feeding a redistributor raises what the
+ * redistributor can pass on.
+ */
+export function projectedEnergy(
+  ship: Ship,
+  transfers: EnergyTransfer[],
+  slot: SlotIndex,
+): number {
+  let energy = ship.slots[slot]?.energy ?? 0;
+  for (const t of transfers) {
+    if (t.to === slot) energy += t.amount;
+    if (t.from === slot) energy -= t.amount;
+  }
+  return Math.max(0, energy);
+}

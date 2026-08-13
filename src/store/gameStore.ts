@@ -22,6 +22,21 @@ interface GameStore {
   error: string | null;
 
   newRun: (seed?: number) => void;
+
+  // ---- setup draft ----
+  /** Pull one part off the Parts deck for the seat on the clock. */
+  drawStartingPart: (player?: PlayerId) => void;
+  /** Draw for whoever is on the clock until every seat has spent its draws. */
+  drawAllStartingParts: () => void;
+  installCockpit: (player: PlayerId, cardId: CardId) => void;
+  /** Slot a drafted part; a negative slot takes the first free one. */
+  assemblePart: (player: PlayerId, cardId: CardId, slot: SlotIndex) => void;
+  returnPart: (player: PlayerId, slot: SlotIndex) => void;
+  startMission: () => void;
+
+  /** Lay out the grid: move a module to another position, or swap two. */
+  moveModule: (player: PlayerId, from: SlotIndex, to: SlotIndex) => void;
+
   setSplit: (split: boolean) => void;
   moveTo: (player: PlayerId, nodeId: string) => void;
   takeDown: (action: DownAction) => void;
@@ -65,6 +80,34 @@ export const useGameStore = create<GameStore>((set, get) => {
         state: game.newRun(CONTENT, config(), seed, STARTING_LOADOUTS, rng),
       });
     },
+
+    drawStartingPart: (player) =>
+      step((s) => game.drawStartingPart(CONTENT, s, config(), get().rng, player)),
+
+    drawAllStartingParts: () =>
+      step((s) => {
+        let next = s;
+        // One seat, one card, round the table — the same order a table would
+        // do it in, just without a click per card.
+        while (game.nextDrafter(next)) {
+          const after = game.drawStartingPart(CONTENT, next, config(), get().rng);
+          if (after === next) break; // deck dry or refused; don't spin
+          next = after;
+        }
+        return next;
+      }),
+
+    installCockpit: (player, cardId) =>
+      step((s) => game.installCockpit(CONTENT, s, config(), player, cardId)),
+
+    assemblePart: (player, cardId, slot) =>
+      step((s) => game.assemblePart(CONTENT, s, config(), player, cardId, slot)),
+
+    returnPart: (player, slot) => step((s) => game.returnPart(CONTENT, s, player, slot)),
+
+    startMission: () => step((s) => game.startMission(CONTENT, s, config(), get().rng)),
+
+    moveModule: (player, from, to) => step((s) => game.moveModule(CONTENT, s, player, from, to)),
 
     setSplit: (split) => step((s) => game.setSplit(s, split)),
 

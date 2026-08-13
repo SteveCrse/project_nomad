@@ -1,4 +1,5 @@
-import type { GameState } from '@engine/types';
+import type { GameState, PlayerState, SlotIndex } from '@engine/types';
+import { ship as shipEngine } from '@engine';
 import { EnemyPanel } from '@/components/game/EnemyPanel';
 import { PlayerPanel } from '@/components/game/PlayerPanel';
 import { ActionBar } from '@/components/game/ActionBar';
@@ -6,7 +7,7 @@ import { LogPanel } from '@/components/game/LogPanel';
 import { DeckStack, DiscardStack, LootBag } from '@/components/game/DeckStack';
 import { Button } from '@/components/ds';
 import { RARITY_COLOR } from '@/lib/palette';
-import { downsOf, moduleOptions } from '@/lib/combatView';
+import { downsOf, moduleOptions, projectedEnergy } from '@/lib/combatView';
 import { combat } from '@engine';
 import { useConfig } from '@/store/configStore';
 import { useGame, useGameStore } from '@/store/gameStore';
@@ -49,9 +50,36 @@ function CombatSurface({ state }: { state: GameState }) {
   const setTarget = useUiStore((s) => s.setTarget);
   const targetEnemyId = useUiStore((s) => s.targetEnemyId);
 
+  const rerouteFrom = useUiStore((s) => s.rerouteFrom);
+  const rerouteTransfers = useUiStore((s) => s.rerouteTransfers);
+  const pickRerouteFrom = useUiStore((s) => s.pickRerouteFrom);
+  const queueTransfer = useUiStore((s) => s.queueTransfer);
+
   const side = state.combat ? combat.currentSide(state.combat) : undefined;
   const downs = downsOf(state, side);
   const enemies = state.combat?.enemies ?? [];
+
+  /**
+   * Building a reroute pass on the seat's own grid: click a charged module,
+   * then the neighbour it feeds. Clicking something that isn't a neighbour
+   * picks it as the new source instead of refusing — the grid is the control.
+   */
+  const buildReroute = (player: PlayerState) => (slot: SlotIndex) => {
+    const ship = player.ship;
+    const charged = (index: SlotIndex) => projectedEnergy(ship, rerouteTransfers, index) > 0;
+
+    if (rerouteFrom === null || rerouteFrom === slot || !shipEngine.areAdjacent(ship, rerouteFrom, slot)) {
+      const pickable = rerouteFrom !== slot && !!ship.slots[slot]?.partId && charged(slot);
+      pickRerouteFrom(pickable ? slot : null);
+      return;
+    }
+    if (!ship.slots[slot]?.partId) return; // nothing there to feed
+    queueTransfer({
+      from: rerouteFrom,
+      to: slot,
+      amount: projectedEnergy(ship, rerouteTransfers, rerouteFrom),
+    });
+  };
   // The seat holding the turn sits directly under the action bar; the rest
   // keep seat order behind it.
   const participants = state.party.players
@@ -101,16 +129,24 @@ function CombatSurface({ state }: { state: GameState }) {
       {side && <ActionBar state={state} side={side} />}
 
       <div className="flex min-h-0 flex-1 flex-wrap content-start gap-3 overflow-auto">
-        {participants.map((player) => (
-          <PlayerPanel
-            key={player.id}
-            player={player}
-            active={side?.kind === 'player' && side.id === player.id}
-            {...(side?.kind === 'player' && side.id === player.id && downs ? { downs } : {})}
-            armedSlots={side?.kind === 'player' && side.id === player.id ? armed : []}
-            compact
-          />
-        ))}
+        {participants.map((player) => {
+          const holdsTurn = side?.kind === 'player' && side.id === player.id;
+          return (
+            <PlayerPanel
+              key={player.id}
+              player={player}
+              active={holdsTurn}
+              {...(holdsTurn && downs ? { downs } : {})}
+              armedSlots={holdsTurn ? armed : []}
+              // The seat's own grid doubles as the reroute control while it
+              // holds the turn.
+              {...(holdsTurn ? { onSlotClick: buildReroute(player) } : {})}
+              selectedSlot={holdsTurn ? rerouteFrom : null}
+              rerouteLinks={holdsTurn ? rerouteTransfers : []}
+              compact
+            />
+          );
+        })}
       </div>
     </>
   );

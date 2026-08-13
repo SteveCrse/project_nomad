@@ -4,7 +4,7 @@ import type { GameConfig } from '../types/config';
 import type { CardId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
-import { chargeSlot, equipPart, firstFreeSlot, scrapCapBonus } from '../ship';
+import { canAttachAt, chargeSlot, equipPart, firstAttachableSlot, scrapCapBonus } from '../ship';
 
 /**
  * Loot phase. On destroying an enemy ship the party picks one:
@@ -123,12 +123,14 @@ export function rearrange(
   for (const { cardId, slot } of assignments) {
     const index = scrapDeck.indexOf(cardId);
     if (index < 0) continue;
-    const target = slot >= 0 ? slot : firstFreeSlot(ship);
+    const target = slot >= 0 ? slot : firstAttachableSlot(ship);
     if (target < 0 || target >= ship.slots.length) continue;
     if (target === ship.slots.findIndex((s) => s.partId === ship.cockpitId)) continue;
 
     // Swapping out an occupied slot puts the old module back into the scrap.
     const occupant = ship.slots[target]?.partId ?? null;
+    // An empty position still has to touch the hull.
+    if (!occupant && !canAttachAt(ship, target)) continue;
     ship = equipPart(ship, target, cardId);
     // Modules come online with an empty pool; generators prime themselves.
     const part = partOf(content, cardId);

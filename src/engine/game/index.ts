@@ -2,7 +2,7 @@ import type { BoardNode } from '../types/board';
 import type { Battle, DownAction, SideRef } from '../types/combat';
 import type { GameConfig } from '../types/config';
 import type { EnemyInstance } from '../types/enemy';
-import type { CardId, NodeId, PlayerId } from '../types/ids';
+import type { CardId, NodeId, PlayerId, SlotIndex } from '../types/ids';
 import type { PartyState, PlayerState } from '../types/player';
 import type { GameState, Loadout, LogEntry, LogTone } from '../types/game';
 import { isEvent, isItem } from '../types/card';
@@ -15,7 +15,17 @@ import * as combat from '../combat';
 import * as loot from '../loot';
 import type { LootChoice } from '../loot';
 import { chooseEnemyAction } from '../ai';
-import { chargeSlot, createShip, equipPart, spawnEnemyShip } from '../ship';
+import {
+  canAttachAt,
+  chargeSlot,
+  createShip,
+  detachPart,
+  equipPart,
+  firstAttachableSlot,
+  spawnEnemyShip,
+  swapCockpit,
+  swapSlots,
+} from '../ship';
 
 /**
  * The run orchestrator: the piece that turns the subsystems into an actual
@@ -80,7 +90,14 @@ export function newRun(
     events: deck.buildDeck('events', content.all.filter(isEvent), config.maxRarityNow, rng),
   };
 
-  const players: PlayerState[] = seats.map((seat) => buildPlayer(content, config, seat));
+  // With draws configured the seats build their own ships off the deck; at 0
+  // the authored loadouts roll out as-is, which is the quick way into a fight.
+  const draws = Math.max(0, Math.floor(config.startingPartsDraws));
+  const drafting = draws > 0;
+
+  const players: PlayerState[] = seats.map((seat) =>
+    buildPlayer(content, config, seat, drafting ? [] : seat.partIds),
+  );
 
   const party: PartyState = { players, activePlayerIndex: 0 };
   const mission = board.generateMission(seed, sector, config, rng, Object.values(content.enemies));
@@ -89,32 +106,54 @@ export function newRun(
   const state: GameState = {
     seed,
     sector,
-    phase: 'map',
+    phase: drafting ? 'setup' : 'map',
     mission,
     party,
     decks,
     combat: null,
     maxRarityNow: config.maxRarityNow,
     prompt: null,
+    setup: drafting
+      ? {
+          drawsLeft: Object.fromEntries(players.map((p) => [p.id, draws])),
+          anchored: [],
+          lastDrawn: null,
+          lastDrawnBy: null,
+        }
+      : null,
     log: [],
     logCounter: 0,
     split: false,
-    // Moving together, one seat's choice moves everyone.
-    awaitingMove: players[0] ? [players[0].id] : [],
+    // Moving together, one seat's choice moves everyone. Nobody moves until
+    // the ships are built.
+    awaitingMove: drafting || !players[0] ? [] : [players[0].id],
     seenEnemies: [],
   };
 
-  return log(
+  const opened = log(
     state,
     `Sector ${sector} mission generated from seed ${seed}: ${mission.length} steps to the boss.`,
     'system',
   );
+
+  return drafting
+    ? log(
+        opened,
+        `Setup: ${players.length} seat(s) draft ${draws} part(s) each off the Parts deck, one card at a time.`,
+        'system',
+      )
+    : opened;
 }
 
-function buildPlayer(content: Content, config: GameConfig, seat: Loadout): PlayerState {
+function buildPlayer(
+  content: Content,
+  config: GameConfig,
+  seat: Loadout,
+  partIds: CardId[] = seat.partIds,
+): PlayerState {
   let ship = createShip(content, seat.cockpitId, seat.shipName, config);
-  for (const partId of seat.partIds) {
-    const free = ship.slots.findIndex((s) => s.partId === null);
+  for (const partId of partIds) {
+    const free = firstAttachableSlot(ship);
     if (free < 0) break;
     ship = equipPart(ship, free, partId);
     // Ships roll out with their pools charged; an empty grid can't open a fight.
@@ -140,6 +179,312 @@ function buildPlayer(content: Content, config: GameConfig, seat: Loadout): Playe
     destroyed: false,
   };
 }
+
+// ---------------------------------------------------------------- the draft
+
+/** Swap one seat out for an updated copy. */
+function withPlayer(
+  state: GameState,
+  playerId: PlayerId,
+  fn: (player: PlayerState) => PlayerState,
+): GameState {
+  return {
+    ...state,
+    party: {
+      ...state.party,
+      players: state.party.players.map((p) => (p.id === playerId ? fn(p) : p)),
+    },
+  };
+}
+
+/**
+ * The seat on the clock.
+ *
+ * Draws go round the table rather than seat by seat, because the Parts deck is
+ * shared: whoever still owes the most draws goes next, ties broken by seat
+ * order. Null once every seat has spent its draws.
+ */
+export function nextDrafter(state: GameState): PlayerId | null {
+  const setup = state.setup;
+  if (!setup) return null;
+
+  let onTheClock: PlayerId | null = null;
+  let mostLeft = 0;
+  for (const player of state.party.players) {
+    const left = setup.drawsLeft[player.id] ?? 0;
+    if (left > mostLeft) {
+      onTheClock = player.id;
+      mostLeft = left;
+    }
+  }
+  return onTheClock;
+}
+
+/** Draws still owed by a seat. */
+export const drawsLeftFor = (state: GameState, playerId: PlayerId): number =>
+  state.setup?.drawsLeft[playerId] ?? 0;
+
+/** Pull the next card off the Parts deck, one at a time, for one seat. */
+export function drawStartingPart(
+  content: Content,
+  state: GameState,
+  config: GameConfig,
+  rng: Rng,
+  playerId?: PlayerId,
+): GameState {
+  const setup = state.setup;
+  if (state.phase !== 'setup' || !setup) return state;
+  const who = playerId ?? nextDrafter(state);
+  if (!who || (setup.drawsLeft[who] ?? 0) <= 0) return state;
+
+  const pull = deck.draw(state.decks.parts, 1, rng);
+  const cardId = pull.drawn[0];
+  const spent = { ...setup.drawsLeft, [who]: (setup.drawsLeft[who] ?? 0) - 1 };
+  let next: GameState = { ...state, decks: { ...state.decks, parts: pull.deck } };
+
+  if (!cardId) {
+    // Deck and discard both dry: zero the seat out so the draft can still end.
+    return log(
+      { ...next, setup: { ...setup, drawsLeft: { ...spent, [who]: 0 } } },
+      'The Parts deck is dry — nothing left to draft.',
+      'system',
+    );
+  }
+
+  const part = partOf(content, cardId);
+  next = withPlayer(next, who, (p) => ({ ...p, carriedParts: [...p.carriedParts, cardId] }));
+  next = { ...next, setup: { ...setup, drawsLeft: spent, lastDrawn: cardId, lastDrawnBy: who } };
+  next = log(next, `${seatLabel(next, who)} draws ${part?.name ?? cardId}.`, 'loot');
+
+  // A cockpit is what sets slot capacity, so the first one a seat draws takes
+  // the hull over immediately — assemble into the grid you're going to fly.
+  if (part?.partType === 'cockpit' && !setup.anchored.includes(who)) {
+    next = installCockpit(content, next, config, who, cardId);
+  }
+  return next;
+}
+
+/** Re-anchor a seat's ship on a drafted cockpit. */
+export function installCockpit(
+  content: Content,
+  state: GameState,
+  config: GameConfig,
+  playerId: PlayerId,
+  cardId: CardId,
+): GameState {
+  const setup = state.setup;
+  const player = state.party.players.find((p) => p.id === playerId);
+  const part = partOf(content, cardId);
+  if (!setup || !player || part?.partType !== 'cockpit') return state;
+
+  const held = player.carriedParts.indexOf(cardId);
+  if (held < 0) return state;
+
+  const { ship, displaced } = swapCockpit(content, player.ship, cardId, config);
+  const hold = player.carriedParts.slice();
+  hold.splice(held, 1);
+  hold.push(...displaced);
+  // A cockpit the seat drafted goes back in the hold when it's replaced. The
+  // hull it started the run with was never a card, so it just goes away.
+  if (setup.anchored.includes(playerId)) hold.push(player.ship.cockpitId);
+
+  let next = withPlayer(state, playerId, (p) => ({ ...p, ship, carriedParts: hold }));
+  next = {
+    ...next,
+    setup: {
+      ...setup,
+      anchored: setup.anchored.includes(playerId)
+        ? setup.anchored
+        : [...setup.anchored, playerId],
+    },
+  };
+  return log(
+    next,
+    `${seatLabel(next, playerId)} anchors on ${part.name} — ${ship.slots.length} slots.` +
+      (displaced.length > 0 ? ` ${displaced.length} module(s) back into the hold.` : ''),
+    'system',
+  );
+}
+
+/** Fit a drafted part into the grid. A negative slot takes the first free one. */
+export function assemblePart(
+  content: Content,
+  state: GameState,
+  config: GameConfig,
+  playerId: PlayerId,
+  cardId: CardId,
+  slot: SlotIndex,
+): GameState {
+  const player = state.party.players.find((p) => p.id === playerId);
+  if (state.phase !== 'setup' || !player) return state;
+
+  const held = player.carriedParts.indexOf(cardId);
+  const part = partOf(content, cardId);
+  if (held < 0 || !part) return state;
+  if (part.partType === 'cockpit') {
+    return installCockpit(content, state, config, playerId, cardId);
+  }
+
+  const target = slot >= 0 ? slot : firstAttachableSlot(player.ship);
+  if (target < 0 || target >= player.ship.slots.length) return state;
+  const occupant = player.ship.slots[target]?.partId ?? null;
+  if (occupant === player.ship.cockpitId) return state; // the anchor stays put
+  // Empty positions have to touch the hull; occupied ones are a straight swap.
+  if (!occupant && !canAttachAt(player.ship, target)) return state;
+
+  const hold = player.carriedParts.slice();
+  hold.splice(held, 1);
+  if (occupant) hold.push(occupant);
+
+  const next = withPlayer(state, playerId, (p) => ({
+    ...p,
+    ship: equipPart(p.ship, target, cardId),
+    carriedParts: hold,
+  }));
+  return log(
+    next,
+    `${seatLabel(next, playerId)} fits ${part.name}` +
+      (occupant
+        ? `, pulling ${partOf(content, occupant)?.name ?? occupant} back into the hold.`
+        : '.'),
+    'loot',
+  );
+}
+
+/**
+ * Move a module to another position on its own grid, or swap two.
+ *
+ * Free rearrangement is the point: adjacency pays (GEN→RDS→WPN chains, and
+ * every reroute), so a seat should be able to lay its grid out deliberately
+ * rather than take whatever order the parts arrived in.
+ */
+export function moveModule(
+  content: Content,
+  state: GameState,
+  playerId: PlayerId,
+  from: SlotIndex,
+  to: SlotIndex,
+): GameState {
+  const player = state.party.players.find((p) => p.id === playerId);
+  if (!player || !canEditShip(state)) return state;
+
+  const ship = player.ship;
+  const source = ship.slots[from];
+  const target = ship.slots[to];
+  if (!source?.partId || !target || from === to) return state;
+  if (source.partId === ship.cockpitId || target.partId === ship.cockpitId) return state;
+  // Landing on an empty position still has to touch the hull — and the module
+  // being moved doesn't get to anchor itself.
+  if (!target.partId && !canAttachAt(ship, to, from)) return state;
+
+  const moved = partOf(content, source.partId)?.name ?? source.partId;
+  const displaced = partOf(content, target.partId)?.name;
+  const next = withPlayer(state, playerId, (p) => ({ ...p, ship: swapSlots(p.ship, from, to) }));
+  return log(
+    next,
+    `${seatLabel(next, playerId)} moves ${moved}` +
+      (displaced ? `, swapping it with ${displaced}.` : ' across the grid.'),
+    'loot',
+  );
+}
+
+/** Phases where a seat may lay out its own grid. */
+const canEditShip = (state: GameState): boolean =>
+  state.phase === 'setup' ||
+  state.phase === 'rearrange' ||
+  state.phase === 'map' ||
+  state.phase === 'victory';
+
+/** Take a module back off the grid while assembling. */
+export function returnPart(
+  content: Content,
+  state: GameState,
+  playerId: PlayerId,
+  slot: SlotIndex,
+): GameState {
+  const player = state.party.players.find((p) => p.id === playerId);
+  if (state.phase !== 'setup' || !player) return state;
+
+  const { ship, partId } = detachPart(player.ship, slot);
+  if (!partId) return state;
+
+  const next = withPlayer(state, playerId, (p) => ({
+    ...p,
+    ship,
+    carriedParts: [...p.carriedParts, partId],
+  }));
+  return log(
+    next,
+    `${seatLabel(next, playerId)} pulls ${partOf(content, partId)?.name ?? partId} back into the hold.`,
+    'loot',
+  );
+}
+
+/**
+ * Close the draft and put the party on the board.
+ *
+ * Pools go out charged, the same as a ship that rolls out of `newRun`.
+ * Whatever didn't get fitted goes into the Scrap Deck up to its cap — that's
+ * the pool a rearrangement point spends, so a spare stays reachable — and the
+ * overflow is shuffled back into the Parts deck rather than hoarded.
+ */
+export function startMission(
+  content: Content,
+  state: GameState,
+  config: GameConfig,
+  rng: Rng,
+): GameState {
+  if (state.phase !== 'setup') return state;
+
+  const returned: CardId[] = [];
+  const players = state.party.players.map((player) => {
+    let ship = player.ship;
+    for (const { index, partId } of player.ship.slots) {
+      if (!partId || partId === ship.cockpitId) continue;
+      ship = chargeSlot(content, ship, index, partOf(content, partId)?.energyCapacity ?? 0).ship;
+    }
+    // Read the cap off the assembled ship: a fitted Cargo Bay raises it.
+    const room = Math.max(0, loot.scrapCapacity(content, { ...player, ship }, config) - player.scrapDeck.length);
+    returned.push(...player.carriedParts.slice(room));
+    return {
+      ...player,
+      ship,
+      scrapDeck: [...player.scrapDeck, ...player.carriedParts.slice(0, room)],
+      carriedParts: [],
+    };
+  });
+
+  let next: GameState = {
+    ...state,
+    phase: 'map',
+    setup: null,
+    party: { ...state.party, players },
+    decks: { ...state.decks, parts: deck.returnToDeck(state.decks.parts, returned, rng) },
+    awaitingMove: players[0] ? [players[0].id] : [],
+  };
+  next = log(
+    next,
+    `Ships assembled — ${players
+      .map((p) => `${p.label} ${moduleCount(p)} module(s)`)
+      .join(', ')}. Mission starts.`,
+    'system',
+  );
+  const hoarded = players.reduce((sum, p) => sum + p.scrapDeck.length, 0);
+  if (hoarded > 0 || returned.length > 0) {
+    next = log(
+      next,
+      `${hoarded} spare part(s) carried in the Scrap Deck` +
+        (returned.length > 0
+          ? `; ${returned.length} over the cap shuffled back into the Parts deck.`
+          : '.'),
+      'system',
+    );
+  }
+  return next;
+}
+
+const moduleCount = (player: PlayerState): number =>
+  player.ship.slots.filter((s) => s.partId && s.partId !== player.ship.cockpitId).length;
 
 // ---------------------------------------------------------------- movement
 

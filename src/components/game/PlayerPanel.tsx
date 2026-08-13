@@ -1,4 +1,4 @@
-import type { PlayerState, SlotIndex } from '@engine/types';
+import type { EnergyTransfer, PlayerState, SlotIndex } from '@engine/types';
 import { playerThreshold } from '@engine/types';
 import { DownsTracker } from '@/components/ds';
 import { ModuleTile } from './ModuleTile';
@@ -16,6 +16,8 @@ interface PlayerPanelProps {
   compact?: boolean;
   onSlotClick?: (slot: SlotIndex) => void;
   selectedSlot?: SlotIndex | null;
+  /** Legs queued for this down's reroute pass, marked on the grid. */
+  rerouteLinks?: EnergyTransfer[];
 }
 
 /**
@@ -31,8 +33,10 @@ export function PlayerPanel({
   compact,
   onSlotClick,
   selectedSlot,
+  rerouteLinks = [],
 }: PlayerPanelProps) {
   const config = useConfig();
+  const linked = new Set(rerouteLinks.flatMap((t) => [t.from, t.to]));
   const pct = player.ship.hpMax > 0 ? Math.round((player.ship.hp / player.ship.hpMax) * 100) : 0;
   const used = downs?.used ?? player.downsUsed;
   const total = downs?.total ?? config.downCount;
@@ -126,6 +130,7 @@ export function PlayerPanel({
               variant="compact"
               armed={armedSlots.includes(slot.index)}
               selected={selectedSlot === slot.index}
+              hint={linked.has(slot.index) ? 'ok' : null}
               {...(onSlotClick ? { onClick: () => onSlotClick(slot.index) } : {})}
             />
           ))}

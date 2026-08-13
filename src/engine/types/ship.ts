@@ -10,7 +10,7 @@ export interface ShipSlot {
   partId: PartId | null;
   /** Current charge in this module's own energy pool. */
   energy: number;
-  /** Set once per fresh set of downs — offensive modules fire once per set. */
+  /** Fired this set — only limits modules that are capped to one shot per set. */
   usedThisDownSet: boolean;
   /** Knocked out; occupies the slot but contributes nothing. */
   disabled: boolean;

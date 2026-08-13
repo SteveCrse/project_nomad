@@ -201,7 +201,7 @@ function MoveBar({ state }: { state: GameState }) {
     rearrange: 'Rearrangement point.',
     victory: 'Boss down. Mission complete.',
     defeat: 'Party wiped.',
-    setup: 'Setting up.',
+    setup: 'Drafting parts — build the ships in the Ship Builder before the mission starts.',
   };
 
   return (

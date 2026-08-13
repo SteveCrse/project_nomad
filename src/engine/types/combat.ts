@@ -23,8 +23,21 @@ export type DownAction =
     }
   | { type: 'charge-shield'; slot: SlotIndex; amount: number }
   | { type: 'play-card'; cardId: CardId; target?: SideRef; manualDamage?: number }
-  | { type: 'reroute-energy'; from: SlotIndex; to: SlotIndex; amount: number }
+  /**
+   * One down buys a whole reroute pass: every module on the grid may hand its
+   * charge to a neighbour, but each may only be drained once. Transfers
+   * resolve in order, so a generator can feed a redistributor that then feeds
+   * a gun within the same down.
+   */
+  | { type: 'reroute-energy'; transfers: EnergyTransfer[] }
   | { type: 'pass' };
+
+/** One leg of a reroute pass. `amount` is a ceiling — the grid clamps it. */
+export interface EnergyTransfer {
+  from: SlotIndex;
+  to: SlotIndex;
+  amount: number;
+}
 
 /** Result of resolving one down. */
 export interface DownResult {

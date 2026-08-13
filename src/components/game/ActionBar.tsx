@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { DownAction, GameState, SideRef } from '@engine/types';
+import { ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ROLE_COLOR } from '@/lib/palette';
 import { moduleOptions, shieldOptions } from '@/lib/combatView';
 import { useConfig } from '@/store/configStore';
 import { useGameStore } from '@/store/gameStore';
 import { useUiStore } from '@/store/uiStore';
-import { getPart } from '@data';
+import { CONTENT, getPart } from '@data';
 
 /**
  * The seat's control panel for one down.
@@ -30,6 +31,13 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
   const setTarget = useUiStore((s) => s.setTarget);
   const setDiceCount = useUiStore((s) => s.setDiceCount);
   const setManualDamage = useUiStore((s) => s.setManualDamage);
+  const clearReroute = useUiStore((s) => s.clearReroute);
+
+  // A half-built reroute pass belongs to the down it was started on.
+  const holder = `${side.kind}:${side.id}`;
+  useEffect(() => {
+    clearReroute();
+  }, [holder, clearReroute]);
 
   const enemies = state.combat?.enemies.filter((e) => e.hp > 0) ?? [];
   const target: SideRef | undefined = useMemo(() => {
@@ -171,7 +179,14 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
   );
 }
 
-/** Spending a down to move energy across the grid. */
+/**
+ * The reroute pass.
+ *
+ * One down buys the whole pass: charge may leave every module once, and only
+ * ever to a neighbour. Legs are picked on the seat's own grid below (source,
+ * then the neighbour it feeds) and resolve in the order they were queued, so
+ * a generator can fill a redistributor that then fills a gun in one down.
+ */
 function RerouteRow({
   state,
   side,
@@ -181,39 +196,55 @@ function RerouteRow({
   side: SideRef;
   onFire: (action: DownAction) => void;
 }) {
+  const transfers = useUiStore((s) => s.rerouteTransfers);
+  const rerouteFrom = useUiStore((s) => s.rerouteFrom);
+  const dropTransfer = useUiStore((s) => s.dropTransfer);
+  const clearReroute = useUiStore((s) => s.clearReroute);
+
   const player = state.party.players.find((p) => p.id === side.id);
   if (!player) return null;
 
-  const charged = player.ship.slots.filter((s) => s.energy > 0 && s.partId);
-  const room = player.ship.slots.filter((s) => {
-    const part = getPart(s.partId);
-    return part && (part.energyCapacity ?? 0) > s.energy;
-  });
-  if (charged.length === 0 || room.length === 0) return null;
-
-  // The fullest pool is the interesting source; anything else is a rounding error.
-  const source = charged.reduce((a, b) => (b.energy > a.energy ? b : a));
-  const targets = room.filter((s) => s.index !== source.index).slice(0, 4);
+  const free = shipEngine.hasFreeReroute(CONTENT, player.ship);
+  const nameAt = (slot: number) => getPart(player.ship.slots[slot]?.partId)?.name ?? '—';
+  const pending = rerouteFrom !== null;
 
   return (
     <Row label="REROUTE">
-      {targets.map((t) => (
+      {transfers.map((t, i) => (
         <button
-          key={t.index}
-          onClick={() =>
-            onFire({
-              type: 'reroute-energy',
-              from: source.index,
-              to: t.index,
-              amount: source.energy,
-            })
-          }
-          title={`Spend a down to move ${source.energy}⚡ into ${getPart(t.partId)?.name}`}
-          className="cursor-pointer border border-putty-600 bg-putty-100 px-2.5 py-1.5 font-mono text-[11px]"
+          key={`${t.from}-${t.to}-${i}`}
+          onClick={() => dropTransfer(i)}
+          title="Drop this link"
+          className="cursor-pointer border border-n-900 bg-putty-100 px-2.5 py-1.5 font-mono text-[11px] shadow-raised"
         >
-          {getPart(source.partId)?.name.toUpperCase()} → {getPart(t.partId)?.name.toUpperCase()}
+          {nameAt(t.from).toUpperCase()} → {nameAt(t.to).toUpperCase()} ×
         </button>
       ))}
+
+      <span className="text-[13px] text-putty-700">
+        {pending
+          ? `${nameAt(rerouteFrom).toUpperCase()} picked — click a neighbour to feed it.`
+          : transfers.length === 0
+            ? 'Click a charged module on your grid, then the neighbour it feeds.'
+            : 'Add more links, or commit the pass.'}
+      </span>
+
+      {transfers.length > 0 && (
+        <>
+          <Button
+            size="sm"
+            onClick={() => {
+              onFire({ type: 'reroute-energy', transfers });
+              clearReroute();
+            }}
+          >
+            Reroute · {free ? 'free' : '1 down'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearReroute}>
+            Clear
+          </Button>
+        </>
+      )}
     </Row>
   );
 }

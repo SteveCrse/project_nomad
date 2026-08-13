@@ -16,8 +16,10 @@ import type { PlayerId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
 import type { Rng } from '../rng';
+import type { PartCard } from '../types/card';
 import {
   apCostOf,
+  areAdjacent,
   capacityOf,
   chargeSlot,
   effectOf,
@@ -32,6 +34,18 @@ import {
   rollPayload,
   runUpkeep,
 } from '../ship';
+
+/**
+ * Is this module limited to one activation per fresh set of downs?
+ *
+ * The default is no: a gun fires as often as its own pool can pay for, one
+ * down each, so a full magazine is what a set of downs is spent on. A card
+ * printed `oncePerSet` opts back out, and `offensiveOncePerSet` restores the
+ * blanket rule for a playtest that wants to compare the two.
+ */
+function cappedPerSet(part: PartCard, config: GameConfig): boolean {
+  return !!part.oncePerSet || (config.offensiveOncePerSet && isOffensive(part));
+}
 
 /**
  * Combat resolution — the symmetric downs system.
@@ -300,7 +314,9 @@ export function actionError(
       const part = partOf(content, slot.partId);
       if (!part) return 'unknown part';
       if (part.partType !== 'active-module') return `${part.name} is passive`;
-      if (isOffensive(part) && slot.usedThisDownSet) return 'already fired this set of downs';
+      if (cappedPerSet(part, config) && slot.usedThisDownSet) {
+        return 'already fired this set of downs';
+      }
       const ap = apCostOf(part);
       if (player && ap > player.ap) return `needs ${ap} AP`;
       const cost = energyCostOf(part, config, action.diceCount);
@@ -320,17 +336,29 @@ export function actionError(
       if (!isAbsorber(part) && part.role !== 'SHD') return `${part.name} is not a shield`;
       if (!slot || capacityOf(content, slot) - slot.energy <= 0) return 'shield is full';
       const cost = Math.max(0, config.energyCostChargeShield) * Math.max(1, action.amount);
-      if (availableLooseEnergy(content, battle, side) < cost) return `needs ${cost}⚡ spare`;
+      if (availableLooseEnergy(content, battle, side, action.slot) < cost) {
+        return `needs ${cost}⚡ from a neighbour`;
+      }
       return null;
     }
 
     case 'reroute-energy': {
-      const from = ship.slots[action.from];
-      const to = ship.slots[action.to];
-      if (!from?.partId || !to?.partId) return 'pick two modules';
-      if (action.from === action.to) return 'same module';
-      if (from.energy <= 0) return 'source is empty';
-      if (capacityOf(content, to) - to.energy <= 0) return 'destination is full';
+      if (action.transfers.length === 0) return 'nothing to reroute';
+      const drained = new Set<SlotIndex>();
+      // Walk a copy of the grid: a leg is judged against the state the legs
+      // before it left behind, which is what lets a chain resolve in one down.
+      let grid = ship;
+      for (const leg of action.transfers) {
+        const from = grid.slots[leg.from];
+        const to = grid.slots[leg.to];
+        if (!from?.partId || !to?.partId) return 'pick two modules';
+        if (drained.has(leg.from)) return 'a module can only be drained once per down';
+        if (!areAdjacent(grid, leg.from, leg.to)) return '⚡ only moves between neighbours';
+        if (from.energy <= 0) return 'source is empty';
+        if (capacityOf(content, to) - to.energy <= 0) return 'destination is full';
+        drained.add(leg.from);
+        grid = rerouteEnergy(content, grid, leg.from, leg.to, leg.amount, config);
+      }
       return null;
     }
 
@@ -359,13 +387,25 @@ function spareEnergyFor(content: Content, battle: Battle, side: SideRef): number
   return playerOf(battle, side.id)?.energy ?? 0;
 }
 
-/** Loose energy a side can spend: the player's pool, plus generator charge. */
-function availableLooseEnergy(content: Content, battle: Battle, side: SideRef): number {
+/**
+ * Loose energy a side can spend: the player's pool, plus generator charge.
+ *
+ * `nearSlot` narrows the generators to the ones next to it — charge still
+ * only moves between neighbours, so a shield is fed by the generator beside
+ * it and not by one across the hull.
+ */
+function availableLooseEnergy(
+  content: Content,
+  battle: Battle,
+  side: SideRef,
+  nearSlot?: SlotIndex,
+): number {
   const player = side.kind === 'player' ? playerOf(battle, side.id) : undefined;
   const ship = shipOf(battle, side);
   const fromGenerators = ship
     ? liveModules(content, ship)
         .filter((m) => m.part.role === 'GEN')
+        .filter((m) => nearSlot === undefined || areAdjacent(ship, m.slot.index, nearSlot))
         .reduce((sum, m) => sum + m.slot.energy, 0)
     : 0;
   return (player?.energy ?? 0) + fromGenerators;
@@ -377,6 +417,7 @@ function spendLooseEnergy(
   battle: Battle,
   side: SideRef,
   amount: number,
+  nearSlot?: SlotIndex,
 ): Battle {
   let owed = amount;
   let next = battle;
@@ -398,6 +439,7 @@ function spendLooseEnergy(
   for (const { slot, part } of liveModules(content, ship)) {
     if (owed <= 0) break;
     if (part.role !== 'GEN') continue;
+    if (nearSlot !== undefined && !areAdjacent(ship, slot.index, nearSlot)) continue;
     const current = slots[slot.index]!;
     const taken = Math.min(current.energy, owed);
     owed -= taken;
@@ -473,7 +515,7 @@ export function resolveDown(
       slots[action.slot] = {
         ...slot,
         energy: slot.energy - fromPool,
-        usedThisDownSet: slot.usedThisDownSet || isOffensive(part),
+        usedThisDownSet: slot.usedThisDownSet || cappedPerSet(part, config),
       };
       next = withShip(next, side, { ...ship, slots });
       if (side.kind === 'player') {
@@ -587,7 +629,7 @@ export function resolveDown(
     case 'charge-shield': {
       const amount = Math.max(1, action.amount);
       const cost = Math.max(0, config.energyCostChargeShield) * amount;
-      next = spendLooseEnergy(content, next, side, cost);
+      next = spendLooseEnergy(content, next, side, cost, action.slot);
       const shipNow = shipOf(next, side)!;
       const charged = chargeSlot(content, shipNow, action.slot, amount);
       next = withShip(next, side, charged.ship);
@@ -600,14 +642,24 @@ export function resolveDown(
 
     case 'reroute-energy': {
       const shipNow = shipOf(next, side)!;
-      const before = shipNow.slots[action.to]!.energy;
-      const rerouted = rerouteEnergy(content, shipNow, action.from, action.to, action.amount, config);
-      next = withShip(next, side, rerouted);
-      const moved = rerouted.slots[action.to]!.energy - before;
+      let grid = shipNow;
+      let moved = 0;
+      for (const leg of action.transfers) {
+        const before = grid.slots[leg.to]!.energy;
+        grid = rerouteEnergy(content, grid, leg.from, leg.to, leg.amount, config);
+        const landed = grid.slots[leg.to]!.energy - before;
+        moved += landed;
+        lines.push(
+          `  ${partOf(content, shipNow.slots[leg.from]?.partId)?.name ?? 'module'} → ` +
+            `${partOf(content, shipNow.slots[leg.to]?.partId)?.name ?? 'module'}: ${landed}⚡.`,
+        );
+      }
+      next = withShip(next, side, grid);
       // What a Redistributor is for: moving charge without burning a down.
       free = hasFreeReroute(content, shipNow);
-      lines.push(
-        `${name} reroutes ${moved}⚡ across the grid${free ? ' — free, the redistributor handles it.' : '.'}`,
+      lines.unshift(
+        `${name} reroutes ${moved}⚡ across ${action.transfers.length} link(s)` +
+          `${free ? ' — free, the redistributor handles it.' : '.'}`,
       );
       break;
     }
@@ -803,7 +855,7 @@ export function beginTurn(content: Content, battle: Battle, config: GameConfig):
   let next = battle;
   const ship = shipOf(next, side);
   if (ship) {
-    const upkeep = runUpkeep(content, ship, config.energyPerTurn);
+    const upkeep = runUpkeep(content, ship, config.energyPerTurn, config.weaponsDrawFromReactor);
     next = withShip(next, side, { ...upkeep.ship, slots: resetDownSetFlags(upkeep.ship.slots) });
 
     let combat = next.combat;

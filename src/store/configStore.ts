@@ -20,7 +20,15 @@ interface ConfigStore {
   /** Pass null to clear the override and fall back to the stat block. */
   setEnemyThreshold: (enemyId: EnemyId, value: number | null) => void;
   reset: () => void;
-  toJSON: () => string;
+  /**
+   * The config as pasteable JSON.
+   *
+   * Deliberately not named `toJSON`: that name is a serialization hook, and
+   * `persist` calls `JSON.stringify` on the whole store — a `toJSON` here would
+   * hijack it and write this string in place of the real state, so nothing
+   * would ever rehydrate.
+   */
+  exportJson: () => string;
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -46,10 +54,12 @@ export const useConfigStore = create<ConfigStore>()(
 
       reset: () => set({ config: { ...DEFAULT_CONFIG, enemyConvThresholds: {} } }),
 
-      toJSON: () => JSON.stringify(get().config, null, 2),
+      exportJson: () => JSON.stringify(get().config, null, 2),
     }),
     {
       name: 'nomad.config.v1',
+      // Only the config is worth keeping; the setters are rebuilt on load.
+      partialize: (s) => ({ config: s.config }),
       // New tunables added after a session was saved should take their default
       // rather than come back undefined.
       merge: (persisted, current) => {

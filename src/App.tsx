@@ -26,6 +26,8 @@ export default function App() {
   useEffect(() => {
     if (!autoFollow || !phase) return;
     if (phase === 'combat') setTab('table');
+    // The draft and the assembly both happen on the builder's grid.
+    else if (phase === 'setup') setTab('builder');
     else if (phase === 'map' || phase === 'victory' || phase === 'defeat') setTab('mission');
   }, [phase, autoFollow, setTab]);
 

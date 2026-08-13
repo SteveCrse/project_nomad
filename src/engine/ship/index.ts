@@ -60,12 +60,102 @@ export function firstFreeSlot(ship: Ship): SlotIndex {
   return ship.slots.findIndex((s) => s.partId === null);
 }
 
+/**
+ * Orthogonal neighbours of a slot.
+ *
+ * The grid is `gridCols` wide, so this is plain index arithmetic — and it is
+ * the one piece of geometry every adjacency rule reads: where a part may be
+ * attached, where ⚡ may be rerouted, and which chains pay a bonus.
+ */
+export function neighbourSlots(ship: Ship, index: SlotIndex): SlotIndex[] {
+  const cols = Math.max(1, ship.gridCols);
+  const out: SlotIndex[] = [];
+  const col = index % cols;
+  if (col > 0) out.push(index - 1);
+  if (col < cols - 1) out.push(index + 1);
+  out.push(index - cols, index + cols);
+  return out.filter((n) => n >= 0 && n < ship.slots.length);
+}
+
+export const areAdjacent = (ship: Ship, a: SlotIndex, b: SlotIndex): boolean =>
+  a !== b && neighbourSlots(ship, a).includes(b);
+
+/**
+ * May a part be attached here?
+ *
+ * A ship grows outward from its cockpit: a new part has to touch something
+ * already attached. That's what turns the adjacency payoffs (GEN→RDS→WPN, and
+ * rerouting in general) into a placement decision rather than a lucky
+ * accident. `ignore` drops one slot from the count — a module being dragged
+ * out of a position can't be what holds itself on.
+ */
+export function canAttachAt(ship: Ship, index: SlotIndex, ignore?: SlotIndex): boolean {
+  const target = ship.slots[index];
+  if (!target || target.partId === ship.cockpitId) return false;
+  return neighbourSlots(ship, index).some((n) => n !== ignore && !!ship.slots[n]?.partId);
+}
+
+/** First empty slot a part may legally attach to, or -1. */
+export function firstAttachableSlot(ship: Ship): SlotIndex {
+  return ship.slots.findIndex((s) => s.partId === null && canAttachAt(ship, s.index));
+}
+
+/** Swap two positions, or move a module into an empty one. */
+export function swapSlots(ship: Ship, a: SlotIndex, b: SlotIndex): Ship {
+  const from = ship.slots[a];
+  const to = ship.slots[b];
+  if (!from || !to || a === b) return ship;
+  if (from.partId === ship.cockpitId || to.partId === ship.cockpitId) return ship;
+
+  const slots = ship.slots.slice();
+  slots[a] = { ...to, index: a };
+  slots[b] = { ...from, index: b };
+  return { ...ship, slots };
+}
+
 export function equipPart(ship: Ship, slot: SlotIndex, partId: PartId): Ship {
   const target = ship.slots[slot];
   if (!target || target.partId === ship.cockpitId) return ship;
   const slots = ship.slots.slice();
   slots[slot] = { ...target, partId, energy: 0, disabled: false, usedThisDownSet: false };
   return { ...ship, slots };
+}
+
+/**
+ * Re-anchor a ship on a different cockpit.
+ *
+ * Capacity is the cockpit's, so the grid is rebuilt rather than patched:
+ * modules are re-slotted in their old order and anything that no longer fits
+ * comes back to the caller to put somewhere.
+ */
+export function swapCockpit(
+  content: Content,
+  ship: Ship,
+  cockpitId: PartId,
+  config: GameConfig,
+): { ship: Ship; displaced: PartId[] } {
+  if (cockpitId === ship.cockpitId) return { ship, displaced: [] };
+
+  const modules = ship.slots
+    .map((s) => s.partId)
+    .filter((id): id is PartId => !!id && id !== ship.cockpitId);
+
+  let next: Ship = {
+    ...createShip(content, cockpitId, ship.name, config, ship.hpMax),
+    id: ship.id,
+    hp: ship.hp,
+  };
+
+  const displaced: PartId[] = [];
+  for (const id of modules) {
+    const free = firstAttachableSlot(next);
+    if (free < 0) {
+      displaced.push(id);
+      continue;
+    }
+    next = equipPart(next, free, id);
+  }
+  return { ship: next, displaced };
 }
 
 export function detachPart(ship: Ship, slot: SlotIndex): { ship: Ship; partId: PartId | null } {
@@ -82,7 +172,12 @@ export function cockpitSlotIndex(ship: Ship): SlotIndex {
   return ship.slots.findIndex((s) => s.partId === ship.cockpitId);
 }
 
-/** Move energy between module pools; a Redistributor may make this free. */
+/**
+ * Move energy between two module pools.
+ *
+ * Charge only travels between neighbours: energy crosses a grid by being
+ * handed along it, which is what makes where a generator sits matter.
+ */
 export function rerouteEnergy(
   content: Content,
   ship: Ship,
@@ -93,7 +188,8 @@ export function rerouteEnergy(
 ): Ship {
   const src = ship.slots[from];
   const dst = ship.slots[to];
-  if (!src || !dst || from === to || amount <= 0) return ship;
+  if (!src || !dst || amount <= 0) return ship;
+  if (!areAdjacent(ship, from, to)) return ship;
 
   const tax = Math.max(0, config.energyCostReroute);
   const moved = Math.min(
@@ -131,20 +227,12 @@ export function chargeSlot(
  * Orthogonal neighbours only, walked left-to-right / top-to-bottom.
  */
 export function findAdjacencyBonuses(content: Content, ship: Ship): AdjacencyBonus[] {
-  const cols = ship.gridCols;
   const roleAt = (i: SlotIndex): string | null => {
     const slot = ship.slots[i];
     if (!slot || slot.disabled) return null;
     return partOf(content, slot.partId)?.role ?? null;
   };
-  const neighbours = (i: SlotIndex): SlotIndex[] => {
-    const out: SlotIndex[] = [];
-    const col = i % cols;
-    if (col > 0) out.push(i - 1);
-    if (col < cols - 1) out.push(i + 1);
-    out.push(i - cols, i + cols);
-    return out.filter((n) => n >= 0 && n < ship.slots.length);
-  };
+  const neighbours = (i: SlotIndex): SlotIndex[] => neighbourSlots(ship, i);
 
   const bonuses: AdjacencyBonus[] = [];
   for (let gen = 0; gen < ship.slots.length; gen++) {
@@ -181,11 +269,16 @@ export function resetDownSetFlags(slots: ShipSlot[]): ShipSlot[] {
  * downs a side can actually spend on its modules. Without it a ship's whole
  * economy is its generator modules, and printed weapon costs outrun them
  * badly enough that fights stall — see the note in the README.
+ *
+ * Weapons sit outside that distribution unless `weaponsDrawFromReactor` says
+ * otherwise: a gun is loaded by rerouting charge into it, so where the
+ * generators sit on the grid is the decision that arms the ship.
  */
 export function runUpkeep(
   content: Content,
   ship: Ship,
   baseline = 0,
+  weaponsDrawFromReactor = false,
 ): { ship: Ship; generated: number; overflow: number; drained: number } {
   let next = ship;
   let generated = 0;
@@ -196,6 +289,7 @@ export function runUpkeep(
   let pool = Math.max(0, baseline);
   if (pool > 0) {
     const priority = liveModules(content, next)
+      .filter((m) => weaponsDrawFromReactor || m.part.role !== 'WPN')
       .map((m) => ({
         ...m,
         rank:
@@ -320,9 +414,11 @@ export function spawnEnemyShip(
   let ship = createShip(content, anchor, statBlock.name, config, hpMax);
 
   for (const id of modules) {
-    const free = firstFreeSlot(ship);
+    // Enemy hulls grow out from the cockpit like a player's does, so their
+    // grids can chain too — an enemy is just a ship.
+    const free = firstAttachableSlot(ship);
     if (free < 0) {
-      spares.push(id); // over capacity — back in the deck
+      spares.push(id); // no room left to attach — back in the deck
       continue;
     }
     ship = equipPart(ship, free, id);

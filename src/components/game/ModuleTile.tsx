@@ -28,6 +28,14 @@ interface ModuleTileProps {
   targeted?: boolean;
   title?: string;
   onClick?: () => void;
+  /** Grid layout: whether this tile can be picked up, and where it may land. */
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  /** Feedback while a drag is in flight: may the held part land here? */
+  hint?: 'ok' | 'blocked' | null;
 }
 
 const HEIGHT: Record<Variant, string> = {
@@ -64,6 +72,12 @@ export function ModuleTile({
   targeted,
   title,
   onClick,
+  draggable,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  hint,
 }: ModuleTileProps) {
   const config = useConfig();
   const part = getPart(slot.partId);
@@ -72,15 +86,28 @@ export function ModuleTile({
     ? 'outline outline-2 outline-offset-1 outline-n-900'
     : targeted
       ? 'outline outline-2 outline-offset-1 outline-[var(--toggle-red-500)]'
-      : armed
-        ? 'outline outline-2 outline-offset-1 outline-[var(--crt-green-500)]'
-        : '';
+      : hint === 'ok'
+        ? 'outline outline-2 outline-offset-1 outline-[var(--accent-primary)]'
+        : armed
+          ? 'outline outline-2 outline-offset-1 outline-[var(--crt-green-500)]'
+          : '';
   const clickable = onClick ? 'cursor-pointer' : '';
+  const drag = {
+    ...(draggable ? { draggable: true } : {}),
+    ...(onDragStart ? { onDragStart } : {}),
+    ...(onDragEnd ? { onDragEnd } : {}),
+    ...(onDragOver ? { onDragOver } : {}),
+    ...(onDrop ? { onDrop } : {}),
+  };
+  // A part that can't land here is dimmed rather than hidden, so the rule
+  // ("attach it next to something") is visible while dragging.
+  const fade = hint === 'blocked' ? 'opacity-40' : '';
 
   if (slot.disabled) {
     return (
       <div
-        className={`${shell} ${ring} ${clickable} border-2 border-dashed border-putty-600 bg-putty-300`}
+        {...drag}
+        className={`${shell} ${ring} ${fade} ${clickable} border-2 border-dashed border-putty-600 bg-putty-300`}
         onClick={onClick}
         title={title ?? 'Knocked out'}
       >
@@ -95,7 +122,10 @@ export function ModuleTile({
   if (!part) {
     return (
       <div
-        className={`${shell} ${ring} ${clickable} border-2 border-dashed border-putty-500`}
+        {...drag}
+        className={`${shell} ${ring} ${fade} ${clickable} border-2 border-dashed ${
+          hint === 'ok' ? 'border-accent-primary bg-putty-100' : 'border-putty-500'
+        }`}
         onClick={onClick}
         title={title}
       />
@@ -105,7 +135,8 @@ export function ModuleTile({
   if (part.partType === 'cockpit') {
     return (
       <div
-        className={`${shell} ${ring} ${clickable} border-2 border-n-900 bg-putty-100 shadow-raised`}
+        {...drag}
+        className={`${shell} ${ring} ${fade} ${clickable} border-2 border-n-900 bg-putty-100 shadow-raised`}
         onClick={onClick}
         title={title ?? part.name}
       >
@@ -127,7 +158,8 @@ export function ModuleTile({
 
   return (
     <div
-      className={`${shell} ${ring} ${clickable} border border-putty-500 shadow-raised ${
+      {...drag}
+      className={`${shell} ${ring} ${fade} ${clickable} border border-putty-500 shadow-raised ${
         spent ? 'bg-putty-200 opacity-70' : 'bg-putty-100'
       }`}
       style={{ borderLeft: `4px solid ${roleColor}` }}

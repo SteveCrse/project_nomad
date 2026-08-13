@@ -18,6 +18,12 @@ export interface GameConfig {
   /** Module grid shape. Capacity is normally set by the cockpit; this is the ceiling. */
   gridCols: number;
   gridRows: number;
+  /**
+   * Parts each seat drafts from the Parts deck at the start of a run, drawn
+   * one card at a time and assembled before the mission begins. 0 skips the
+   * draft and rolls the pre-set loadouts out instead.
+   */
+  startingPartsDraws: number;
 
   // ---- combat ----
   /**
@@ -43,6 +49,13 @@ export interface GameConfig {
    * True reads "damage dealt"; false reads "damage that landed".
    */
   thresholdCountsShielded: boolean;
+  /**
+   * Cap every offensive module at one shot per set of downs, the way the
+   * rules draft first read it. Off, a module fires as often as its own pool
+   * can pay for — one down each — and only cards printed `oncePerSet` are
+   * capped.
+   */
+  offensiveOncePerSet: boolean;
   /** Parts drawn past the cockpit when spawning an enemy, at 1 player. */
   enemyPartsBase: number;
   /** Multiplayer scaling: extra parts drawn per player beyond the first. */
@@ -59,9 +72,15 @@ export interface GameConfig {
    * decides how many downs a side can actually spend on modules.
    */
   energyPerTurn: number;
+  /**
+   * Does the reactor baseline top weapons up too? Off (the default), a gun is
+   * only ever loaded by rerouting charge into it from a neighbour, which is
+   * what makes generator placement a decision.
+   */
+  weaponsDrawFromReactor: boolean;
   /** Global multiplier applied to every module/item energy cost. */
   energyCostMult: number;
-  /** Flat energy costs for actions that aren't printed on a card. */
+  /** Energy the grid loses per transfer in a reroute pass. */
   energyCostReroute: number;
   energyCostChargeShield: number;
   /** Item cards held in hand. */
@@ -94,6 +113,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   hullHp: 60,
   gridCols: 5,
   gridRows: 2,
+  startingPartsDraws: 5,
 
   convThreshold: 12,
   playerConvThreshold: 12,
@@ -102,12 +122,14 @@ export const DEFAULT_CONFIG: GameConfig = {
   thresholdUpgradeStep: 2,
   thresholdUpgradePowerCost: 1,
   thresholdCountsShielded: true,
+  offensiveOncePerSet: false,
   enemyPartsBase: 2,
   partsPerExtraPlayer: 2,
   enemyHpScale: 1.25,
 
   scrapCap: 4,
   energyPerTurn: 6,
+  weaponsDrawFromReactor: false,
   energyCostMult: 1,
   energyCostReroute: 0,
   energyCostChargeShield: 1,

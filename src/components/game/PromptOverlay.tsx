@@ -15,8 +15,12 @@ import { useUiStore } from '@/store/uiStore';
  * never continue past a decision that hasn't been made.
  */
 export function PromptOverlay({ state }: { state: GameState }) {
+  const tab = useUiStore((s) => s.tab);
   const prompt = state.prompt;
   if (!prompt) return null;
+  // A rearrangement point sends you to the builder to lay the grid out — the
+  // overlay would sit on top of the thing it just asked you to go and use.
+  if (prompt.kind === 'rearrange' && tab === 'builder') return null;
 
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-n-950/45 p-6">
@@ -264,7 +268,7 @@ function RearrangePrompt({ state, reason }: { state: GameState; reason: string }
                     setTab('builder');
                   }}
                 >
-                  Open builder
+                  Lay out the grid
                 </Button>
               </div>
             </div>
