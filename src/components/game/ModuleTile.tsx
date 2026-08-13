@@ -1,7 +1,8 @@
 import type { CardId } from '@engine/types';
-import { printedText } from '@engine';
+import { cardCost, isActivatable, printedText } from '@engine';
 import { getPart } from '@data';
-import { ROLE_COLOR } from '@/lib/palette';
+import { ROLE_COLOR, rarityColor, rarityInk, rarityName, rarityShort } from '@/lib/palette';
+import { EnergyChits } from './EnergyChits';
 
 type Variant = 'compact' | 'large' | 'scrap';
 
@@ -38,31 +39,32 @@ interface ModuleTileProps {
   hint?: 'ok' | 'blocked' | null;
 }
 
-const HEIGHT: Record<Variant, string> = {
-  compact: 'h-full',
-  large: 'h-full',
-  scrap: 'h-26',
-};
-
-const NAME_SIZE: Record<Variant, string> = {
-  compact: 'text-[13px]',
-  large: 'text-[15px]',
-  scrap: 'text-[14px]',
-};
-
-const PAD: Record<Variant, string> = {
-  compact: 'px-1.5 py-[5px]',
-  large: 'p-2',
-  scrap: 'p-2',
+/**
+ * Per-variant type and chit sizing.
+ *
+ * Every variant is the same card, printed at a different size: rarity band,
+ * name, chits, stat footer. Nothing is dropped as the tile shrinks — the type
+ * gets smaller and the chits pack tighter, so a module on a 66px combat grid
+ * still says what tier it is and how much charge it is holding.
+ */
+const SIZE: Record<
+  Variant,
+  { band: string; name: string; foot: string; chit: number; chits: number; terse: boolean }
+> = {
+  compact: { band: 'text-[8px]', name: 'text-[10px]', foot: 'text-[8px]', chit: 5, chits: 12, terse: true },
+  large: { band: 'text-[9px]', name: 'text-[13px]', foot: 'text-[9px]', chit: 7, chits: 20, terse: false },
+  scrap: { band: 'text-[9px]', name: 'text-[12px]', foot: 'text-[9px]', chit: 6, chits: 16, terse: false },
 };
 
 /**
- * One position in a ship's module grid.
+ * One position in a ship's module grid, printed as the card it is.
  *
- * States, all from the imported design: empty (dashed), cockpit (the ship
- * anchor, black-bordered), adrift (blown-out slot), and an equipped module —
- * left-edged in its role colour with an energy pip strip. Combat adds two
- * more: armed (can fire this down) and spent (already fired this set).
+ * A fitted module reads the same way on the table as it does in the deck
+ * browser: a rarity band across the top (legendary catches the light), the
+ * name, the charge in its pool as a block of green chits, and a footer of the
+ * numbers that decide whether a down can be spent on it. The other states are
+ * the ones the grid needs: empty (dashed), adrift (blown-out), armed (can fire
+ * this down), spent (already fired this set).
  */
 export function ModuleTile({
   slot,
@@ -80,7 +82,7 @@ export function ModuleTile({
   hint,
 }: ModuleTileProps) {
   const part = getPart(slot.partId);
-  const shell = `box-border flex flex-col justify-between ${HEIGHT[variant]} ${PAD[variant]}`;
+  const size = SIZE[variant];
   const ring = selected
     ? 'outline outline-2 outline-offset-1 outline-n-900'
     : targeted
@@ -101,130 +103,106 @@ export function ModuleTile({
   // A part that can't land here is dimmed rather than hidden, so the rule
   // ("attach it next to something") is visible while dragging.
   const fade = hint === 'blocked' ? 'opacity-40' : '';
-
-  if (slot.disabled) {
-    return (
-      <div
-        {...drag}
-        className={`${shell} ${ring} ${fade} ${clickable} border-2 border-dashed border-putty-600 bg-putty-300`}
-        onClick={onClick}
-        title={title ?? 'Knocked out'}
-      >
-        <div className={`${NAME_SIZE[variant]} leading-none font-semibold text-putty-700`}>
-          {part ? part.name.toUpperCase() : 'ADRIFT'}
-        </div>
-        <div className="type-mono-sm text-[9px] tracking-[0.06em] text-putty-600">OFFLINE</div>
-      </div>
-    );
-  }
+  const shell = `box-border flex h-full w-full min-w-0 flex-col overflow-hidden ${ring} ${fade} ${clickable}`;
 
   if (!part) {
     return (
       <div
         {...drag}
-        className={`${shell} ${ring} ${fade} ${clickable} border-2 border-dashed ${
+        className={`${shell} border-2 border-dashed ${
           hint === 'ok' ? 'border-accent-primary bg-putty-100' : 'border-putty-500'
         }`}
         onClick={onClick}
-        title={title}
+        title={title ?? 'Open position — a part may attach here'}
       />
     );
   }
 
   const capacity = part.energyCapacity ?? 0;
   const energy = slot.energy ?? 0;
+  const legendary = part.rarity >= 5;
+  const isCockpit = part.role === 'COCKPIT';
+  const spent = !!slot.usedThisDownSet;
+  const fires = isActivatable(part);
+  const cost = fires ? cardCost(part) : 0;
 
-  // The cockpit is a weapon, a shield and a generator at once, so its tile
-  // carries all three: ⚔ it always shoots for, the pips of its own shield
-  // pool, and the ⚡ a down of its generator puts back.
-  if (part.role === 'COCKPIT') {
-    return (
-      <div
-        {...drag}
-        className={`${shell} ${ring} ${fade} ${clickable} border-2 border-n-900 bg-putty-100 shadow-raised`}
-        onClick={onClick}
-        title={title ?? `${part.name} — ${printedText(part)}`}
-      >
-        <div className="flex items-baseline justify-between gap-1">
-          <span className={`${NAME_SIZE[variant]} leading-none font-semibold`}>COCKPIT</span>
-          <span className="font-mono text-[9px] text-putty-700">{part.slots ?? 0} SLOTS</span>
-        </div>
-        {variant !== 'scrap' && <EnergyPips energy={energy} capacity={capacity} tall={variant === 'large'} />}
-        <div className="flex items-center justify-between gap-1">
-          <span className="font-mono text-[9px] tracking-[0.06em] text-n-700">
-            {part.power ?? 0}⚔ · +{part.genPerDown ?? 0}⚡
-          </span>
-          <span className="font-mono text-[10px] text-putty-700">
-            {energy}/{capacity}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  const roleColor = ROLE_COLOR[part.role];
-  const spent = slot.usedThisDownSet;
+  // Knocked out: the card is still the card, so it keeps its band and name and
+  // simply goes grey and dashed. What it holds no longer matters.
+  const dead = !!slot.disabled;
 
   return (
     <div
       {...drag}
-      className={`${shell} ${ring} ${fade} ${clickable} border border-putty-500 shadow-raised ${
-        spent ? 'bg-putty-200 opacity-70' : 'bg-putty-100'
-      }`}
-      style={{ borderLeft: `4px solid ${roleColor}` }}
+      className={`${shell} shadow-card ${
+        dead
+          ? 'border-2 border-dashed border-putty-600 bg-putty-300'
+          : isCockpit
+            ? 'border-2 border-n-900 bg-cream-100'
+            : 'border border-putty-500 bg-cream-100'
+      } ${spent && !dead ? 'opacity-75' : ''} ${legendary && !dead ? 'holo-face' : ''}`}
+      style={dead || isCockpit ? undefined : { borderLeft: `3px solid ${ROLE_COLOR[part.role]}` }}
       onClick={onClick}
-      title={title ?? `${part.name} — ${printedText(part)}`}
+      title={title ?? `${part.name} — ${rarityName(part.rarity)} · ${printedText(part)}`}
     >
-      <div className={`${NAME_SIZE[variant]} leading-[1.05] font-semibold tracking-[-0.01em]`}>
-        {part.name}
+      {/* The tier, at a glance and in colour: the band is the rarity ramp, and
+          legendary is the one that moves. */}
+      <div
+        className={`flex-none truncate px-1 py-px text-center font-mono font-bold tracking-[0.08em] uppercase ${size.band} ${
+          legendary && !dead ? 'holo-band' : ''
+        }`}
+        style={
+          dead
+            ? { background: 'var(--putty-500)', color: 'var(--putty-800)' }
+            : legendary
+              ? { color: 'var(--cream-100)' }
+              : { background: rarityColor(part.rarity), color: rarityInk(part.rarity) }
+        }
+      >
+        {dead ? 'OFFLINE' : `${rarityShort(part.rarity)} · ${part.role === 'COCKPIT' ? 'CPIT' : part.role}`}
       </div>
 
-      {variant === 'scrap' ? (
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[9px] tracking-[0.08em]" style={{ color: roleColor }}>
-            {part.role}
-          </span>
-          <span className="font-mono text-[11px] text-putty-700">
+      <div className="flex min-h-0 flex-1 flex-col justify-between gap-px px-1 py-[3px]">
+        <div
+          className={`${size.name} leading-[1.05] font-semibold tracking-[-0.01em] text-pretty ${
+            dead ? 'text-putty-700' : 'text-n-900'
+          }`}
+        >
+          {part.name}
+        </div>
+
+        {!dead && (
+          <EnergyChits energy={energy} capacity={capacity} chit={size.chit} max={size.chits} />
+        )}
+
+        <div
+          className={`flex flex-none items-baseline justify-between gap-1 font-mono ${size.foot} ${
+            dead ? 'text-putty-700' : 'text-putty-800'
+          }`}
+        >
+          {isCockpit ? (
+            <span className="truncate">
+              {part.slots ?? 0}◻ {part.power ?? 0}⚔ +{part.genPerDown ?? 0}⚡
+            </span>
+          ) : (
+            <span className="truncate" style={{ color: ROLE_COLOR[part.role] }}>
+              {spent
+                ? 'SPENT'
+                : !fires
+                  ? size.terse
+                    ? 'PASS'
+                    : 'PASSIVE'
+                  : cost > 0
+                    ? `${cost}⚡${size.terse ? '' : ' FIRE'}`
+                    : size.terse
+                      ? 'FREE'
+                      : 'FIRE · FREE'}
+            </span>
+          )}
+          <span className="flex-none">
             {energy}/{capacity}
           </span>
         </div>
-      ) : (
-        <div className="flex min-w-0 items-center justify-between gap-1.5">
-          <EnergyPips energy={energy} capacity={capacity} tall={variant === 'large'} />
-          <div className="flex flex-none items-center gap-1 whitespace-nowrap">
-            <span className="font-mono text-[9px] tracking-[0.06em]" style={{ color: roleColor }}>
-              {spent ? 'SPENT' : part.role}
-            </span>
-            <span className="font-mono text-[9px] text-putty-700">
-              {energy}/{capacity}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Charge in a module's own energy pool, one pip per point of capacity. */
-function EnergyPips({
-  energy,
-  capacity,
-  tall,
-}: {
-  energy: number;
-  capacity: number;
-  tall?: boolean;
-}) {
-  if (capacity <= 0) return <div className="flex-1" />;
-  return (
-    <div className={`flex flex-1 gap-px self-center ${tall ? 'h-3 gap-0.5' : 'h-2'}`}>
-      {Array.from({ length: Math.min(capacity, 12) }, (_, i) => (
-        <div
-          key={i}
-          className={`flex-1 border border-putty-600 ${tall ? 'min-w-[3px]' : 'min-w-[2px]'}`}
-          style={{ background: i < energy ? 'var(--crt-green-500)' : 'var(--crt-glass)' }}
-        />
-      ))}
+      </div>
     </div>
   );
 }

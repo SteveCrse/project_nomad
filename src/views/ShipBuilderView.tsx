@@ -99,13 +99,18 @@ export function ShipBuilderView() {
   const canLandOn = (index: SlotIndex): boolean => {
     if (!held || !canEdit) return false;
     const slot = player.ship.slots[index];
-    if (!slot || slot.partId === player.ship.cockpitId) return false;
-    if (held.kind === 'grid') {
-      if (held.slot === index) return false;
-      // The module being moved can't be what anchors its own destination.
-      return !!slot.partId || shipEngine.canAttachAt(player.ship, index, held.slot);
-    }
-    return !!slot.partId || shipEngine.canAttachAt(player.ship, index);
+    if (!slot) return false;
+    // Moving something already on the grid — the cockpit included. Landing on
+    // an occupied position swaps; landing on an empty one has to touch the
+    // hull and leave nothing adrift.
+    if (held.kind === 'grid') return shipEngine.canMoveTo(player.ship, held.slot, index);
+    // A part coming off a rack can't take the cockpit's position, and only
+    // fits if the cockpit still has a slot spare.
+    if (slot.partId) return slot.partId !== player.ship.cockpitId;
+    return (
+      shipEngine.canAttachAt(player.ship, index) &&
+      shipEngine.hasFreeCapacity(CONTENT, player.ship)
+    );
   };
 
   const landOn = (index: SlotIndex) => {
@@ -273,7 +278,8 @@ function RearrangeBar({ reason }: { reason: string }) {
 }
 
 function BuilderStats({ player }: { player: PlayerState }) {
-  const filled = player.ship.slots.filter((s) => s.partId).length;
+  const fitted = shipEngine.moduleCount(player.ship);
+  const capacity = shipEngine.moduleCapacity(CONTENT, player.ship);
   const stored = player.ship.slots.reduce((sum, s) => sum + s.energy, 0);
   const cockpitCharge = shipEngine.cockpitCharge(CONTENT, player.ship);
   const cockpitCap = shipEngine.cockpitCapacity(CONTENT, player.ship);
@@ -285,8 +291,8 @@ function BuilderStats({ player }: { player: PlayerState }) {
       <span title="Every charged absorber, cockpit included">
         SHIELDS {shipEngine.shieldPool(CONTENT, player.ship)}
       </span>
-      <span>
-        SLOTS {filled}/{player.ship.slots.length}
+      <span title="Modules fitted against the cockpit's slot count — the cockpit itself doesn't take one">
+        SLOTS {fitted}/{capacity}
       </span>
       <span>⚡ {stored} STORED</span>
     </div>
@@ -314,17 +320,29 @@ function Grid({
 }) {
   const selectedPartId = useUiStore((s) => s.selectedPartId);
   const bonuses = adjacencyFor(player);
+  const full = !shipEngine.hasFreeCapacity(CONTENT, player.ship);
 
   return (
-    <div className="flex flex-col gap-3.5 border-2 border-border-strong bg-surface-panel p-[18px] shadow-raised">
+    <div className="flex min-h-0 flex-1 flex-col gap-3.5 border-2 border-border-strong bg-surface-panel p-[18px] shadow-raised">
+      {/*
+       * The grid is the ship's own shape: every part fitted, plus one open
+       * position on each of its free sides and nothing beyond that. Cells
+       * outside that ring stay in the array (the geometry is index
+       * arithmetic) but print as empty space, so what's on screen is the hull
+       * and where it can grow.
+       */}
+      <div className="min-h-0 flex-1 overflow-auto">
       <div
-        className="grid gap-2"
+        className="grid w-fit gap-2"
         style={{
-          gridTemplateColumns: `repeat(${player.ship.gridCols}, minmax(0, 1fr))`,
-          gridAutoRows: '104px',
+          gridTemplateColumns: `repeat(${player.ship.gridCols}, 96px)`,
+          gridAutoRows: '134px',
         }}
       >
         {player.ship.slots.map((slot) => {
+          const open = shipEngine.canAttachAt(player.ship, slot.index);
+          if (!slot.partId && !open) return <div key={slot.index} aria-hidden />;
+
           const isCockpit = slot.partId === player.ship.cockpitId;
           const ok = canLandOn(slot.index);
           return (
@@ -335,11 +353,15 @@ function Grid({
               selected={!!slot.partId && slot.partId === selectedPartId && !held}
               hint={held ? (ok ? 'ok' : dragging ? 'blocked' : null) : null}
               title={
-                held && !ok && !isCockpit
-                  ? 'Parts have to attach next to something already fitted'
+                held && !ok
+                  ? isCockpit && held.kind !== 'grid'
+                    ? 'The cockpit holds this position — drag the cockpit itself to move it'
+                    : full && !slot.partId
+                      ? "Every one of the cockpit's slots is filled — swap onto a module instead"
+                      : 'Parts attach next to what is already fitted, and the ship stays in one piece'
                   : undefined
               }
-              draggable={canEdit && !!slot.partId && !isCockpit}
+              draggable={canEdit && !!slot.partId}
               onDragStart={(e) => {
                 if (!slot.partId) return;
                 startDrag(e);
@@ -356,6 +378,7 @@ function Grid({
             />
           );
         })}
+      </div>
       </div>
 
       <div className="flex items-stretch gap-3">
@@ -426,7 +449,7 @@ function HoldPanel({
             : 'Nothing in the hold. Draw a part, or every part drawn is already fitted.'}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2" style={{ gridAutoRows: '128px' }}>
           {player.carriedParts.map((cardId, i) => (
             <ModuleTile
               key={`${cardId}-${i}`}
@@ -470,7 +493,7 @@ function ScrapPanel({
           {player.scrapDeck.length}/{capacity}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2" style={{ gridAutoRows: '128px' }}>
         {Array.from({ length: capacity }, (_, i) => {
           const cardId = player.scrapDeck[i] ?? null;
           return (
@@ -524,7 +547,10 @@ function SelectedPanel({
     drafting && !!selectedPartId && selectedPartId !== player.ship.cockpitId
       ? player.ship.slots.find((s) => s.partId === selectedPartId)
       : undefined;
-  const noRoom = shipEngine.firstAttachableSlot(player.ship) < 0;
+  const noRoom =
+    shipEngine.bestAttachSlot(player.ship) < 0 ||
+    !shipEngine.hasFreeCapacity(CONTENT, player.ship);
+  const stuck = !!onGrid && !shipEngine.canDetach(player.ship, onGrid.index);
 
   const act = (fn: () => void) => {
     fn();
@@ -601,7 +627,13 @@ function SelectedPanel({
             <Button
               size="sm"
               disabled={noRoom}
-              title={noRoom ? 'No free position touches the ship' : undefined}
+              title={
+                noRoom
+                  ? shipEngine.hasFreeCapacity(CONTENT, player.ship)
+                    ? 'No free position touches the ship'
+                    : "Every one of the cockpit's slots is filled"
+                  : undefined
+              }
               onClick={() =>
                 act(() =>
                   inHold
@@ -610,7 +642,7 @@ function SelectedPanel({
                 )
               }
             >
-              Attach at the first free position
+              Attach where it fits
             </Button>
           )}
         </div>
@@ -621,6 +653,12 @@ function SelectedPanel({
           <Button
             size="sm"
             variant="secondary"
+            disabled={stuck}
+            title={
+              stuck
+                ? 'Taking this out would leave the modules hanging off it adrift — move them first'
+                : undefined
+            }
             onClick={() => act(() => returnPart(player.id, onGrid.index))}
           >
             Pull back into the hold

@@ -17,13 +17,16 @@ import type { LootChoice } from '../loot';
 import { chooseEnemyAction } from '../ai';
 import * as shipEngine from '../ship';
 import {
+  bestAttachSlot,
   canAttachAt,
+  canMoveTo,
   chargeSlot,
   cockpitOf,
   createShip,
   detachPart,
-  equipPart,
-  firstAttachableSlot,
+  fitPart,
+  hasFreeCapacity,
+  moduleCapacity,
   spawnEnemyShip,
   swapCockpit,
   swapSlots,
@@ -98,7 +101,7 @@ export function newRun(
   const drafting = draws > 0;
 
   const players: PlayerState[] = seats.map((seat) =>
-    buildPlayer(content, config, seat, drafting ? [] : seat.partIds),
+    buildPlayer(content, seat, drafting ? [] : seat.partIds),
   );
 
   const party: PartyState = { players, activePlayerIndex: 0 };
@@ -149,20 +152,17 @@ export function newRun(
 
 function buildPlayer(
   content: Content,
-  config: GameConfig,
   seat: Loadout,
   partIds: CardId[] = seat.partIds,
 ): PlayerState {
-  let ship = createShip(content, seat.cockpitId, seat.shipName, config);
+  let ship = createShip(content, seat.cockpitId, seat.shipName);
   for (const partId of partIds) {
     // A loadout can outlive the card it names once the deck is edited.
     if (!partOf(content, partId)) continue;
-    const free = firstAttachableSlot(ship);
-    if (free < 0) break;
-    ship = equipPart(ship, free, partId);
+    const free = bestAttachSlot(ship);
+    if (free < 0 || !hasFreeCapacity(content, ship)) break;
     // Ships roll out with their pools charged; an empty grid can't open a fight.
-    const cap = partOf(content, partId)?.energyCapacity ?? 0;
-    ship = chargeSlot(content, ship, free, cap).ship;
+    ship = fitPart(content, ship, free, partId, partOf(content, partId)?.energyCapacity ?? 0);
   }
   return {
     id: seat.id,
@@ -230,7 +230,6 @@ export const drawsLeftFor = (state: GameState, playerId: PlayerId): number =>
 export function drawStartingPart(
   content: Content,
   state: GameState,
-  config: GameConfig,
   rng: Rng,
   playerId?: PlayerId,
 ): GameState {
@@ -261,7 +260,7 @@ export function drawStartingPart(
   // A cockpit is what sets slot capacity, so the first one a seat draws takes
   // the hull over immediately — assemble into the grid you're going to fly.
   if (part?.role === 'COCKPIT' && !setup.anchored.includes(who)) {
-    next = installCockpit(content, next, config, who, cardId);
+    next = installCockpit(content, next, who, cardId);
   }
   return next;
 }
@@ -270,7 +269,6 @@ export function drawStartingPart(
 export function installCockpit(
   content: Content,
   state: GameState,
-  config: GameConfig,
   playerId: PlayerId,
   cardId: CardId,
 ): GameState {
@@ -282,7 +280,7 @@ export function installCockpit(
   const held = player.carriedParts.indexOf(cardId);
   if (held < 0) return state;
 
-  const { ship, displaced } = swapCockpit(content, player.ship, cardId, config);
+  const { ship, displaced } = swapCockpit(content, player.ship, cardId);
   const hold = player.carriedParts.slice();
   hold.splice(held, 1);
   hold.push(...displaced);
@@ -302,7 +300,7 @@ export function installCockpit(
   };
   return log(
     next,
-    `${seatLabel(next, playerId)} anchors on ${part.name} — ${ship.slots.length} slots.` +
+    `${seatLabel(next, playerId)} anchors on ${part.name} — ${moduleCapacity(content, ship)} module slots.` +
       (displaced.length > 0 ? ` ${displaced.length} module(s) back into the hold.` : ''),
     'system',
   );
@@ -312,7 +310,6 @@ export function installCockpit(
 export function assemblePart(
   content: Content,
   state: GameState,
-  config: GameConfig,
   playerId: PlayerId,
   cardId: CardId,
   slot: SlotIndex,
@@ -324,15 +321,18 @@ export function assemblePart(
   const part = partOf(content, cardId);
   if (held < 0 || !part) return state;
   if (part.role === 'COCKPIT') {
-    return installCockpit(content, state, config, playerId, cardId);
+    return installCockpit(content, state, playerId, cardId);
   }
 
-  const target = slot >= 0 ? slot : firstAttachableSlot(player.ship);
+  const target = slot >= 0 ? slot : bestAttachSlot(player.ship);
   if (target < 0 || target >= player.ship.slots.length) return state;
   const occupant = player.ship.slots[target]?.partId ?? null;
-  if (occupant === player.ship.cockpitId) return state; // the anchor stays put
-  // Empty positions have to touch the hull; occupied ones are a straight swap.
-  if (!occupant && !canAttachAt(player.ship, target)) return state;
+  if (occupant === player.ship.cockpitId) return state; // the anchor keeps its position
+  // Empty positions have to touch the hull and fit under the cockpit's slot
+  // count; occupied ones are a straight swap, so they cost no capacity.
+  if (!occupant && (!canAttachAt(player.ship, target) || !hasFreeCapacity(content, player.ship))) {
+    return state;
+  }
 
   const hold = player.carriedParts.slice();
   hold.splice(held, 1);
@@ -340,7 +340,7 @@ export function assemblePart(
 
   const next = withPlayer(state, playerId, (p) => ({
     ...p,
-    ship: equipPart(p.ship, target, cardId),
+    ship: fitPart(content, p.ship, target, cardId),
     carriedParts: hold,
   }));
   return log(
@@ -354,11 +354,13 @@ export function assemblePart(
 }
 
 /**
- * Move a module to another position on its own grid, or swap two.
+ * Move a part to another position on its own grid, or swap two.
  *
  * Free rearrangement is the point: adjacency pays (GEN→RDS→WPN chains, and
  * every reroute), so a seat should be able to lay its grid out deliberately
- * rather than take whatever order the parts arrived in.
+ * rather than take whatever order the parts arrived in. The cockpit moves too
+ * — it's the ship's anchor, not its helm, and nothing says it belongs in the
+ * middle of the shape.
  */
 export function moveModule(
   content: Content,
@@ -373,11 +375,10 @@ export function moveModule(
   const ship = player.ship;
   const source = ship.slots[from];
   const target = ship.slots[to];
-  if (!source?.partId || !target || from === to) return state;
-  if (source.partId === ship.cockpitId || target.partId === ship.cockpitId) return state;
-  // Landing on an empty position still has to touch the hull — and the module
-  // being moved doesn't get to anchor itself.
-  if (!target.partId && !canAttachAt(ship, to, from)) return state;
+  if (!source?.partId || !target) return state;
+  // Landing on an empty position still has to touch the hull, and can't leave
+  // the rest of the ship adrift.
+  if (!canMoveTo(ship, from, to)) return state;
 
   const moved = partOf(content, source.partId)?.name ?? source.partId;
   const displaced = partOf(content, target.partId)?.name;

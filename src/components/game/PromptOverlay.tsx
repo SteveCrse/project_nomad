@@ -156,15 +156,17 @@ function LootPrompt({ state }: { state: GameState }) {
             back up with you — you shot it dry to take the ship.
           </div>
           <div className="font-mono text-[10px] tracking-console text-putty-700">KEEP FROM YOUR SHIP</div>
-          <div className="grid grid-cols-4 gap-1.5" style={{ gridAutoRows: '58px' }}>
-            {player?.ship.slots.map((slot) => (
-              <ModuleTile
-                key={slot.index}
-                slot={slot}
-                selected={keepSlot === slot.index}
-                onClick={() => setKeepSlot(slot.index)}
-              />
-            ))}
+          <div className="grid grid-cols-4 gap-1.5" style={{ gridAutoRows: '116px' }}>
+            {player?.ship.slots
+              .filter((slot) => slot.partId && slot.partId !== player.ship.cockpitId)
+              .map((slot) => (
+                <ModuleTile
+                  key={slot.index}
+                  slot={slot}
+                  selected={keepSlot === slot.index}
+                  onClick={() => setKeepSlot(slot.index)}
+                />
+              ))}
           </div>
           <Button
             size="sm"
@@ -185,15 +187,17 @@ function LootPrompt({ state }: { state: GameState }) {
             )}
           </div>
           <div className="font-mono text-[10px] tracking-console text-putty-700">TAKE FROM THE WRECK</div>
-          <div className="grid grid-cols-4 gap-1.5" style={{ gridAutoRows: '58px' }}>
-            {wreck.ship.slots.map((slot) => (
-              <ModuleTile
-                key={slot.index}
-                slot={slot}
-                selected={takeSlot === slot.index}
-                onClick={() => setTakeSlot(slot.index)}
-              />
-            ))}
+          <div className="grid grid-cols-4 gap-1.5" style={{ gridAutoRows: '116px' }}>
+            {wreck.ship.slots
+              .filter((slot) => slot.partId && slot.partId !== wreck.ship.cockpitId)
+              .map((slot) => (
+                <ModuleTile
+                  key={slot.index}
+                  slot={slot}
+                  selected={takeSlot === slot.index}
+                  onClick={() => setTakeSlot(slot.index)}
+                />
+              ))}
           </div>
           <Button
             size="sm"

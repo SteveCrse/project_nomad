@@ -128,7 +128,9 @@ export function CardBrowserView() {
               title="open in the spreadsheet editor"
               className="cursor-pointer text-left"
             >
-              <CardTile card={card} />
+              {/* The gallery is where a card is read, so every element on it
+                  explains itself on hover. */}
+              <CardTile card={card} explain />
             </button>
           ))}
         </div>

@@ -15,9 +15,6 @@ export interface GameConfig {
    * module fires as often as its own pool can pay for.
    */
   downCount: number;
-  /** Module grid shape. Capacity is normally set by the cockpit; this is the ceiling. */
-  gridCols: number;
-  gridRows: number;
   /**
    * Parts each seat drafts from the Parts deck at the start of a run, drawn
    * one card at a time and assembled before the mission begins. 0 skips the
@@ -112,8 +109,6 @@ export interface GameConfig {
 export const DEFAULT_CONFIG: GameConfig = {
   playerCount: 4,
   downCount: 4,
-  gridCols: 5,
-  gridRows: 2,
   startingPartsDraws: 5,
 
   convThreshold: 12,

@@ -87,8 +87,18 @@ instead of a corrupted state. The store never mutates game state itself.
 Slots are a `gridCols`-wide grid, and `ship.neighbourSlots` is the one piece of
 geometry every adjacency rule reads:
 
+- **Shape.** The grid isn't a rectangle the cockpit hands out — it's the
+  bounding box of whatever is fitted, re-padded by `normalizeGrid` so there is
+  exactly one open position on every free side of every part. A ship is any
+  shape the player builds, and the cockpit is a part on the grid like the rest:
+  it can be moved (`canMoveTo`), it just can't be jettisoned.
+- **Capacity.** The cockpit's `slots` is how many *modules* may hang off it and
+  does not count the cockpit itself (`moduleCapacity` / `hasFreeCapacity`).
 - **Attaching.** A part has to touch something already fitted (`canAttachAt`),
-  so a hull grows outward from its cockpit — enemy ships included.
+  so a hull grows outward from its cockpit — enemy ships included. Moving or
+  detaching may never split the hull in two (`isConnected`, `canDetach`), and
+  anything placed without a chosen position goes where the hull stays squarest
+  (`bestAttachSlot`).
 - **Rerouting.** ⚡ only ever moves between neighbours. One down buys a whole
   pass: every module may be drained once, and the legs resolve in order, so a
   generator can fill a redistributor that then fills a gun inside one down.

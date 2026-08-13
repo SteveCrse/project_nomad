@@ -65,6 +65,16 @@ export const RARITY_COLOR: string[] = [
 
 export const RARITY_NAME: string[] = ['COMMON', 'UNCOMMON', 'RARE', 'ULTRA RARE', 'LEGENDARY'];
 
+/**
+ * Rarity in the width a module tile has for it. Abbreviated rather than
+ * initialled, because UNCOMMON and ULTRA RARE share a letter and the tier is
+ * the one thing the band exists to say.
+ */
+export const RARITY_SHORT: string[] = ['COM', 'UNC', 'RARE', 'ULTRA', 'LEGND'];
+
+export const rarityShort = (rarity: Rarity | number): string =>
+  RARITY_SHORT[rarity - 1] ?? RARITY_SHORT[0]!;
+
 export const rarityColor = (rarity: Rarity | number): string =>
   RARITY_COLOR[rarity - 1] ?? RARITY_COLOR[0]!;
 

@@ -5,11 +5,12 @@ import type { CardId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
 import {
+  bestAttachSlot,
   canAttachAt,
   chargeSlot,
   cockpitOf,
-  equipPart,
-  firstAttachableSlot,
+  fitPart,
+  hasFreeCapacity,
   scrapCapBonus,
 } from '../ship';
 
@@ -137,18 +138,18 @@ export function rearrange(
   for (const { cardId, slot } of assignments) {
     const index = scrapDeck.indexOf(cardId);
     if (index < 0) continue;
-    const target = slot >= 0 ? slot : firstAttachableSlot(ship);
+    const target = slot >= 0 ? slot : bestAttachSlot(ship);
     if (target < 0 || target >= ship.slots.length) continue;
     if (target === ship.slots.findIndex((s) => s.partId === ship.cockpitId)) continue;
 
     // Swapping out an occupied slot puts the old module back into the scrap.
     const occupant = ship.slots[target]?.partId ?? null;
-    // An empty position still has to touch the ship.
-    if (!occupant && !canAttachAt(ship, target)) continue;
-    ship = equipPart(ship, target, cardId);
+    // An empty position still has to touch the ship, and only a swap is free
+    // of the cockpit's slot count.
+    if (!occupant && (!canAttachAt(ship, target) || !hasFreeCapacity(content, ship))) continue;
     // Modules come online with an empty pool; generators prime themselves.
     const part = partOf(content, cardId);
-    if (part?.generates) ship = chargeSlot(content, ship, target, part.generates).ship;
+    ship = fitPart(content, ship, target, cardId, part?.generates ?? 0);
 
     scrapDeck.splice(index, 1);
     if (occupant) scrapDeck.push(occupant);

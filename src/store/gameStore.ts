@@ -82,7 +82,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     drawStartingPart: (player) =>
-      step((s) => game.drawStartingPart(CONTENT, s, config(), get().rng, player)),
+      step((s) => game.drawStartingPart(CONTENT, s, get().rng, player)),
 
     drawAllStartingParts: () =>
       step((s) => {
@@ -90,7 +90,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         // One seat, one card, round the table — the same order a table would
         // do it in, just without a click per card.
         while (game.nextDrafter(next)) {
-          const after = game.drawStartingPart(CONTENT, next, config(), get().rng);
+          const after = game.drawStartingPart(CONTENT, next, get().rng);
           if (after === next) break; // deck dry or refused; don't spin
           next = after;
         }
@@ -98,10 +98,10 @@ export const useGameStore = create<GameStore>((set, get) => {
       }),
 
     installCockpit: (player, cardId) =>
-      step((s) => game.installCockpit(CONTENT, s, config(), player, cardId)),
+      step((s) => game.installCockpit(CONTENT, s, player, cardId)),
 
     assemblePart: (player, cardId, slot) =>
-      step((s) => game.assemblePart(CONTENT, s, config(), player, cardId, slot)),
+      step((s) => game.assemblePart(CONTENT, s, player, cardId, slot)),
 
     returnPart: (player, slot) => step((s) => game.returnPart(CONTENT, s, player, slot)),
 

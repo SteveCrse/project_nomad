@@ -27,18 +27,18 @@ const emptySlot = (index: SlotIndex): ShipSlot => ({
 });
 
 /**
- * An empty grid sized by the cockpit's slot count.
+ * A fresh hull: the cockpit, with an empty position on every side of it.
+ *
+ * The grid isn't a fixed rectangle handed out by the cockpit — it's whatever
+ * shape the ship has grown into, always carrying one ring of empty positions
+ * around the parts already fitted (see `normalizeGrid`). What the cockpit sets
+ * is *how many modules* may hang off it, and it doesn't count itself.
  *
  * The cockpit rolls out with its shield pool full: it is the ship's last line
  * and the only durability it has, so starting it dry would mean the first
  * unanswered hit is fatal.
  */
-export function createShip(
-  content: Content,
-  wantedCockpitId: PartId,
-  name: string,
-  config: GameConfig,
-): Ship {
+export function createShip(content: Content, wantedCockpitId: PartId, name: string): Ship {
   // Content is editable at runtime, so a loadout can name a cockpit the deck
   // no longer has. Anchor on any cockpit rather than build a hull around a
   // card that isn't there — a ship with no cockpit has no shield and no gun.
@@ -46,24 +46,17 @@ export function createShip(
     ? wantedCockpitId
     : (firstCockpitIn(content) ?? wantedCockpitId);
   const cockpit = partOf(content, cockpitId);
-  const capacity = Math.max(1, cockpit?.slots ?? config.gridCols * config.gridRows);
-  const slots = Array.from({ length: capacity }, (_, i) => emptySlot(i));
 
-  // The cockpit occupies a slot like anything else. Middle of the top row so
-  // modules can chain either side of it.
-  const cols = Math.min(config.gridCols, capacity);
-  const anchor = Math.min(capacity - 1, Math.floor(cols / 2));
-  slots[anchor] = {
-    ...slots[anchor]!,
-    partId: cockpitId,
-    energy: cockpit?.energyCapacity ?? 0,
-  };
+  // 3×3 with the cockpit in the middle: the anchor plus its ring of open
+  // sides. Every later placement re-pads the grid the same way.
+  const slots = Array.from({ length: 9 }, (_, i) => emptySlot(i));
+  slots[4] = { ...slots[4]!, partId: cockpitId, energy: cockpit?.energyCapacity ?? 0 };
 
   return {
     id: `ship-${name.toLowerCase().replace(/\s+/g, '-')}`,
     name,
     cockpitId,
-    gridCols: cols,
+    gridCols: 3,
     slots,
     destroyed: false,
     flags: { negateNext: 0, retaliate: 0 },
@@ -75,6 +68,21 @@ export function firstFreeSlot(ship: Ship): SlotIndex {
   return ship.slots.findIndex((s) => s.partId === null);
 }
 
+/** Rows the grid currently spans. */
+export const gridRows = (ship: Ship): number =>
+  Math.ceil(ship.slots.length / Math.max(1, ship.gridCols));
+
+/** Orthogonal neighbours, given the raw grid shape. */
+function neighboursIn(cols: number, length: number, index: SlotIndex): SlotIndex[] {
+  const width = Math.max(1, cols);
+  const out: SlotIndex[] = [];
+  const col = index % width;
+  if (col > 0) out.push(index - 1);
+  if (col < width - 1) out.push(index + 1);
+  out.push(index - width, index + width);
+  return out.filter((n) => n >= 0 && n < length);
+}
+
 /**
  * Orthogonal neighbours of a slot.
  *
@@ -83,14 +91,97 @@ export function firstFreeSlot(ship: Ship): SlotIndex {
  * attached, where ⚡ may be rerouted, and which chains pay a bonus.
  */
 export function neighbourSlots(ship: Ship, index: SlotIndex): SlotIndex[] {
-  const cols = Math.max(1, ship.gridCols);
-  const out: SlotIndex[] = [];
-  const col = index % cols;
-  if (col > 0) out.push(index - 1);
-  if (col < cols - 1) out.push(index + 1);
-  out.push(index - cols, index + cols);
-  return out.filter((n) => n >= 0 && n < ship.slots.length);
+  return neighboursIn(ship.gridCols, ship.slots.length, index);
 }
+
+/**
+ * Re-pad the grid: the bounding box of everything fitted, plus one ring of
+ * empty positions all the way round.
+ *
+ * That ring *is* the rule the builder shows — an open side on every side of
+ * every module, and nothing further out — so the shape of a ship is whatever
+ * its parts have been laid out into rather than a rectangle it was handed.
+ * Indices move when the box grows, which is why this only ever runs while a
+ * ship is being laid out, never mid-fight.
+ */
+export function normalizeGrid(ship: Ship): Ship {
+  const cols = Math.max(1, ship.gridCols);
+  const filled = ship.slots.filter((s) => s.partId);
+  if (filled.length === 0) return ship;
+
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  for (const slot of filled) {
+    const row = Math.floor(slot.index / cols);
+    const col = slot.index % cols;
+    minRow = Math.min(minRow, row);
+    maxRow = Math.max(maxRow, row);
+    minCol = Math.min(minCol, col);
+    maxCol = Math.max(maxCol, col);
+  }
+
+  const nextCols = maxCol - minCol + 3;
+  const nextRows = maxRow - minRow + 3;
+  const slots = Array.from({ length: nextCols * nextRows }, (_, i) => emptySlot(i));
+  for (const slot of filled) {
+    const row = Math.floor(slot.index / cols) - minRow + 1;
+    const col = (slot.index % cols) - minCol + 1;
+    const index = row * nextCols + col;
+    slots[index] = { ...slot, index };
+  }
+
+  return { ...ship, gridCols: nextCols, slots };
+}
+
+/**
+ * The hull with its ring of open positions stripped off — the ship as it looks
+ * in a fight, where nothing can be attached and the ring is only clutter.
+ * Slots keep their real indices, so anything clicked still points at the ship.
+ */
+export function hullGrid(ship: Ship): { cols: number; slots: ShipSlot[] } {
+  const cols = ship.gridCols;
+  const rows = gridRows(ship);
+  if (cols <= 2 || rows <= 2) return { cols, slots: ship.slots };
+
+  const slots: ShipSlot[] = [];
+  for (let row = 1; row < rows - 1; row++) {
+    for (let col = 1; col < cols - 1; col++) {
+      const slot = ship.slots[row * cols + col];
+      if (slot) slots.push(slot);
+    }
+  }
+  return { cols: cols - 2, slots };
+}
+
+/** Is a set of occupied positions one connected hull? */
+function connected(cols: number, length: number, occupied: SlotIndex[]): boolean {
+  const set = new Set(occupied);
+  const first = occupied[0];
+  if (first === undefined) return true;
+
+  const seen = new Set<SlotIndex>([first]);
+  const queue: SlotIndex[] = [first];
+  while (queue.length > 0) {
+    const at = queue.pop()!;
+    for (const n of neighboursIn(cols, length, at)) {
+      if (set.has(n) && !seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  return seen.size === set.size;
+}
+
+/** Positions currently holding a part. */
+const occupiedSlots = (ship: Ship): SlotIndex[] =>
+  ship.slots.filter((s) => s.partId).map((s) => s.index);
+
+/** Does the hull hold together as one piece? */
+export const isConnected = (ship: Ship): boolean =>
+  connected(ship.gridCols, ship.slots.length, occupiedSlots(ship));
 
 export const areAdjacent = (ship: Ship, a: SlotIndex, b: SlotIndex): boolean =>
   a !== b && neighbourSlots(ship, a).includes(b);
@@ -98,42 +189,129 @@ export const areAdjacent = (ship: Ship, a: SlotIndex, b: SlotIndex): boolean =>
 /**
  * May a part be attached here?
  *
- * A ship grows outward from its cockpit: a new part has to touch something
- * already attached. That's what turns the adjacency payoffs (GEN→RDS→WPN, and
+ * A ship grows outward from what's already fitted: a new part has to touch
+ * something. That's what turns the adjacency payoffs (GEN→RDS→WPN, and
  * rerouting in general) into a placement decision rather than a lucky
  * accident. `ignore` drops one slot from the count — a module being dragged
  * out of a position can't be what holds itself on.
+ *
+ * Purely geometric: whether the ship has *room* for another module is the
+ * cockpit's business, and `hasFreeCapacity` answers that separately.
  */
 export function canAttachAt(ship: Ship, index: SlotIndex, ignore?: SlotIndex): boolean {
   const target = ship.slots[index];
-  if (!target || target.partId === ship.cockpitId) return false;
+  if (!target || target.partId) return false;
   return neighbourSlots(ship, index).some((n) => n !== ignore && !!ship.slots[n]?.partId);
 }
 
-/** First empty slot a part may legally attach to, or -1. */
-export function firstAttachableSlot(ship: Ship): SlotIndex {
-  return ship.slots.findIndex((s) => s.partId === null && canAttachAt(ship, s.index));
+/**
+ * Where a part goes when nobody chose a position — enemy hulls, authored
+ * loadouts, and the builder's "attach it somewhere" button.
+ *
+ * Reading order alone would grow every automatic ship into a single long
+ * column, because the first open position is always the one above the top-left
+ * part. Picking the position that keeps the hull squarest gives a ship a shape
+ * worth rearranging, and leaves the deliberate layouts to the player.
+ */
+export function bestAttachSlot(ship: Ship): SlotIndex {
+  const cols = Math.max(1, ship.gridCols);
+  const filled = ship.slots.filter((s) => s.partId).map((s) => s.index);
+  let best = -1;
+  let bestScore = Infinity;
+
+  for (const slot of ship.slots) {
+    if (slot.partId || !canAttachAt(ship, slot.index)) continue;
+    const rows = [...filled, slot.index].map((i) => Math.floor(i / cols));
+    const columns = [...filled, slot.index].map((i) => i % cols);
+    const height = Math.max(...rows) - Math.min(...rows) + 1;
+    const width = Math.max(...columns) - Math.min(...columns) + 1;
+    // Squarest first, then smallest overall; reading order breaks the rest.
+    const score = Math.max(width, height) * 100 + width * height;
+    if (score < bestScore) {
+      bestScore = score;
+      best = slot.index;
+    }
+  }
+  return best;
 }
 
-/** Swap two positions, or move a module into an empty one. */
+/**
+ * How many modules this hull may carry.
+ *
+ * The cockpit prints the number, and it does **not** count itself against it:
+ * a 6-slot cockpit flies with six modules hung off it. Capacity is the only
+ * limit on the grid — the shape is the player's.
+ */
+export const moduleCapacity = (content: Content, ship: Ship): number =>
+  Math.max(0, partOf(content, ship.cockpitId)?.slots ?? 0);
+
+/** Modules currently fitted, cockpit excluded. */
+export const moduleCount = (ship: Ship): number =>
+  ship.slots.filter((s) => s.partId && s.partId !== ship.cockpitId).length;
+
+/** Room for one more module? */
+export const hasFreeCapacity = (content: Content, ship: Ship): boolean =>
+  moduleCount(ship) < moduleCapacity(content, ship);
+
+/**
+ * May the part in `from` be laid down on `to`?
+ *
+ * Landing on an occupied position is a straight swap, so the hull keeps its
+ * footprint and is always legal — the cockpit included, since it's a part on
+ * the grid like any other and nothing says it has to sit at the helm. Landing
+ * on an empty one has to touch the rest of the hull *and* leave every module
+ * still hanging together: a ship is one piece, not two drifting halves.
+ */
+export function canMoveTo(ship: Ship, from: SlotIndex, to: SlotIndex): boolean {
+  const source = ship.slots[from];
+  const target = ship.slots[to];
+  if (!source?.partId || !target || from === to) return false;
+  if (target.partId) return true;
+  if (!canAttachAt(ship, to, from)) return false;
+  const after = occupiedSlots(ship).map((i) => (i === from ? to : i));
+  return connected(ship.gridCols, ship.slots.length, after);
+}
+
+/** Swap two positions, or move a part into an empty one. */
 export function swapSlots(ship: Ship, a: SlotIndex, b: SlotIndex): Ship {
   const from = ship.slots[a];
   const to = ship.slots[b];
   if (!from || !to || a === b) return ship;
-  if (from.partId === ship.cockpitId || to.partId === ship.cockpitId) return ship;
 
   const slots = ship.slots.slice();
   slots[a] = { ...to, index: a };
   slots[b] = { ...from, index: b };
-  return { ...ship, slots };
+  return normalizeGrid({ ...ship, slots });
 }
 
+/**
+ * Put a part in a position, as-is. The grid is left exactly as it was, so the
+ * caller's slot indices still mean what they meant — `fitPart` is the one that
+ * re-pads afterwards.
+ */
 export function equipPart(ship: Ship, slot: SlotIndex, partId: PartId): Ship {
   const target = ship.slots[slot];
   if (!target || target.partId === ship.cockpitId) return ship;
   const slots = ship.slots.slice();
   slots[slot] = { ...target, partId, energy: 0, disabled: false, usedThisDownSet: false };
   return { ...ship, slots };
+}
+
+/**
+ * Fit a part, charge its pool, and re-pad the grid around it — the whole of
+ * "this module is now on the ship", in the order that keeps `slot` valid until
+ * the last step.
+ */
+export function fitPart(
+  content: Content,
+  ship: Ship,
+  slot: SlotIndex,
+  partId: PartId,
+  energy = 0,
+): Ship {
+  const fitted = equipPart(ship, slot, partId);
+  if (fitted === ship) return ship;
+  return normalizeGrid(energy > 0 ? chargeSlot(content, fitted, slot, energy).ship : fitted);
 }
 
 /**
@@ -149,7 +327,6 @@ export function swapCockpit(
   content: Content,
   ship: Ship,
   cockpitId: PartId,
-  config: GameConfig,
 ): { ship: Ship; displaced: PartId[] } {
   if (cockpitId === ship.cockpitId) return { ship, displaced: [] };
 
@@ -158,31 +335,46 @@ export function swapCockpit(
     .filter((id): id is PartId => !!id && id !== ship.cockpitId);
 
   let next: Ship = {
-    ...createShip(content, cockpitId, ship.name, config),
+    ...createShip(content, cockpitId, ship.name),
     id: ship.id,
     destroyed: ship.destroyed,
   };
 
   const displaced: PartId[] = [];
   for (const id of modules) {
-    const free = firstAttachableSlot(next);
-    if (free < 0) {
+    const free = bestAttachSlot(next);
+    if (free < 0 || !hasFreeCapacity(content, next)) {
       displaced.push(id);
       continue;
     }
-    next = equipPart(next, free, id);
+    next = fitPart(content, next, free, id);
   }
   return { ship: next, displaced };
 }
 
+/**
+ * May this module be pulled off?
+ *
+ * The cockpit never can — it's the ship. Anything else can, as long as what's
+ * left still hangs together: taking a module out of the middle of a chain
+ * would leave whatever hung off it adrift.
+ */
+export function canDetach(ship: Ship, slot: SlotIndex): boolean {
+  const target = ship.slots[slot];
+  if (!target?.partId || target.partId === ship.cockpitId) return false;
+  return connected(
+    ship.gridCols,
+    ship.slots.length,
+    occupiedSlots(ship).filter((i) => i !== slot),
+  );
+}
+
 export function detachPart(ship: Ship, slot: SlotIndex): { ship: Ship; partId: PartId | null } {
   const target = ship.slots[slot];
-  if (!target || target.partId === null || target.index === cockpitSlotIndex(ship)) {
-    return { ship, partId: null };
-  }
+  if (!target?.partId || !canDetach(ship, slot)) return { ship, partId: null };
   const slots = ship.slots.slice();
   slots[slot] = emptySlot(slot);
-  return { ship: { ...ship, slots }, partId: target.partId };
+  return { ship: normalizeGrid({ ...ship, slots }), partId: target.partId };
 }
 
 export function cockpitSlotIndex(ship: Ship): SlotIndex {
@@ -432,20 +624,18 @@ export function spawnEnemyShip(
   }
 
   const anchor = cockpitId ?? firstCockpitIn(content) ?? modules[0] ?? '';
-  let ship = createShip(content, anchor, statBlock.name, config);
+  let ship = createShip(content, anchor, statBlock.name);
 
   for (const id of modules) {
     // Enemy hulls grow out from the cockpit like a player's does, so their
     // grids can chain too — an enemy is just a ship.
-    const free = firstAttachableSlot(ship);
-    if (free < 0) {
-      spares.push(id); // no room left to attach — back in the deck
+    const free = bestAttachSlot(ship);
+    if (free < 0 || !hasFreeCapacity(content, ship)) {
+      spares.push(id); // cockpit's slots are spoken for — back in the deck
       continue;
     }
-    ship = equipPart(ship, free, id);
     // Enemy ships arrive with their pools charged; an empty enemy can't act.
-    const cap = partOf(content, id)?.energyCapacity ?? 0;
-    ship = chargeSlot(content, ship, free, cap).ship;
+    ship = fitPart(content, ship, free, id, partOf(content, id)?.energyCapacity ?? 0);
   }
 
   const enemy: EnemyInstance = {

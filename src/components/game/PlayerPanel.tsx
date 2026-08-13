@@ -51,6 +51,7 @@ export function PlayerPanel({
   const total = downs?.total ?? config.downCount;
   const atRisk = used >= total - 1;
   const ownThreshold = playerThreshold(config, player.thresholdBonus);
+  const hull = shipEngine.hullGrid(player.ship);
 
   return (
     <div
@@ -125,24 +126,29 @@ export function PlayerPanel({
           )}
         </div>
 
-        <div
-          className="grid gap-1.5"
-          style={{
-            gridTemplateColumns: `repeat(${player.ship.gridCols}, minmax(0, 1fr))`,
-            gridAutoRows: compact ? '58px' : '66px',
-          }}
-        >
-          {player.ship.slots.map((slot) => (
-            <ModuleTile
-              key={slot.index}
-              slot={slot}
-              variant="compact"
-              armed={armedSlots.includes(slot.index)}
-              selected={selectedSlot === slot.index}
-              hint={linked.has(slot.index) ? 'ok' : null}
-              {...(onSlotClick ? { onClick: () => onSlotClick(slot.index) } : {})}
-            />
-          ))}
+        {/* The ship as it was laid out, in its own shape. The builder's ring
+            of open positions is dropped here: nothing attaches mid-fight, so
+            only the hull and the gaps inside it are worth the space. */}
+        <div className="overflow-x-auto pb-1">
+          <div
+            className="grid w-fit gap-1.5"
+            style={{
+              gridTemplateColumns: `repeat(${hull.cols}, ${compact ? '68px' : '74px'})`,
+              gridAutoRows: compact ? '94px' : '102px',
+            }}
+          >
+            {hull.slots.map((slot) => (
+              <ModuleTile
+                key={slot.index}
+                slot={slot}
+                variant="compact"
+                armed={armedSlots.includes(slot.index)}
+                selected={selectedSlot === slot.index}
+                hint={linked.has(slot.index) ? 'ok' : null}
+                {...(onSlotClick ? { onClick: () => onSlotClick(slot.index) } : {})}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>

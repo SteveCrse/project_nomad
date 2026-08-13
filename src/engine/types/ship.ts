@@ -28,8 +28,12 @@ export interface ShipFlags {
 }
 
 /**
- * A ship is a cockpit plus module slots. Capacity comes from the cockpit,
- * so swapping cockpits (Loot option A) can resize the grid.
+ * A ship is a cockpit plus the modules attached to it. How many modules it may
+ * carry comes from the cockpit and doesn't count the cockpit itself, so
+ * swapping cockpits (Loot option A) can leave modules displaced.
+ *
+ * The grid is the ship's *shape* rather than its capacity: the parts fitted,
+ * plus one ring of open positions around them, re-padded on every placement.
  *
  * There is no HP pool. A ship's durability is the charge sitting in its
  * shields, and the cockpit's own pool is the last of them: once every shield
@@ -40,7 +44,7 @@ export interface Ship {
   name: string;
   /** Part id of the cockpit anchoring this ship. */
   cockpitId: PartId;
-  /** Grid shape, purely presentational — capacity is slots.length. */
+  /** Width of the slot array, in cells — the grid's geometry, not a capacity. */
   gridCols: number;
   slots: ShipSlot[];
   /** Shot out from under its pilot: damage landed with no ⚡ left to soak it. */

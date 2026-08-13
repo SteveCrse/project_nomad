@@ -155,4 +155,68 @@
     letter-spacing: var(--letter-label);
     text-transform: uppercase;
   }
+
+  /*
+   * Legendary cards catch the light.
+   *
+   * Foil is what a legendary looks like in a real deck, so the rarity band
+   * runs a slow spectrum sweep and the card face carries a sheen across it.
+   * Both are decoration on top of the ramp colour, never instead of it: the
+   * band still reads LEGENDARY, so nothing depends on seeing the animation.
+   */
+  .holo-band {
+    background: linear-gradient(
+      100deg,
+      var(--rarity-5) 0%,
+      #d9603f 16%,
+      #c9a13a 32%,
+      #4f9e73 48%,
+      #4a6fa5 64%,
+      #8b4a9e 80%,
+      var(--rarity-5) 100%
+    );
+    background-size: 300% 100%;
+    animation: holo-sweep 7s linear infinite;
+    text-shadow: 0 1px 1px rgb(0 0 0 / 0.45);
+  }
+
+  .holo-face {
+    position: relative;
+  }
+
+  .holo-face::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      118deg,
+      transparent 38%,
+      rgb(255 240 190 / 0.3) 46%,
+      rgb(190 235 255 / 0.3) 51%,
+      rgb(230 190 255 / 0.28) 56%,
+      transparent 64%
+    );
+    background-size: 260% 260%;
+    animation: holo-sheen 7s linear infinite;
+  }
+
+  @keyframes holo-sweep {
+    to {
+      background-position: 300% 0;
+    }
+  }
+
+  @keyframes holo-sheen {
+    to {
+      background-position: -160% -160%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .holo-band,
+    .holo-face::after {
+      animation: none;
+    }
+  }
 }

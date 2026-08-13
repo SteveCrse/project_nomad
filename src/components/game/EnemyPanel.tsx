@@ -41,6 +41,7 @@ export function EnemyPanel({
   const cockpitCharge = shipEngine.cockpitCharge(CONTENT, enemy.ship);
   const cockpitCap = shipEngine.cockpitCapacity(CONTENT, enemy.ship);
   const shields = shipEngine.shieldPool(CONTENT, enemy.ship);
+  const hull = shipEngine.hullGrid(enemy.ship);
 
   return (
     <div
@@ -106,14 +107,15 @@ export function EnemyPanel({
 
       <div className="w-0.5 bg-putty-400" />
 
+      {/* The hull only — an enemy's open positions are nobody's business. */}
       <div
-        className="grid gap-1.5"
+        className="grid w-fit gap-1.5"
         style={{
-          gridTemplateColumns: `repeat(${enemy.ship.gridCols}, 96px)`,
-          gridAutoRows: '68px',
+          gridTemplateColumns: `repeat(${hull.cols}, 72px)`,
+          gridAutoRows: '100px',
         }}
       >
-        {enemy.ship.slots.map((slot) => (
+        {hull.slots.map((slot) => (
           <ModuleTile
             key={slot.index}
             slot={slot}
