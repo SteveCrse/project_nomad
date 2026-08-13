@@ -108,11 +108,63 @@ export function shieldOptions(
   return ship.slots
     .map((slot) => {
       const part = getPart(slot.partId);
-      if (!part || part.role !== 'SHD') return null;
+      // The cockpit has its own row in the action bar — its generator is the
+      // way it recharges, so it isn't listed among the chargeable shields.
+      if (!part || part.role !== 'SHD' || part.partType === 'cockpit') return null;
       const action: DownAction = { type: 'charge-shield', slot: slot.index, amount: 1 };
       return { slot: slot.index, part, error: combat.actionError(CONTENT, battle, config, side, action) };
     })
     .filter((o): o is { slot: SlotIndex; part: PartCard; error: string | null } => o !== null);
+}
+
+export interface CockpitOptions {
+  part: PartCard;
+  /** Printed ⚔ of the basic attack. */
+  power: number;
+  /** ⚡ one down of the basic generator puts back. */
+  generation: number;
+  charge: number;
+  capacity: number;
+  attack: { action: DownAction; error: string | null };
+  generate: { action: DownAction; error: string | null };
+}
+
+/**
+ * The two downs every ship always has: the cockpit's basic attack and its
+ * basic generator.
+ *
+ * Both are free of ⚡ by design — with no HP pool, the cockpit is the ship's
+ * weapon of last resort *and* its last shield, so a seat stripped down to bare
+ * metal still has something to do with a down.
+ */
+export function cockpitOptions(
+  state: GameState,
+  config: GameConfig,
+  side: SideRef,
+  choice: TargetChoice,
+): CockpitOptions | null {
+  const battle = battleOf(state);
+  if (!battle) return null;
+  const ship = combat.shipOf(battle, side);
+  if (!ship) return null;
+  const cockpit = shipEngine.cockpitOf(CONTENT, ship);
+  if (!cockpit) return null;
+
+  const attack: DownAction = {
+    type: 'cockpit-attack',
+    ...(choice.target ? { target: choice.target } : {}),
+  };
+  const generate: DownAction = { type: 'cockpit-generate' };
+
+  return {
+    part: cockpit.part,
+    power: shipEngine.cockpitPower(CONTENT, ship),
+    generation: shipEngine.cockpitGeneration(CONTENT, ship),
+    charge: shipEngine.cockpitCharge(CONTENT, ship),
+    capacity: shipEngine.cockpitCapacity(CONTENT, ship),
+    attack: { action: attack, error: combat.actionError(CONTENT, battle, config, side, attack) },
+    generate: { action: generate, error: combat.actionError(CONTENT, battle, config, side, generate) },
+  };
 }
 
 export function activePlayer(state: GameState): PlayerState | undefined {

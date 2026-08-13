@@ -41,8 +41,12 @@ export const KIND_COLOR: Record<string, string> = {
   event: 'var(--role-rds)',
 };
 
-/** Hull bar colour by remaining percentage — green / amber / red. */
-export function hullColor(pct: number): string {
+/**
+ * Shield bar colour by remaining percentage — green / amber / red.
+ * Red means the cockpit pool is nearly dry, which is as close to "critical"
+ * as a ship gets: the next hit past it wrecks the ship.
+ */
+export function shieldColor(pct: number): string {
   if (pct < 30) return 'var(--toggle-red-500)';
   if (pct < 70) return 'var(--amber-500)';
   return 'var(--crt-green-500)';

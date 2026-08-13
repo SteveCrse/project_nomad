@@ -4,7 +4,14 @@ import type { GameConfig } from '../types/config';
 import type { CardId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
-import { canAttachAt, chargeSlot, equipPart, firstAttachableSlot, scrapCapBonus } from '../ship';
+import {
+  canAttachAt,
+  chargeSlot,
+  cockpitOf,
+  equipPart,
+  firstAttachableSlot,
+  scrapCapBonus,
+} from '../ship';
 
 /**
  * Loot phase. On destroying an enemy ship the party picks one:
@@ -69,7 +76,7 @@ export function resolveLootChoice(
     };
   }
 
-  // Option A: pilot the enemy hull, keep exactly one module from the old ship.
+  // Option A: pilot the enemy ship, keep exactly one module from the old one.
   const oldSlot = player.ship.slots[choice.keepFromOldShip];
   const kept = oldSlot?.partId && oldSlot.partId !== player.ship.cockpitId ? oldSlot.partId : null;
   const lost = player.ship.slots
@@ -81,13 +88,20 @@ export function resolveLootChoice(
     ? [...player.scrapDeck, kept]
     : player.scrapDeck;
 
-  // The enemy ship is taken intact — hull included, damage and all.
+  // The enemy ship is taken as it stands, module charge and all — except the
+  // cockpit, which was necessarily shot dry to wreck the ship in the first
+  // place. Taking a hull over means patching that basic shield back up; a ship
+  // handed over with 0⚡ on the cockpit would die to the next stray hit.
+  const cockpit = cockpitOf(content, enemy.ship);
+  const patched = cockpit
+    ? chargeSlot(content, enemy.ship, cockpit.slot.index, cockpit.part.energyCapacity ?? 0).ship
+    : enemy.ship;
+
   const takenShip = {
-    ...enemy.ship,
+    ...patched,
     id: player.shipId,
     name: enemy.ship.name.toUpperCase(),
-    hp: enemy.ship.hp > 0 ? enemy.ship.hp : Math.max(1, Math.round(enemy.hpMax / 2)),
-    hpMax: enemy.hpMax,
+    destroyed: false,
     flags: { negateNext: 0, retaliate: 0 },
   };
 
@@ -129,7 +143,7 @@ export function rearrange(
 
     // Swapping out an occupied slot puts the old module back into the scrap.
     const occupant = ship.slots[target]?.partId ?? null;
-    // An empty position still has to touch the hull.
+    // An empty position still has to touch the ship.
     if (!occupant && !canAttachAt(ship, target)) continue;
     ship = equipPart(ship, target, cardId);
     // Modules come online with an empty pool; generators prime themselves.
@@ -162,7 +176,7 @@ export function buyThresholdUpgrade(
       powerPenalty: player.powerPenalty + config.thresholdUpgradePowerCost,
     },
     log: [
-      `${player.label} hardens the hull: +${config.thresholdUpgradeStep} own threshold, ` +
+      `${player.label} hardens the ship: +${config.thresholdUpgradeStep} own threshold, ` +
         `-${config.thresholdUpgradePowerCost}⚔ per attack.`,
     ],
   };

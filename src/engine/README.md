@@ -39,9 +39,9 @@ newRun → drawStartingPart* → assemblePart* → startMission
 The run opens in `setup`: each seat draws `config.startingPartsDraws` parts off
 the shared Parts deck one card at a time (`game.nextDrafter` says whose draw it
 is, round the table), fits them, and `startMission` puts the party on the board.
-The first cockpit a seat draws re-anchors its hull, since capacity is the
-cockpit's, and parts left over ride along in the Scrap Deck so a rearrangement
-point can still spend them. `startingPartsDraws: 0` skips the draft and rolls
+The first cockpit a seat draws re-anchors its ship, since capacity is the
+cockpit's — and so are the basic attack, shield and generator — and parts left
+over ride along in the Scrap Deck so a rearrangement point can still spend them. `startingPartsDraws: 0` skips the draft and rolls
 the authored loadouts in `data/ships.ts` out instead.
 
 `game.takeDown` is the single entry point for spending a down; it asks
@@ -56,9 +56,19 @@ instead of a corrupted state. The store never mutates game state itself.
   mechanically real — see `loot.buyThresholdUpgrade`.
 - A side's threshold each set is the softest living opponent's, recomputed
   when the set opens.
-- Damage order: negation → flat reduction (Shock Absorber) → charged shields →
-  hull. `config.thresholdCountsShielded` decides whether shielded damage still
-  counts toward conversion.
+- **There is no HP.** Damage order: negation → flat reduction (Shock Absorber)
+  → charged shield modules → the cockpit's own pool. Damage still standing
+  after all of that has nothing left to bite on, and the ship is destroyed.
+  `config.thresholdCountsShielded` decides whether damage eaten by shield
+  modules still counts toward conversion, or only what reached the cockpit.
+- **The cockpit is a weapon, a shield and a generator.** Its card prints
+  `power` (the basic attack), `energyCapacity` (the basic shield, and the
+  ship's last charge) and `genPerDown` (what one down of the basic generator
+  puts back). Two extra down actions expose them — `cockpit-attack` and
+  `cockpit-generate` — and neither costs ⚡, so a ship stripped to bare metal
+  still has something to spend a down on. The cockpit sits outside
+  `liveModules`, so it never doubles up with the upkeep spread or a role chain;
+  everything it does goes through the `cockpit*` helpers in `ship/module.ts`.
 - A module fires as often as its own pool can pay for — one down per shot. A
   card printed `oncePerSet` is capped at one, and `offensiveOncePerSet` puts
   every gun back under that cap for comparison. What actually rations a volley
@@ -86,7 +96,7 @@ geometry every adjacency rule reads:
 ## Card behaviour
 
 Cards carry structured fields (`energyCost`, `power`, `dice`, `effect`,
-`generates`, `damageReduction`, …) that the engine resolves. The effect
+`generates`, `genPerDown`, `damageReduction`, …) that the engine resolves. The effect
 vocabulary is deliberately small; anything outside it is
 `effect: { kind: 'manual' }`, which still spends the down and the energy but
 leaves the payload to the table. A knowingly-manual card beats a

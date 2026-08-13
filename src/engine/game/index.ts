@@ -15,9 +15,11 @@ import * as combat from '../combat';
 import * as loot from '../loot';
 import type { LootChoice } from '../loot';
 import { chooseEnemyAction } from '../ai';
+import * as shipEngine from '../ship';
 import {
   canAttachAt,
   chargeSlot,
+  cockpitOf,
   createShip,
   detachPart,
   equipPart,
@@ -672,7 +674,8 @@ function startFight(
   };
   next = log(
     next,
-    `${enemy.name} spins up: ${enemy.hpMax} hull, threshold ${enemy.convThreshold}, ` +
+    `${enemy.name} spins up: ${shipEngine.shieldPool(content, enemy.ship)}⚡ of shielding, ` +
+      `threshold ${enemy.convThreshold}, ` +
       `${enemy.ship.slots.filter((s) => s.partId && s.partId !== enemy.ship.cockpitId).length} modules.`,
     'system',
   );
@@ -905,24 +908,28 @@ export function resolveEvent(
     next = log(next, `${marker} marker placed on ${nodeId}.`, 'info');
   }
 
-  if (card.hullDamage) {
+  if (card.damage) {
+    // Hazard damage goes through the same pipeline a shot does — shields, then
+    // the cockpit — so a well-charged ship shrugs off what a stripped one dies to.
     const here = board.playersAt(next.mission, nodeId);
+    const hit: string[] = [];
     next = {
       ...next,
       party: {
         ...next.party,
-        players: next.party.players.map((p) =>
-          here.includes(p.id)
-            ? {
-                ...p,
-                ship: { ...p.ship, hp: Math.max(0, p.ship.hp - card.hullDamage!) },
-                destroyed: p.ship.hp - card.hullDamage! <= 0,
-              }
-            : p,
-        ),
+        players: next.party.players.map((p) => {
+          if (!here.includes(p.id)) return p;
+          const { ship, report } = combat.damageShip(content, p.ship, card.damage!);
+          hit.push(
+            `${p.label}: ${report.absorbed}⚡ off shields, ${report.cockpit}⚡ off the cockpit` +
+              (report.overkill > 0 ? ' — destroyed' : ''),
+          );
+          return { ...p, ship, destroyed: ship.destroyed };
+        }),
       },
     };
-    next = log(next, `${card.name} deals ${card.hullDamage} hull to everyone here.`, 'damage');
+    next = log(next, `${card.name} deals ${card.damage}⚔ to everyone here.`, 'damage');
+    next = logAll(next, hit, 'damage');
   }
 
   if (card.grantsLoot) {
@@ -1045,7 +1052,7 @@ export function closePrompt(
   return resolveNextNode(content, cleared, config, rng);
 }
 
-/** Repair between missions is out of scope; this is the next-sector hook. */
+/** Between sectors every seat refits: cockpit shields back to full. */
 export function nextMission(
   content: Content,
   state: GameState,
@@ -1058,11 +1065,17 @@ export function nextMission(
   );
   const revived: PartyState = {
     ...state.party,
-    players: state.party.players.map((p) => ({
-      ...p,
-      destroyed: false,
-      ship: { ...p.ship, hp: p.ship.hpMax, flags: { negateNext: 0, retaliate: 0 } },
-    })),
+    players: state.party.players.map((p) => {
+      const cockpit = cockpitOf(content, p.ship);
+      const ship = cockpit
+        ? chargeSlot(content, p.ship, cockpit.slot.index, cockpit.part.energyCapacity ?? 0).ship
+        : p.ship;
+      return {
+        ...p,
+        destroyed: false,
+        ship: { ...ship, destroyed: false, flags: { negateNext: 0, retaliate: 0 } },
+      };
+    }),
   };
   return log(
     {

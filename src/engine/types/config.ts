@@ -15,8 +15,6 @@ export interface GameConfig {
    * module fires as often as its own pool can pay for.
    */
   downCount: number;
-  /** Starting hull HP per player ship. */
-  hullHp: number;
   /** Module grid shape. Capacity is normally set by the cockpit; this is the ceiling. */
   gridCols: number;
   gridRows: number;
@@ -47,8 +45,9 @@ export interface GameConfig {
   /** Attack power lost per point... per upgrade — the cost side of the trade. */
   thresholdUpgradePowerCost: number;
   /**
-   * Does damage eaten by shields still count toward the attacker's threshold?
-   * True reads "damage dealt"; false reads "damage that landed".
+   * Does damage eaten by shield modules still count toward the attacker's
+   * threshold? True reads "damage dealt"; false counts only what reached the
+   * cockpit — the ship's last shield — or went past it.
    */
   thresholdCountsShielded: boolean;
   /**
@@ -60,10 +59,12 @@ export interface GameConfig {
   offensiveOncePerSet: boolean;
   /** Parts drawn past the cockpit when spawning an enemy, at 1 player. */
   enemyPartsBase: number;
-  /** Multiplayer scaling: extra parts drawn per player beyond the first. */
+  /**
+   * Multiplayer scaling: extra parts drawn per player beyond the first. With
+   * no HP anywhere, this *is* the difficulty dial — more parts means more
+   * shields to chew through and more guns pointing back.
+   */
   partsPerExtraPlayer: number;
-  /** Enemy hull multiplier per extra player: hp × (1 + (scale-1) × extraPlayers). */
-  enemyHpScale: number;
 
   // ---- economy ----
   /** Scrap deck cap. Rules default: 4; some modules raise it. */
@@ -111,7 +112,6 @@ export interface GameConfig {
 export const DEFAULT_CONFIG: GameConfig = {
   playerCount: 4,
   downCount: 4,
-  hullHp: 60,
   gridCols: 5,
   gridRows: 2,
   startingPartsDraws: 5,
@@ -126,7 +126,6 @@ export const DEFAULT_CONFIG: GameConfig = {
   offensiveOncePerSet: false,
   enemyPartsBase: 2,
   partsPerExtraPlayer: 2,
-  enemyHpScale: 1.25,
 
   scrapCap: 4,
   energyPerTurn: 6,
@@ -167,10 +166,4 @@ export function playerThreshold(config: GameConfig, bonus = 0): number {
 export function partsForSpawn(config: GameConfig, partsBase: number): number {
   const extraPlayers = Math.max(0, config.playerCount - 1);
   return partsBase + config.partsPerExtraPlayer * extraPlayers;
-}
-
-/** Enemy hull after multiplayer scaling. */
-export function scaledEnemyHp(config: GameConfig, baseHp: number): number {
-  const extraPlayers = Math.max(0, config.playerCount - 1);
-  return Math.round(baseHp * (1 + (config.enemyHpScale - 1) * extraPlayers));
 }

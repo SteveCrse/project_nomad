@@ -199,7 +199,7 @@ function EnemyThresholds() {
           <div key={enemy.id} className="flex items-center gap-2 py-[3px]">
             <span
               className="flex-1 truncate text-[11px]"
-              title={`${enemy.name}${enemy.isBoss ? ' (boss)' : ''} · hp ${enemy.hpPool}`}
+              title={`${enemy.name}${enemy.isBoss ? ' (boss)' : ''} · ${enemy.partsBase} parts`}
             >
               {enemy.id}
             </span>
@@ -274,7 +274,7 @@ function CombatLogPlaceholder() {
         [r4] enemy down 1/{downCount}
       </div>
       <div>
-        [r3] P3 hull 12/60 — <span className="text-toggle-red-300">critical</span>
+        [r3] P3 cockpit shield 1/5 — <span className="text-toggle-red-300">critical</span>
       </div>
       <div className="pt-1 text-console-faint">awaiting engine/combat</div>
     </div>

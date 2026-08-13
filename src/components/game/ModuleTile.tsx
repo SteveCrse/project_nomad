@@ -130,27 +130,37 @@ export function ModuleTile({
     );
   }
 
+  const capacity = part.energyCapacity ?? 0;
+  const energy = slot.energy ?? 0;
+
+  // The cockpit is a weapon, a shield and a generator at once, so its tile
+  // carries all three: ⚔ it always shoots for, the pips of its own shield
+  // pool, and the ⚡ a down of its generator puts back.
   if (part.partType === 'cockpit') {
     return (
       <div
         {...drag}
         className={`${shell} ${ring} ${fade} ${clickable} border-2 border-n-900 bg-putty-100 shadow-raised`}
         onClick={onClick}
-        title={title ?? part.name}
+        title={title ?? `${part.name} — ${part.text}`}
       >
-        <div className={`${NAME_SIZE[variant]} leading-none font-semibold`}>COCKPIT</div>
+        <div className="flex items-baseline justify-between gap-1">
+          <span className={`${NAME_SIZE[variant]} leading-none font-semibold`}>COCKPIT</span>
+          <span className="font-mono text-[9px] text-putty-700">{part.slots ?? 0} SLOTS</span>
+        </div>
+        {variant !== 'scrap' && <EnergyPips energy={energy} capacity={capacity} tall={variant === 'large'} />}
         <div className="flex items-center justify-between gap-1">
-          <span className="font-mono text-[9px] tracking-[0.1em] text-n-700">ANCHOR</span>
+          <span className="font-mono text-[9px] tracking-[0.06em] text-n-700">
+            {part.power ?? 0}⚔ · +{part.genPerDown ?? 0}⚡
+          </span>
           <span className="font-mono text-[10px] text-putty-700">
-            {part.slots ?? 0} SLOTS
+            {energy}/{capacity}
           </span>
         </div>
       </div>
     );
   }
 
-  const capacity = part.energyCapacity ?? 0;
-  const energy = slot.energy ?? 0;
   const roleColor = ROLE_COLOR[part.role];
   const spent = slot.usedThisDownSet;
 

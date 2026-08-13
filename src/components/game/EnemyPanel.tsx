@@ -1,6 +1,8 @@
 import type { EnemyInstance, SlotIndex } from '@engine/types';
+import { ship as shipEngine } from '@engine';
 import { StatGauge } from '@/components/ds';
 import { ModuleTile } from './ModuleTile';
+import { CONTENT } from '@data';
 import { useConfig } from '@/store/configStore';
 
 interface EnemyPanelProps {
@@ -14,10 +16,11 @@ interface EnemyPanelProps {
 }
 
 /**
- * An enemy ship on the table. Hull, threshold and downs are the three numbers
- * a playtester watches: the threshold is what the party has to beat in one
- * set to keep the turn, and the downs strip is how close the enemy is to
- * chaining another one.
+ * An enemy ship on the table. Cockpit shield, threshold and downs are the
+ * three numbers a playtester watches: the threshold is what the party has to
+ * beat in one set to keep the turn, the downs strip is how close the enemy is
+ * to chaining another one, and the cockpit gauge is how close it is to being
+ * a wreck — once it reads 0, the next hit that gets through ends it.
  */
 export function EnemyPanel({
   enemy,
@@ -29,12 +32,15 @@ export function EnemyPanel({
   targetSlot,
 }: EnemyPanelProps) {
   const config = useConfig();
-  const dead = enemy.hp <= 0;
+  const dead = enemy.ship.destroyed;
   const used = downs?.used ?? enemy.downsUsed;
   const total = downs?.total ?? enemy.downCount ?? config.downCount;
   const partCount = enemy.ship.slots.filter(
     (s) => s.partId && s.partId !== enemy.ship.cockpitId,
   ).length;
+  const cockpitCharge = shipEngine.cockpitCharge(CONTENT, enemy.ship);
+  const cockpitCap = shipEngine.cockpitCapacity(CONTENT, enemy.ship);
+  const shields = shipEngine.shieldPool(CONTENT, enemy.ship);
 
   return (
     <div
@@ -55,9 +61,16 @@ export function EnemyPanel({
         </div>
         <div className="flex items-center gap-2 font-mono text-[11px] text-putty-700">
           <span>{partCount} PARTS</span>
+          <span title="Every charged absorber, cockpit included">SHIELDS {shields}⚡</span>
           <span className="text-toggle-red-500">THRESHOLD {enemy.convThreshold}</span>
         </div>
-        <StatGauge label="Hull" value={enemy.hp} max={enemy.hpMax} tone="danger" className="w-[220px]" />
+        <StatGauge
+          label="Cockpit ⚡"
+          value={cockpitCharge}
+          max={cockpitCap}
+          tone="danger"
+          className="w-[220px]"
+        />
         <div className="flex items-center gap-2">
           <span className="text-[12px] tracking-label text-text-secondary uppercase">Downs</span>
           <div className="flex gap-1.5">

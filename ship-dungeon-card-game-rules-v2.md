@@ -24,19 +24,37 @@
 ## Combat — Symmetric Downs System
 Players and enemies use the same structure, working for and against both sides:
 
-1. Each side has an **HP pool** (the win condition — reduce it to 0) and a **conversion threshold** (an amount of damage, defined by the enemy's stat block, needed within one set of downs to keep attacking).
-2. Each side gets 4 downs — attempts to deal damage.
-3. A module can be activated **as often as its own energy pool can pay for** — one down per activation. What rations a volley is charge, not a per-set limit. A card that should only fire once per set says so in its own text.
+1. **There is no HP.** A ship's durability is the ⚡ sitting in its shields.
+   Damage drains charged shield modules, then the **cockpit's own pool** — the
+   basic shield every ship has. When all of it is dry and damage still lands,
+   the ship is destroyed. That is the only kill condition.
+2. Each side has a **conversion threshold** (an amount of damage, defined by the enemy's stat block, needed within one set of downs to keep attacking).
+3. Each side gets 4 downs — attempts to deal damage.
+4. A module can be activated **as often as its own energy pool can pay for** — one down per activation. What rations a volley is charge, not a per-set limit. A card that should only fire once per set says so in its own text.
    - *Replaces the v2 draft rule "each offensive module can be used once per fresh set of downs": with one gun and a threshold of 12, a set could never convert.*
-4. Attacking: activate modules, which define attack power, targeting, energy cost, and whether the action calls for dice.
-5. Downs can also be spent to charge shields, reroute energy, use non-offensive modules, or play cards instead of attacking.
-6. **Conversion:** if a side hits the conversion threshold within its 4 downs, it gets a fresh set of downs instead of passing the turn — like a first-down conversion in football. This lets a side chain multiple "turns" together.
-7. If a side doesn't hit the threshold within 4 downs, the turn passes.
-8. *Open question:* should players be able to upgrade their own conversion threshold (harder for enemies to convert against them), at a cost (e.g. attack power)? Original notes suggest yes on the defensive side — confirm the design.
+5. Attacking: activate modules, which define attack power, targeting, energy cost, and whether the action calls for dice.
+6. Downs can also be spent to charge shields, reroute energy, use non-offensive modules, or play cards instead of attacking.
+7. **Conversion:** if a side hits the conversion threshold within its 4 downs, it gets a fresh set of downs instead of passing the turn — like a first-down conversion in football. This lets a side chain multiple "turns" together.
+8. If a side doesn't hit the threshold within 4 downs, the turn passes.
+9. *Open question:* should players be able to upgrade their own conversion threshold (harder for enemies to convert against them), at a cost (e.g. attack power)? Original notes suggest yes on the defensive side — confirm the design.
 
 ## Ships & Modules
 - A ship is built from **parts** drawn from the Parts deck.
 - Every ship starts with a **Cockpit**, which defines ship capacity (module slot count).
+
+### The cockpit is a basic weapon, shield and generator
+Printed on every cockpit as `N Slots, X⚔, Y⚡`:
+
+- **Basic weapon.** X⚔ is what the cockpit attack deals. It costs **one down
+  and no ⚡** — a ship with nothing fitted, or nothing charged, can still shoot.
+- **Basic shield.** Y⚡ is the cockpit's own pool. It soaks after the fitted
+  shields do, and it is the last charge on the ship: past it there is nothing.
+- **Basic generator.** One down runs it, putting ⚡ back onto the cockpit's own
+  shield. So a down is a choice — take the shot, or patch the shield.
+
+That trade is the whole of a bare ship's turn, and it stays live all game: with
+four downs, spending one on the generator is a down not spent converting.
+
 - To spawn an enemy ship: draw from the Parts deck, attaching parts to the current cockpit, until another Cockpit is drawn — that starts a new ship.
 - Each module individually defines its own energy cost/pool, whether its actions call for dice (and what kind), and its role (offense, shield, utility, specialization like tank/DPS/luck).
 - Carried-but-unequipped parts are capped — don't hoard, or you can't pick up more. That reserve is the Scrap Deck (see Loot Phase); a part is either fitted to the grid or sitting in it.
@@ -100,6 +118,14 @@ Shared: **Scrap Deck** is capped at 4 cards (some modules raise this cap). It al
 5. **Do ships roll out loaded?** Currently every module starts the mission with
    a full pool — a one-time load, not a recharge — so turn one isn't spent
    entirely on rerouting. Starting the guns dry is the harsher alternative.
+   Cockpits always roll out with a full shield: it is the ship's only
+   durability, so a dry one would mean the first unanswered hit is fatal.
+7. **Does the reactor baseline top up the cockpit shield?** Currently no — the
+   cockpit refills by spending a down on its own generator, or by rerouting
+   from a neighbour. Free upkeep on it would make the generator down worthless.
+8. **Can a cockpit be shot off?** Currently no: a module-targeted attack aimed
+   at the cockpit resolves as an ordinary attack instead of knocking it out.
+   The cockpit is the ship, not a module sitting on it.
 6. **Does the attachment rule bite on removal?** A part must be attached next to
    something already fitted, but nothing stops a player moving a module out from
    under another one and leaving it stranded. Local rule, checked on placement
@@ -112,7 +138,8 @@ Shared: **Scrap Deck** is capped at 4 cards (some modules raise this cap). It al
 - Item rarity checkpoint markers
 - Player minis
 - Dice (as called for by specific modules)
-- HP / down trackers (per player and per enemy ship)
+- Down trackers (per player and per enemy ship). No HP trackers — a ship's
+  durability is ⚡ on its shields and cockpit, tracked with the same tokens.
 - **A ship mat per player and per enemy ship** — modules are laid out in a grid
   and adjacency decides both energy movement and chain bonuses, so parts need
   somewhere to sit in a fixed arrangement

@@ -36,7 +36,10 @@ export interface PlayerState {
   /** Carried-but-unequipped parts, capped so parts can't be hoarded freely. */
   carriedParts: CardId[];
 
-  /** Out of the fight: hull at 0. Stays on the board for the post-mortem. */
+  /**
+   * Out of the fight: shields and cockpit both dry when the last hit landed.
+   * Stays on the board for the post-mortem.
+   */
   destroyed: boolean;
 }
 

@@ -2,25 +2,30 @@ import type { CardId, EnemyId, PlayerId, SlotIndex } from './ids';
 import type { EnemyInstance } from './enemy';
 import type { PartyState } from './player';
 
-/** Combat is symmetric: both sides have an HP pool, downs, and a threshold. */
+/** Combat is symmetric: both sides have shields, downs, and a threshold. */
 export type SideRef = { kind: 'player'; id: PlayerId } | { kind: 'enemy'; id: EnemyId };
 
 /**
  * What a down can be spent on. The rules allow attacking, charging shields,
- * using non-offensive modules, or playing a card.
+ * using non-offensive modules, or playing a card — plus the two a cockpit
+ * always offers, so a stripped ship is never out of options.
  */
 export type DownAction =
   | {
       type: 'activate-module';
       slot: SlotIndex;
       target?: SideRef;
-      /** Aim at one module on the target instead of its hull. */
+      /** Aim at one module on the target instead of its shields. */
       targetSlot?: SlotIndex;
       /** Dice bought when the module's dice count is 'variable'. */
       diceCount?: number;
       /** Damage adjudicated at the table, for `manual` effects. */
       manualDamage?: number;
     }
+  /** The cockpit's basic attack: its printed ⚔, one down, no ⚡. */
+  | { type: 'cockpit-attack'; target?: SideRef; targetSlot?: SlotIndex }
+  /** The cockpit's basic generator: one down, ⚡ into its own shield pool. */
+  | { type: 'cockpit-generate' }
   | { type: 'charge-shield'; slot: SlotIndex; amount: number }
   | { type: 'play-card'; cardId: CardId; target?: SideRef; manualDamage?: number }
   /**

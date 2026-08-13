@@ -78,14 +78,31 @@ export interface PartCard extends CardBase {
   partType: 'cockpit' | 'active-module' | 'passive-module';
   role: ModuleRole;
   specialization?: Specialization;
-  /** Size of this module's own energy pool. null when it holds no energy. */
+  /**
+   * Size of this module's own energy pool. null when it holds no energy.
+   *
+   * On a **cockpit** this is the ship's basic shield: the ⚡ it can hold, the
+   * last charge standing between an attack and a wreck.
+   */
   energyCapacity: number | null;
   /** Dice this module's action calls for, if any. */
   dice?: DiceSpec;
   /** Cockpits only: module slot count this cockpit grants. */
   slots?: number;
-  /** Damage this module deals per activation, before dice/config modifiers. */
+  /**
+   * Damage this module deals per activation, before dice/config modifiers.
+   *
+   * On a **cockpit** this is the basic attack — one down, no ⚡ cost. Every
+   * ship can always shoot, however badly.
+   */
   power?: number;
+  /**
+   * Cockpits only: ⚡ the basic generator puts into the cockpit's own shield
+   * pool for one down. Distinct from `generates`, which is passive upkeep on a
+   * module; running the cockpit generator costs the down that could have been
+   * the cockpit's attack.
+   */
+  genPerDown?: number;
   /** Cards that raise the scrap deck cap declare it here. */
   scrapCapBonus?: number;
   /**
@@ -107,13 +124,13 @@ export interface PartCard extends CardBase {
   damageReduction?: number;
   /** Passive: energy this module bleeds from the whole ship each turn (Infested). */
   drainPerTurn?: number;
-  /** Passive SHD with a pool soaks damage before hull; set false to opt out. */
+  /** Passive SHD with a pool soaks damage before the cockpit; set false to opt out. */
   absorbs?: boolean;
   /** Passive: energy may be rerouted without spending a down (RDS chains). */
   freeReroute?: boolean;
   /** What activating this module does. Defaults to damage when it has power. */
   effect?: ModuleEffect;
-  /** Attacks that hit a single enemy module rather than the hull. */
+  /** Attacks that hit a single enemy module rather than its shields. */
   targetsModule?: boolean;
 }
 
@@ -143,8 +160,8 @@ export interface EventCard extends CardBase {
   marker?: string;
   /** Loot cards handed out when the event resolves. */
   grantsLoot?: number;
-  /** Hull damage dealt to every player at the node. */
-  hullDamage?: number;
+  /** ⚔ dealt to every ship at the node, resolved through shields as usual. */
+  damage?: number;
   /** The event spawns a fight instead of resolving on the spot. */
   spawnsCombat?: boolean;
 }

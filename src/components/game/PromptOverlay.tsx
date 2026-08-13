@@ -57,7 +57,7 @@ function EventPrompt({ state, cardId }: { state: GameState; cardId: string }) {
             {card?.text}
           </div>
           <div className="text-[14px] text-putty-700">
-            The tool resolves the structured half of the card — markers, hull damage, loot draws,
+            The tool resolves the structured half of the card — markers, damage, loot draws,
             ambushes. Anything the card asks a player to choose is still a table decision.
           </div>
           <div>
@@ -150,8 +150,9 @@ function LootPrompt({ state }: { state: GameState }) {
         <div className="flex flex-col gap-2 border border-border-strong bg-putty-100 p-3">
           <div className="font-display text-[14px] font-bold">A · TAKE THE WHOLE SHIP</div>
           <div className="text-[13px] leading-[1.35] text-putty-800">
-            Abandon your hull and pilot {wreck.name}. Keep exactly one module from the old ship in
-            the Scrap Deck; the rest is shuffled back into the Parts deck.
+            Abandon your ship and pilot {wreck.name}. Keep exactly one module from the old ship in
+            the Scrap Deck; the rest is shuffled back into the Parts deck. Its cockpit shield comes
+            back up with you — you shot it dry to take the ship.
           </div>
           <div className="font-mono text-[10px] tracking-console text-putty-700">KEEP FROM YOUR SHIP</div>
           <div className="grid grid-cols-4 gap-1.5" style={{ gridAutoRows: '58px' }}>

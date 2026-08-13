@@ -117,10 +117,12 @@ function pickEnemy(
   const pool = enemies.filter((e) => !!e.isBoss === boss);
   if (pool.length === 0) return undefined;
   if (boss) return rng.pick(pool).id;
-  // Weight by how close each enemy's HP is to the depth we're at.
-  const hardest = Math.max(...pool.map((e) => e.hpPool));
+  // Weight by how big a ship each enemy rolls against the depth we're at.
+  // With no HP anywhere, part count *is* the difficulty tier: more parts means
+  // more shields to grind through and more guns pointing back.
+  const hardest = Math.max(1, ...pool.map((e) => e.partsBase));
   const weights = pool.map((e) => {
-    const tier = e.hpPool / hardest;
+    const tier = e.partsBase / hardest;
     return Math.max(0.05, 1 - Math.abs(tier - Math.max(0.25, depth)));
   });
   return rng.pickWeighted(pool, weights).id;

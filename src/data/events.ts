@@ -3,7 +3,7 @@ import type { EventCard } from '@engine/types';
 /**
  * Events deck. Drawn on Event steps.
  *
- * The structured fields (`grantsLoot`, `hullDamage`, `spawnsCombat`,
+ * The structured fields (`grantsLoot`, `damage`, `spawnsCombat`,
  * `placesMarker`) are what the engine resolves; anything the card asks a
  * player to decide is still decided at the table.
  */
@@ -35,10 +35,10 @@ export const EVENTS: EventCard[] = [
     id: 'debris-field',
     name: 'Debris Field',
     kind: 'event',
-    subtype: 'Hazard · Hull Damage',
+    subtype: 'Hazard · Damage',
     rarity: 1,
     amount: 2,
-    hullDamage: 4,
+    damage: 4,
     text: 'Every ship in this sector takes 4⚔️ as it grinds through the wreckage. (placeholder)',
   },
   {

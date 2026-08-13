@@ -30,6 +30,10 @@ export interface ShipFlags {
 /**
  * A ship is a cockpit plus module slots. Capacity comes from the cockpit,
  * so swapping cockpits (Loot option A) can resize the grid.
+ *
+ * There is no HP pool. A ship's durability is the charge sitting in its
+ * shields, and the cockpit's own pool is the last of them: once every shield
+ * and the cockpit are dry and damage still lands, the ship is destroyed.
  */
 export interface Ship {
   id: ShipId;
@@ -39,8 +43,8 @@ export interface Ship {
   /** Grid shape, purely presentational — capacity is slots.length. */
   gridCols: number;
   slots: ShipSlot[];
-  hp: number;
-  hpMax: number;
+  /** Shot out from under its pilot: damage landed with no ⚡ left to soak it. */
+  destroyed: boolean;
   flags: ShipFlags;
 }
 

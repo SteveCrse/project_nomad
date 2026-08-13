@@ -10,7 +10,17 @@ import {
   downsFor,
   shipOf,
 } from '../combat';
-import { areAdjacent, capacityOf, diceCountOf, effectOf, isAbsorber, liveModules } from '../ship';
+import {
+  areAdjacent,
+  capacityOf,
+  cockpitCapacity,
+  cockpitCharge,
+  cockpitPower,
+  diceCountOf,
+  effectOf,
+  isAbsorber,
+  liveModules,
+} from '../ship';
 
 /**
  * Enemy decision-making — enough for one side of the table to play itself so
@@ -31,11 +41,13 @@ export function chooseEnemyAction(
   const downs = downsFor(battle.combat, side);
   if (!ship || !downs) return { type: 'pass' };
 
-  const target = defaultTarget(battle, side);
+  const target = defaultTarget(content, battle, side);
   const legal = (action: DownAction): boolean =>
     actionError(content, battle, config, side, action) === null;
 
-  // 1. Attack with the highest expected damage that is actually legal.
+  // 1. Attack with the highest expected damage that is actually legal. The
+  //    cockpit's basic shot is in the running like anything else — it costs no
+  //    ⚡, so it wins by default once the guns run dry.
   const guns = liveModules(content, ship)
     .filter((m) => effectOf(m.part).kind === 'damage')
     .map((m) => {
@@ -48,11 +60,19 @@ export function chooseEnemyAction(
       };
       const expected = expectedDamage(m.part, dice);
       return { action, expected };
-    })
+    });
+
+  const shots = [
+    ...guns,
+    {
+      action: { type: 'cockpit-attack', ...(target ? { target } : {}) } as DownAction,
+      expected: cockpitPower(content, ship),
+    },
+  ]
     .filter((g) => legal(g.action))
     .sort((a, b) => b.expected - a.expected);
 
-  if (guns.length > 0 && guns[0]!.expected > 0) return guns[0]!.action;
+  if (shots.length > 0 && shots[0]!.expected > 0) return shots[0]!.action;
 
   // 2. Nothing to shoot with — prime defensive tech (turrets, mines).
   const utility = liveModules(content, ship)
@@ -64,7 +84,14 @@ export function chooseEnemyAction(
     .filter(legal);
   if (utility.length > 0) return rng.pick(utility);
 
-  // 3. Pour spare charge into a shield that has room.
+  // 3. Patch the cockpit shield — the last thing standing between this ship
+  //    and a wreck, and the generator that fills it costs nothing but a down.
+  if (cockpitCharge(content, ship) < cockpitCapacity(content, ship)) {
+    const action: DownAction = { type: 'cockpit-generate' };
+    if (legal(action)) return action;
+  }
+
+  // 4. Pour spare charge into a shield module that has room.
   const shield = liveModules(content, ship).find(
     (m) => isAbsorber(m.part) && capacityOf(content, m.slot) > m.slot.energy,
   );
@@ -73,7 +100,7 @@ export function chooseEnemyAction(
     if (legal(action)) return action;
   }
 
-  // 4. Reload: one down hands charge along the grid into the dry guns.
+  // 5. Reload: one down hands charge along the grid into the dry guns.
   const transfers = planReroute(content, ship);
   if (transfers.length > 0) {
     const action: DownAction = { type: 'reroute-energy', transfers };

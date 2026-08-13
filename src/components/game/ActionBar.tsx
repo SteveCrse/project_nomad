@@ -3,7 +3,7 @@ import type { DownAction, GameState, SideRef } from '@engine/types';
 import { ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ROLE_COLOR } from '@/lib/palette';
-import { moduleOptions, shieldOptions } from '@/lib/combatView';
+import { cockpitOptions, moduleOptions, shieldOptions } from '@/lib/combatView';
 import { useConfig } from '@/store/configStore';
 import { useGameStore } from '@/store/gameStore';
 import { useUiStore } from '@/store/uiStore';
@@ -39,7 +39,7 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
     clearReroute();
   }, [holder, clearReroute]);
 
-  const enemies = state.combat?.enemies.filter((e) => e.hp > 0) ?? [];
+  const enemies = state.combat?.enemies.filter((e) => !e.ship.destroyed) ?? [];
   const target: SideRef | undefined = useMemo(() => {
     const chosen = targetEnemyId && enemies.find((e) => e.instanceId === targetEnemyId);
     const fallback = enemies[0];
@@ -56,6 +56,7 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
 
   const modules = moduleOptions(state, config, side, choice);
   const shields = shieldOptions(state, config, side);
+  const cockpit = cockpitOptions(state, config, side, choice);
   const active = modules.filter((m) => m.part.partType === 'active-module');
   const hasVariableDice = active.some((m) => m.part.dice?.count === 'variable');
   const hasManual = active.some((m) => m.manual);
@@ -92,15 +93,73 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
               active={target?.id === e.instanceId}
               onClick={() => setTarget(e.instanceId)}
             >
-              {e.name} · {e.hp}
+              {e.name} · {shipEngine.shieldPool(CONTENT, e.ship)}⚡
             </Chip>
           ))}
         </Row>
       )}
 
+      {/*
+        The cockpit's two downs. Neither costs ⚡, so this row is never empty
+        and never greyed out for want of charge — it is what a seat spends a
+        down on when the guns are dry.
+      */}
+      {cockpit && (
+        <Row label="COCKPIT">
+          <button
+            disabled={!!cockpit.attack.error}
+            title={cockpit.attack.error ?? `Basic attack — ${cockpit.power}⚔ for one down, no ⚡`}
+            onClick={() => fire(cockpit.attack.action)}
+            className={[
+              'flex min-w-[132px] cursor-pointer flex-col items-start gap-0.5 border px-2 py-1.5 text-left',
+              'disabled:cursor-not-allowed disabled:opacity-45',
+              cockpit.attack.error
+                ? 'border-putty-500 bg-putty-200'
+                : 'border-n-900 bg-putty-100 shadow-raised',
+            ].join(' ')}
+            style={{ borderLeft: `4px solid ${ROLE_COLOR.WPN}` }}
+          >
+            <span className="text-[13px] leading-none font-semibold">Basic attack</span>
+            <span className="font-mono text-[10px] text-putty-700">
+              FREE · {cockpit.power}⚔
+            </span>
+          </button>
+
+          <button
+            disabled={!!cockpit.generate.error}
+            title={
+              cockpit.generate.error ??
+              `Run the basic generator — +${cockpit.generation}⚡ onto the cockpit shield`
+            }
+            onClick={() => fire(cockpit.generate.action)}
+            className={[
+              'flex min-w-[132px] cursor-pointer flex-col items-start gap-0.5 border px-2 py-1.5 text-left',
+              'disabled:cursor-not-allowed disabled:opacity-45',
+              cockpit.generate.error
+                ? 'border-putty-500 bg-putty-200'
+                : 'border-n-900 bg-putty-100 shadow-raised',
+            ].join(' ')}
+            style={{ borderLeft: `4px solid ${ROLE_COLOR.GEN}` }}
+          >
+            <span className="text-[13px] leading-none font-semibold">Run generator</span>
+            <span className="font-mono text-[10px] text-putty-700">
+              FREE · +{cockpit.generation}⚡ · SHIELD {cockpit.charge}/{cockpit.capacity}
+            </span>
+          </button>
+
+          {(cockpit.attack.error || cockpit.generate.error) && (
+            <span className="font-mono text-[10px] text-toggle-red-500">
+              {cockpit.attack.error ?? cockpit.generate.error}
+            </span>
+          )}
+        </Row>
+      )}
+
       <Row label="MODULES">
         {active.length === 0 && (
-          <span className="text-[13px] text-putty-700">No active modules on this hull.</span>
+          <span className="text-[13px] text-putty-700">
+            No active modules fitted — the cockpit is all this ship has.
+          </span>
         )}
         {active.map((m) => (
           <button

@@ -1,7 +1,7 @@
 import type { AdjacencyBonus, Ship, ShipSlot } from '../types/ship';
 import type { EnemyInstance, EnemyStatBlock } from '../types/enemy';
 import type { GameConfig } from '../types/config';
-import { effectiveThreshold, partsForSpawn, scaledEnemyHp } from '../types/config';
+import { effectiveThreshold, partsForSpawn } from '../types/config';
 import type { EnemyId, PartId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
@@ -25,13 +25,18 @@ const emptySlot = (index: SlotIndex): ShipSlot => ({
   disabled: false,
 });
 
-/** An empty grid sized by the cockpit's slot count. */
+/**
+ * An empty grid sized by the cockpit's slot count.
+ *
+ * The cockpit rolls out with its shield pool full: it is the ship's last line
+ * and the only durability it has, so starting it dry would mean the first
+ * unanswered hit is fatal.
+ */
 export function createShip(
   content: Content,
   cockpitId: PartId,
   name: string,
   config: GameConfig,
-  hp = config.hullHp,
 ): Ship {
   const cockpit = partOf(content, cockpitId);
   const capacity = Math.max(1, cockpit?.slots ?? config.gridCols * config.gridRows);
@@ -41,7 +46,11 @@ export function createShip(
   // modules can chain either side of it.
   const cols = Math.min(config.gridCols, capacity);
   const anchor = Math.min(capacity - 1, Math.floor(cols / 2));
-  slots[anchor] = { ...slots[anchor]!, partId: cockpitId };
+  slots[anchor] = {
+    ...slots[anchor]!,
+    partId: cockpitId,
+    energy: cockpit?.energyCapacity ?? 0,
+  };
 
   return {
     id: `ship-${name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -49,8 +58,7 @@ export function createShip(
     cockpitId,
     gridCols: cols,
     slots,
-    hp,
-    hpMax: hp,
+    destroyed: false,
     flags: { negateNext: 0, retaliate: 0 },
   };
 }
@@ -126,7 +134,9 @@ export function equipPart(ship: Ship, slot: SlotIndex, partId: PartId): Ship {
  *
  * Capacity is the cockpit's, so the grid is rebuilt rather than patched:
  * modules are re-slotted in their old order and anything that no longer fits
- * comes back to the caller to put somewhere.
+ * comes back to the caller to put somewhere. The new cockpit arrives with its
+ * own shield pool full, the same as any freshly fitted part — swapping
+ * cockpits mid-run is a real refit, and it costs the ship its layout.
  */
 export function swapCockpit(
   content: Content,
@@ -141,9 +151,9 @@ export function swapCockpit(
     .filter((id): id is PartId => !!id && id !== ship.cockpitId);
 
   let next: Ship = {
-    ...createShip(content, cockpitId, ship.name, config, ship.hpMax),
+    ...createShip(content, cockpitId, ship.name, config),
     id: ship.id,
-    hp: ship.hp,
+    destroyed: ship.destroyed,
   };
 
   const displaced: PartId[] = [];
@@ -273,6 +283,11 @@ export function resetDownSetFlags(slots: ShipSlot[]): ShipSlot[] {
  * Weapons sit outside that distribution unless `weaponsDrawFromReactor` says
  * otherwise: a gun is loaded by rerouting charge into it, so where the
  * generators sit on the grid is the decision that arms the ship.
+ *
+ * The **cockpit sits outside it too**. Its shield refills by spending a down
+ * on its own generator, or by rerouting from a neighbour — if upkeep topped it
+ * up for free, the down that buys the basic generator would never be worth
+ * taking.
  */
 export function runUpkeep(
   content: Content,
@@ -409,9 +424,8 @@ export function spawnEnemyShip(
     }
   }
 
-  const anchor = cockpitId ?? firstCockpitIn(content) ?? modules[0] ?? 'cockpit-mk3';
-  const hpMax = scaledEnemyHp(config, statBlock.hpPool);
-  let ship = createShip(content, anchor, statBlock.name, config, hpMax);
+  const anchor = cockpitId ?? firstCockpitIn(content) ?? modules[0] ?? '';
+  let ship = createShip(content, anchor, statBlock.name, config);
 
   for (const id of modules) {
     // Enemy hulls grow out from the cockpit like a player's does, so their
@@ -432,8 +446,6 @@ export function spawnEnemyShip(
     statBlockId: statBlock.id,
     name: statBlock.name,
     ship,
-    hp: hpMax,
-    hpMax,
     convThreshold: effectiveThreshold(config, statBlock.id, statBlock.convThreshold),
     damageThisDownSet: 0,
     downsUsed: 0,

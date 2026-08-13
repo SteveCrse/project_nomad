@@ -15,30 +15,91 @@ import type { PartCard } from '@engine/types';
  * and the table adjudicates the payload.
  */
 export const PARTS: PartCard[] = [
-  // ---- cockpits: anchor a ship, define slot capacity ----
+  // ---- cockpits ----
+  //
+  // A cockpit is a weapon, a shield and a generator in one, and it is the only
+  // durability a ship has: `power` is the basic attack (one down, no ⚡),
+  // `energyCapacity` is the basic shield, and `genPerDown` is what one down of
+  // the basic generator puts back into it. Printed line is "N Slots, X⚔, Y⚡".
+  //
+  // Copies deviate from the design sheet's 1-each: the Parts deck delimits
+  // enemy ships on the next cockpit drawn, so at one-in-fifty every enemy
+  // spawns enormous. These keep cockpits at roughly the one-in-five the rules
+  // doc assumes, weighted toward the commons.
   {
-    id: 'cockpit-mk3',
-    name: 'Cockpit Mk.III',
-    kind: 'part',
-    partType: 'cockpit',
-    role: 'OTH',
-    rarity: 1,
-    amount: 6,
-    energyCapacity: null,
-    slots: 10,
-    text: 'Ship anchor. Grants 10 module slots.',
-  },
-  {
-    id: 'cockpit-scavenger',
-    name: 'Scavenger Cockpit',
+    id: 'basic-cockpit-2000',
+    name: 'Basic Cockpit 2000',
     kind: 'part',
     partType: 'cockpit',
     role: 'OTH',
     rarity: 1,
     amount: 4,
-    energyCapacity: null,
-    slots: 6,
-    text: 'Ship anchor. Grants 6 module slots.',
+    slots: 4,
+    power: 1,
+    energyCapacity: 5,
+    genPerDown: 1,
+    text: '4 Slots, 1 ⚔️, 5⚡',
+    art: 'n04_t.webp',
+  },
+  {
+    id: 'smol-boi',
+    name: 'Smol boi',
+    kind: 'part',
+    partType: 'cockpit',
+    role: 'OTH',
+    rarity: 1,
+    amount: 3,
+    slots: 2,
+    power: 1,
+    energyCapacity: 4,
+    genPerDown: 1,
+    text: '2 Slots, 1 ⚔️, 4⚡',
+    art: 't_13.webp',
+  },
+  {
+    id: 'larry-the-marauder',
+    name: 'Larry - The Marauder',
+    kind: 'part',
+    partType: 'cockpit',
+    role: 'OTH',
+    rarity: 1,
+    amount: 2,
+    slots: 4,
+    power: 1,
+    energyCapacity: 10,
+    genPerDown: 1,
+    text: '4 Slots, 1 ⚔️, 10⚡',
+    art: 't_67.webp',
+  },
+  {
+    id: 'bfc',
+    name: 'BFC',
+    kind: 'part',
+    partType: 'cockpit',
+    role: 'OTH',
+    rarity: 2,
+    amount: 2,
+    slots: 8,
+    power: 1,
+    energyCapacity: 6,
+    genPerDown: 1,
+    text: '8 Slots, 1 ⚔️, 6⚡',
+    art: 't_75.webp',
+  },
+  {
+    id: 'advanced-cp-3k',
+    name: 'Advanced CP 3K',
+    kind: 'part',
+    partType: 'cockpit',
+    role: 'OTH',
+    rarity: 3,
+    amount: 1,
+    slots: 4,
+    power: 2,
+    energyCapacity: 8,
+    genPerDown: 2,
+    text: '4 Slots, 2 ⚔️, 8⚡',
+    art: 't_72.webp',
   },
 
   // ---- rarity 1 ----
@@ -180,7 +241,7 @@ export const PARTS: PartCard[] = [
     rarity: 4,
     amount: 1,
     energyCapacity: null,
-    text: 'When your ship is destroyed, take the Escape Pod ship from the deck, make it your new ship base.',
+    text: 'When your ship is destroyed, take the Escape Pod ship from the deck, make it your new ship base. If used as cockpit 2 slots, 1⚡, 1⚔️',
   },
 
   // ---- rarity 5 ----

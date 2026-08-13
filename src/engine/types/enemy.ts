@@ -2,15 +2,16 @@ import type { EnemyId, PartId } from './ids';
 import type { Ship } from './ship';
 
 /**
- * Authored enemy stat block. The rules define enemies by an HP pool and a
- * conversion threshold; the ship itself is generated from the Parts deck at
- * spawn time, so parts are a spawn recipe rather than a fixed loadout.
+ * Authored enemy stat block.
+ *
+ * An enemy has no HP: how much it can take is whatever its ship is carrying —
+ * charged shields, then the cockpit's own pool. The stat block therefore says
+ * how *big* a ship to roll (`partsBase`) and how hard it is to convert on
+ * (`convThreshold`), and the Parts deck decides the rest at spawn time.
  */
 export interface EnemyStatBlock {
   id: EnemyId;
   name: string;
-  /** Win condition: reduce to 0. */
-  hpPool: number;
   /**
    * Damage an attacker must deal within one set of downs to earn a fresh set
    * against this enemy. Per-enemy, and overridable from the config sidebar.
@@ -33,8 +34,6 @@ export interface EnemyInstance {
   statBlockId: EnemyId;
   name: string;
   ship: Ship;
-  hp: number;
-  hpMax: number;
   /** Effective threshold after config overrides. */
   convThreshold: number;
   /** Damage dealt so far in the current set of downs. */

@@ -50,6 +50,6 @@ export const ITEMS: ItemCard[] = [
     energyCost: null,
     consumable: true,
     effect: { kind: 'manual' },
-    text: 'Repair 6 hull on your ship. (placeholder)',
+    text: 'Put 6⚡ back into your cockpit shield. (placeholder)',
   },
 ];

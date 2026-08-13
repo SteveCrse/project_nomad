@@ -21,6 +21,12 @@ import {
   areAdjacent,
   capacityOf,
   chargeSlot,
+  cockpitCapacity,
+  cockpitCharge,
+  cockpitGeneration,
+  cockpitOf,
+  cockpitPower,
+  cockpitSlotIndex,
   effectOf,
   energyCostOf,
   diceCountOf,
@@ -32,6 +38,7 @@ import {
   resetDownSetFlags,
   rollPayload,
   runUpkeep,
+  shieldPool,
 } from '../ship';
 
 /**
@@ -68,7 +75,7 @@ export const enemyOf = (battle: Battle, id: string): EnemyInstance | undefined =
   battle.combat.enemies.find((e) => e.instanceId === id);
 
 export const livingEnemies = (combat: CombatState): EnemyInstance[] =>
-  combat.enemies.filter((e) => e.hp > 0);
+  combat.enemies.filter((e) => !e.ship.destroyed);
 
 export const livingParticipants = (battle: Battle): PlayerState[] =>
   battle.combat.participants
@@ -143,10 +150,12 @@ function logged(combat: CombatState, side: SideRef, message: string, tone: Comba
 // ---------------------------------------------------------------- damage
 
 export interface DamageReport {
-  /** Damage that got through to the hull. */
-  hull: number;
-  /** Damage eaten by shields. */
+  /** Damage eaten by shield modules. */
   absorbed: number;
+  /** Damage eaten by the cockpit's own pool — the ship's last shield. */
+  cockpit: number;
+  /** Damage left over when everything was dry. Anything here wrecks the ship. */
+  overkill: number;
   /** Damage cancelled outright (Defense Turret). */
   negated: number;
   /** Damage returned to the attacker (Mines). */
@@ -156,20 +165,48 @@ export interface DamageReport {
   notes: string[];
 }
 
+const emptyReport = (notes: string[] = []): DamageReport => ({
+  absorbed: 0,
+  cockpit: 0,
+  overkill: 0,
+  negated: 0,
+  retaliated: 0,
+  notes,
+});
+
+/** Everything an attack actually put on the target, however it was soaked. */
+export const damageDealt = (report: DamageReport): number =>
+  report.absorbed + report.cockpit + report.overkill;
+
 /**
- * Push damage into a ship: negation, then flat reduction, then charged
- * shields, then hull. Module-targeted attacks skip the hull and knock the
- * module out instead.
+ * What this attack contributes to the attacker's conversion threshold.
+ * `thresholdCountsShielded` off means only what got past the shield modules —
+ * i.e. what the cockpit had to eat, or what went through it — counts.
  */
-function damageShip(
+export const thresholdCredit = (report: DamageReport, config: GameConfig): number =>
+  config.thresholdCountsShielded ? damageDealt(report) : report.cockpit + report.overkill;
+
+/**
+ * Push damage into a ship: negation, then flat reduction, then charged shield
+ * modules, then the cockpit's own pool. Damage still standing after all of
+ * that has nothing left to bite on — the ship is destroyed.
+ *
+ * Module-targeted attacks skip the whole chain and knock one module out
+ * instead. Aiming one at the cockpit resolves as a normal attack: the cockpit
+ * is the ship, not a module you can shoot off it.
+ */
+export function damageShip(
   content: Content,
   ship: Ship,
   amount: number,
   targetSlot?: SlotIndex,
 ): { ship: Ship; report: DamageReport } {
-  const report: DamageReport = { hull: 0, absorbed: 0, negated: 0, retaliated: 0, notes: [] };
+  const report = emptyReport();
   let next = ship;
   let remaining = Math.max(0, amount);
+  const aimed = targetSlot !== undefined && targetSlot !== cockpitSlotIndex(ship)
+    ? targetSlot
+    : undefined;
 
   if (next.flags.negateNext > 0 && remaining > 0) {
     report.negated = remaining;
@@ -194,18 +231,18 @@ function damageShip(
     report.notes.push(`${part.name} shrugs off ${cut}`);
   }
 
-  if (targetSlot !== undefined) {
-    const target = next.slots[targetSlot];
+  if (aimed !== undefined) {
+    const target = next.slots[aimed];
     if (target && target.partId && !target.disabled) {
       const drained = Math.min(target.energy, remaining);
       remaining -= drained;
       report.absorbed += drained;
       const slots = next.slots.slice();
       const knockedOut = remaining > 0;
-      slots[targetSlot] = { ...target, energy: target.energy - drained, disabled: knockedOut };
+      slots[aimed] = { ...target, energy: target.energy - drained, disabled: knockedOut };
       next = { ...next, slots };
       if (knockedOut) {
-        report.disabledSlot = targetSlot;
+        report.disabledSlot = aimed;
         report.notes.push(`${partOf(content, target.partId)?.name ?? 'module'} knocked out`);
       }
       remaining = 0;
@@ -213,7 +250,7 @@ function damageShip(
     return { ship: next, report };
   }
 
-  // Charged shields soak before the hull does.
+  // Charged shield modules soak first — they exist so the cockpit doesn't have to.
   for (const { slot, part } of liveModules(content, next)) {
     if (remaining <= 0) break;
     if (!isAbsorber(part)) continue;
@@ -228,9 +265,23 @@ function damageShip(
     report.notes.push(`${part.name} soaks ${soaked}`);
   }
 
+  // Then the cockpit's own shield: the last charge on the ship.
+  const cockpit = cockpitOf(content, next);
+  if (remaining > 0 && cockpit && cockpit.slot.energy > 0) {
+    const soaked = Math.min(cockpit.slot.energy, remaining);
+    remaining -= soaked;
+    report.cockpit += soaked;
+    const slots = next.slots.slice();
+    slots[cockpit.slot.index] = { ...cockpit.slot, energy: cockpit.slot.energy - soaked };
+    next = { ...next, slots };
+  }
+
+  // Nothing left to soak it. This is what "killed" means now.
+  // No note: `describeHit` already reads the shape of the hit off the report,
+  // and `settleCasualties` announces the wreck.
   if (remaining > 0) {
-    report.hull = Math.min(remaining, next.hp);
-    next = { ...next, hp: Math.max(0, next.hp - remaining) };
+    report.overkill = remaining;
+    next = { ...next, destroyed: true };
   }
 
   if (next.flags.retaliate > 0) {
@@ -248,7 +299,7 @@ function withShip(battle: Battle, side: SideRef, ship: Ship): Battle {
       party: {
         ...battle.party,
         players: battle.party.players.map((p) =>
-          p.id === side.id ? { ...p, ship, destroyed: ship.hp <= 0 } : p,
+          p.id === side.id ? { ...p, ship, destroyed: ship.destroyed } : p,
         ),
       },
     };
@@ -258,13 +309,13 @@ function withShip(battle: Battle, side: SideRef, ship: Ship): Battle {
     combat: {
       ...battle.combat,
       enemies: battle.combat.enemies.map((e) =>
-        e.instanceId === side.id ? { ...e, ship, hp: ship.hp } : e,
+        e.instanceId === side.id ? { ...e, ship } : e,
       ),
     },
   };
 }
 
-/** Apply damage to a side's HP pool, after shields. */
+/** Push damage into a side's ship: shield modules, then cockpit, then wreck. */
 export function applyDamage(
   content: Content,
   battle: Battle,
@@ -273,12 +324,7 @@ export function applyDamage(
   targetSlot?: SlotIndex,
 ): { battle: Battle; report: DamageReport } {
   const ship = shipOf(battle, target);
-  if (!ship) {
-    return {
-      battle,
-      report: { hull: 0, absorbed: 0, negated: 0, retaliated: 0, notes: ['no such target'] },
-    };
-  }
+  if (!ship) return { battle, report: emptyReport(['no such target']) };
   const { ship: hit, report } = damageShip(content, ship, amount, targetSlot);
   return { battle: withShip(battle, target, hit), report };
 }
@@ -322,6 +368,24 @@ export function actionError(
       }
       if (effectOf(part).kind === 'damage' && livingEnemies(battle.combat).length === 0 && side.kind === 'player') {
         return 'nothing left to shoot';
+      }
+      return null;
+    }
+
+    // The two the cockpit always offers. Neither costs ⚡ — the down is the
+    // whole price, which is what keeps a stripped ship in the fight.
+    case 'cockpit-attack': {
+      if (cockpitPower(content, ship) <= 0) return 'this cockpit has no gun';
+      if (side.kind === 'player' && livingEnemies(battle.combat).length === 0) {
+        return 'nothing left to shoot';
+      }
+      return null;
+    }
+
+    case 'cockpit-generate': {
+      if (cockpitGeneration(content, ship) <= 0) return 'this cockpit has no generator';
+      if (cockpitCharge(content, ship) >= cockpitCapacity(content, ship)) {
+        return 'cockpit shield is full';
       }
       return null;
     }
@@ -525,7 +589,7 @@ export function resolveDown(
 
       switch (effect.kind) {
         case 'damage': {
-          const target = action.target ?? defaultTarget(next, side);
+          const target = action.target ?? defaultTarget(content, next, side);
           if (!target) {
             lines.push(`${part.name} has nothing to shoot.`);
             break;
@@ -536,14 +600,10 @@ export function resolveDown(
           const raw = Math.max(0, payload.value - penalty);
           const hit = applyDamage(content, next, target, raw, action.targetSlot);
           next = hit.battle;
-          const landed = hit.report.hull + hit.report.absorbed;
-          damage = config.thresholdCountsShielded ? landed : hit.report.hull;
+          damage = thresholdCredit(hit.report, config);
           lines.push(
             `${name} fires ${part.name}${dice.length ? ` [${dice.join(',')}]` : ''} at ` +
-              `${sideName(next, target)} for ${raw}⚔ — ${hit.report.hull} hull` +
-              (hit.report.absorbed ? `, ${hit.report.absorbed} soaked` : '') +
-              (hit.report.negated ? ', negated' : '') +
-              '.',
+              `${sideName(next, target)} for ${raw}⚔ — ${describeHit(hit.report)}.`,
           );
           for (const note of hit.report.notes) lines.push(`  ${note}`);
           if (hit.report.retaliated > 0) {
@@ -602,13 +662,11 @@ export function resolveDown(
         case 'manual': {
           const manual = Math.max(0, action.manualDamage ?? 0);
           if (manual > 0) {
-            const target = action.target ?? defaultTarget(next, side);
+            const target = action.target ?? defaultTarget(content, next, side);
             if (target) {
               const hit = applyDamage(content, next, target, manual, action.targetSlot);
               next = hit.battle;
-              damage = config.thresholdCountsShielded
-                ? hit.report.hull + hit.report.absorbed
-                : hit.report.hull;
+              damage = thresholdCredit(hit.report, config);
               lines.push(
                 `${name} resolves ${part.name} by hand: ${manual}⚔ to ${sideName(next, target)}.`,
               );
@@ -619,6 +677,51 @@ export function resolveDown(
           break;
         }
       }
+      break;
+    }
+
+    /**
+     * The cockpit's basic attack. No ⚡ leaves the ship for this: the down is
+     * the cost, so a seat that has been shot down to bare metal still has
+     * something to spend a turn on.
+     */
+    case 'cockpit-attack': {
+      const ship = shipOf(next, side)!;
+      const cockpit = cockpitOf(content, ship)!;
+      const target = action.target ?? defaultTarget(content, next, side);
+      if (!target) {
+        lines.push(`${name} has nothing to shoot.`);
+        break;
+      }
+      const penalty = side.kind === 'player' ? (playerOf(next, side.id)?.powerPenalty ?? 0) : 0;
+      const raw = Math.max(0, cockpitPower(content, ship) - penalty);
+      const hit = applyDamage(content, next, target, raw, action.targetSlot);
+      next = hit.battle;
+      damage = thresholdCredit(hit.report, config);
+      lines.push(
+        `${name} takes a shot with ${cockpit.part.name} at ${sideName(next, target)} ` +
+          `for ${raw}⚔ — ${describeHit(hit.report)}.`,
+      );
+      for (const note of hit.report.notes) lines.push(`  ${note}`);
+      if (hit.report.retaliated > 0) {
+        const back = applyDamage(content, next, side, hit.report.retaliated);
+        next = back.battle;
+        lines.push(`  retaliation: ${name} takes ${hit.report.retaliated}⚔.`);
+      }
+      break;
+    }
+
+    /** The cockpit's basic generator: a down of defence instead of offence. */
+    case 'cockpit-generate': {
+      const ship = shipOf(next, side)!;
+      const cockpit = cockpitOf(content, ship)!;
+      const output = cockpitGeneration(content, ship);
+      const charged = chargeSlot(content, ship, cockpit.slot.index, output);
+      next = withShip(next, side, charged.ship);
+      lines.push(
+        `${name} runs the ${cockpit.part.name} generator: +${output - charged.overflow}⚡ ` +
+          `on the cockpit shield (${cockpitCharge(content, charged.ship)}/${cockpitCapacity(content, charged.ship)}).`,
+      );
       break;
     }
 
@@ -668,13 +771,11 @@ export function resolveDown(
       hand.splice(hand.indexOf(action.cardId), 1);
       next = withPlayer(next, side.id, { hand });
       if (manual > 0) {
-        const target = action.target ?? defaultTarget(next, side);
+        const target = action.target ?? defaultTarget(content, next, side);
         if (target) {
           const hit = applyDamage(content, next, target, manual);
           next = hit.battle;
-          damage = config.thresholdCountsShielded
-            ? hit.report.hull + hit.report.absorbed
-            : hit.report.hull;
+          damage = thresholdCredit(hit.report, config);
         }
       }
       lines.push(`${name} plays ${card?.name ?? action.cardId}${manual ? ` for ${manual}⚔` : ''}.`);
@@ -706,18 +807,39 @@ export function resolveDown(
   };
 }
 
-/** Default target: players shoot the softest living enemy and vice versa. */
-export function defaultTarget(battle: Battle, side: SideRef): SideRef | undefined {
+/** One line for where an attack landed: shields, cockpit, or straight through. */
+function describeHit(report: DamageReport): string {
+  if (report.negated) return 'negated';
+  const parts: string[] = [];
+  if (report.absorbed) parts.push(`${report.absorbed} soaked by shields`);
+  if (report.cockpit) parts.push(`${report.cockpit} off the cockpit shield`);
+  if (report.overkill) parts.push(`${report.overkill} with nothing left to soak it — destroyed`);
+  return parts.length > 0 ? parts.join(', ') : 'nothing got through';
+}
+
+/**
+ * Default target: players shoot the softest living enemy and vice versa.
+ * "Softest" is now the thinnest shield pool — charged shields plus whatever
+ * the cockpit is still holding — since that's what a ship dies through.
+ */
+export function defaultTarget(
+  content: Content,
+  battle: Battle,
+  side: SideRef,
+): SideRef | undefined {
+  const thinnest = <T extends { ship: Ship }>(candidates: T[]): T | undefined =>
+    candidates.length === 0
+      ? undefined
+      : candidates.reduce((a, b) =>
+          shieldPool(content, b.ship) < shieldPool(content, a.ship) ? b : a,
+        );
+
   if (side.kind === 'player') {
-    const enemies = livingEnemies(battle.combat);
-    if (enemies.length === 0) return undefined;
-    const weakest = enemies.reduce((a, b) => (b.hp < a.hp ? b : a));
-    return { kind: 'enemy', id: weakest.instanceId };
+    const weakest = thinnest(livingEnemies(battle.combat));
+    return weakest ? { kind: 'enemy', id: weakest.instanceId } : undefined;
   }
-  const players = livingParticipants(battle);
-  if (players.length === 0) return undefined;
-  const weakest = players.reduce((a, b) => (b.ship.hp < a.ship.hp ? b : a));
-  return { kind: 'player', id: weakest.id };
+  const weakest = thinnest(livingParticipants(battle));
+  return weakest ? { kind: 'player', id: weakest.id } : undefined;
 }
 
 function syncSideCounters(battle: Battle, side: SideRef, downs: DownsState): Battle {
@@ -743,7 +865,9 @@ function syncSideCounters(battle: Battle, side: SideRef, downs: DownsState): Bat
 /** Move wrecks aside and decide whether the fight is over. */
 function settleCasualties(battle: Battle): CombatState {
   let combat = battle.combat;
-  const fresh = combat.enemies.filter((e) => e.hp <= 0 && !combat.wrecks.some((w) => w.instanceId === e.instanceId));
+  const fresh = combat.enemies.filter(
+    (e) => e.ship.destroyed && !combat.wrecks.some((w) => w.instanceId === e.instanceId),
+  );
   if (fresh.length > 0) {
     combat = { ...combat, wrecks: [...combat.wrecks, ...fresh] };
     for (const wreck of fresh) {
@@ -756,7 +880,7 @@ function settleCasualties(battle: Battle): CombatState {
     }
   }
 
-  const enemiesLeft = combat.enemies.some((e) => e.hp > 0);
+  const enemiesLeft = combat.enemies.some((e) => !e.ship.destroyed);
   const playersLeft = battle.party.players.some(
     (p) => combat.participants.includes(p.id) && !p.destroyed,
   );
@@ -837,7 +961,7 @@ export function isSideAlive(battle: Battle, side: SideRef): boolean {
     return !!player && !player.destroyed;
   }
   const enemy = enemyOf(battle, side.id);
-  return !!enemy && enemy.hp > 0;
+  return !!enemy && !enemy.ship.destroyed;
 }
 
 /**

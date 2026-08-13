@@ -27,5 +27,4 @@ export {
   effectiveThreshold,
   playerThreshold,
   partsForSpawn,
-  scaledEnemyHp,
 } from './config';

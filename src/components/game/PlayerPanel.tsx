@@ -1,8 +1,10 @@
 import type { EnergyTransfer, PlayerState, SlotIndex } from '@engine/types';
 import { playerThreshold } from '@engine/types';
+import { ship as shipEngine } from '@engine';
 import { DownsTracker } from '@/components/ds';
 import { ModuleTile } from './ModuleTile';
-import { hullColor } from '@/lib/palette';
+import { shieldColor } from '@/lib/palette';
+import { CONTENT } from '@data';
 import { useConfig } from '@/store/configStore';
 
 interface PlayerPanelProps {
@@ -21,9 +23,13 @@ interface PlayerPanelProps {
 }
 
 /**
- * One seat's readout: hull, downs, ⚡, scrap, and the ship's module grid.
+ * One seat's readout: shields, downs, ⚡, scrap, and the ship's module grid.
  * In combat it also carries the set's damage-vs-threshold tally — the number
  * that decides whether the seat converts or hands the turn over.
+ *
+ * The bar is the cockpit's own pool, not a hull bar. It is the last charge on
+ * the ship, so it is the one number that says how close this seat is to being
+ * wrecked; the SHIELDS figure beside it counts every charged absorber on top.
  */
 export function PlayerPanel({
   player,
@@ -37,7 +43,10 @@ export function PlayerPanel({
 }: PlayerPanelProps) {
   const config = useConfig();
   const linked = new Set(rerouteLinks.flatMap((t) => [t.from, t.to]));
-  const pct = player.ship.hpMax > 0 ? Math.round((player.ship.hp / player.ship.hpMax) * 100) : 0;
+  const cockpitCharge = shipEngine.cockpitCharge(CONTENT, player.ship);
+  const cockpitCap = shipEngine.cockpitCapacity(CONTENT, player.ship);
+  const shields = shipEngine.shieldPool(CONTENT, player.ship);
+  const pct = cockpitCap > 0 ? Math.round((cockpitCharge / cockpitCap) * 100) : 0;
   const used = downs?.used ?? player.downsUsed;
   const total = downs?.total ?? config.downCount;
   const atRisk = used >= total - 1;
@@ -65,11 +74,14 @@ export function PlayerPanel({
             </span>
           )}
           <div className="ml-auto flex items-center gap-3 font-mono text-[12px]">
-            <span>
-              HULL{' '}
+            <span title="Cockpit shield — the last charge before the ship is wrecked">
+              COCKPIT{' '}
               <span className="text-n-900">
-                {player.ship.hp}/{player.ship.hpMax}
+                {cockpitCharge}/{cockpitCap}⚡
               </span>
+            </span>
+            <span className="text-putty-700" title="Every charged absorber, cockpit included">
+              SHIELDS {shields}
             </span>
             <span className="text-putty-700">⚡ {player.energy}</span>
             <span className="text-putty-700">SCRAP {player.scrapDeck.length}</span>
@@ -78,7 +90,7 @@ export function PlayerPanel({
 
         <div className="mb-2 flex items-center gap-2.5">
           <div className="h-2.5 flex-1 overflow-hidden border border-putty-600 bg-crt-glass">
-            <div className="h-full" style={{ width: `${pct}%`, background: hullColor(pct) }} />
+            <div className="h-full" style={{ width: `${pct}%`, background: shieldColor(pct) }} />
           </div>
           <DownsTracker current={used} total={total} size="sm" />
           <div

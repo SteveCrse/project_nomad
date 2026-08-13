@@ -5,7 +5,7 @@ import { Button } from '@/components/ds';
 import { ModuleTile } from '@/components/game/ModuleTile';
 import { ROLE_COLOR, ROLE_LABEL } from '@/lib/palette';
 import { adjacencyFor, scrapCapacityFor } from '@/lib/combatView';
-import { getPart } from '@data';
+import { CONTENT, getPart } from '@data';
 import { useConfig } from '@/store/configStore';
 import { useGame, useGameStore } from '@/store/gameStore';
 import { useUiStore } from '@/store/uiStore';
@@ -275,10 +275,15 @@ function RearrangeBar({ reason }: { reason: string }) {
 function BuilderStats({ player }: { player: PlayerState }) {
   const filled = player.ship.slots.filter((s) => s.partId).length;
   const stored = player.ship.slots.reduce((sum, s) => sum + s.energy, 0);
+  const cockpitCharge = shipEngine.cockpitCharge(CONTENT, player.ship);
+  const cockpitCap = shipEngine.cockpitCapacity(CONTENT, player.ship);
   return (
     <div className="ml-auto flex gap-2.5 font-mono text-[12px] text-putty-700">
-      <span>
-        HULL {player.ship.hp}/{player.ship.hpMax}
+      <span title="The cockpit's own shield — the last charge before the ship is wrecked">
+        COCKPIT {cockpitCharge}/{cockpitCap}⚡ · {shipEngine.cockpitPower(CONTENT, player.ship)}⚔
+      </span>
+      <span title="Every charged absorber, cockpit included">
+        SHIELDS {shipEngine.shieldPool(CONTENT, player.ship)}
       </span>
       <span>
         SLOTS {filled}/{player.ship.slots.length}
@@ -539,12 +544,31 @@ function SelectedPanel({
       {selected ? (
         <div className="flex flex-col gap-2 border border-border-strong bg-crt-glass p-2.5">
           <div className="flex flex-wrap gap-3.5 font-mono text-[12px] text-crt-white">
-            <span>
-              COST <span className="text-crt-green-500">{selected.energyCost ?? '—'}⚡</span>
-            </span>
-            <span>
-              POOL <span className="text-crt-green-500">{selected.energyCapacity ?? '—'}</span>
-            </span>
+            {selected.partType === 'cockpit' ? (
+              <>
+                <span>
+                  SLOTS <span className="text-crt-green-500">{selected.slots ?? 0}</span>
+                </span>
+                <span>
+                  ATTACK <span className="text-crt-green-500">{selected.power ?? 0}⚔</span>
+                </span>
+                <span>
+                  SHIELD <span className="text-crt-green-500">{selected.energyCapacity ?? 0}⚡</span>
+                </span>
+                <span>
+                  GEN <span className="text-crt-green-500">+{selected.genPerDown ?? 0}⚡/DOWN</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <span>
+                  COST <span className="text-crt-green-500">{selected.energyCost ?? '—'}⚡</span>
+                </span>
+                <span>
+                  POOL <span className="text-crt-green-500">{selected.energyCapacity ?? '—'}</span>
+                </span>
+              </>
+            )}
             <span>
               TIER <span style={{ color: 'var(--rarity-3)' }}>{selected.rarity}</span>
             </span>
@@ -569,13 +593,13 @@ function SelectedPanel({
               onClick={() => act(() => installCockpit(player.id, selectedPartId))}
               title="Re-anchor the ship on this cockpit"
             >
-              Install as hull · {selected.slots ?? 0} slots
+              Install as cockpit · {selected.slots ?? 0} slots
             </Button>
           ) : (
             <Button
               size="sm"
               disabled={noRoom}
-              title={noRoom ? 'No free position touches the hull' : undefined}
+              title={noRoom ? 'No free position touches the ship' : undefined}
               onClick={() =>
                 act(() =>
                   inHold

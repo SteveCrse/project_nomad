@@ -53,7 +53,6 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     fields: [
       { kind: 'number', key: 'playerCount', label: 'player_count', control: 'stepper', min: 1, max: 4, step: 1 },
       { kind: 'number', key: 'downCount', label: 'down_count', control: 'stepper', min: 2, max: 6, step: 1 },
-      { kind: 'number', key: 'hullHp', label: 'hull_hp', control: 'slider', min: 10, max: 200, step: 5 },
       { kind: 'number', key: 'gridCols', label: 'grid_cols', control: 'stepper', min: 2, max: 8, step: 1 },
       { kind: 'number', key: 'gridRows', label: 'grid_rows', control: 'stepper', min: 1, max: 4, step: 1 },
       {
@@ -138,19 +137,10 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
         min: 0,
         max: 6,
         step: 1,
-        hint: 'extra parts drawn per player beyond the first',
-      },
-      {
-        kind: 'number',
-        key: 'enemyHpScale',
-        label: 'enemy_hp_scale',
-        control: 'slider',
-        min: 1,
-        max: 3,
-        step: 0.05,
-        precision: 2,
+        hint: 'extra parts drawn per player beyond the first — the difficulty dial',
       },
     ],
+    note: 'No HP anywhere: a ship dies when its shields and cockpit pool are dry. Enemy toughness is parts drawn, not a stat.',
   },
   {
     id: 'economy',

@@ -28,14 +28,17 @@ export const isOffensive = (part: PartCard): boolean =>
   isActive(part) && effectOf(part).kind === 'damage';
 
 /**
- * A charged shield soaks damage before it reaches the hull. Active SHD
- * modules (a Defense Turret) spend their charge on their own action instead,
- * so they only soak when the card says so.
+ * A charged shield soaks damage before the cockpit has to. Active SHD modules
+ * (a Defense Turret) spend their charge on their own action instead, so they
+ * only soak when the card says so.
+ *
+ * A cockpit is always an absorber: its pool is the ship's basic shield, and
+ * the last one standing.
  */
 export const isAbsorber = (part: PartCard): boolean =>
-  part.role === 'SHD' &&
   (part.energyCapacity ?? 0) > 0 &&
-  (part.absorbs ?? part.partType === 'passive-module');
+  (part.partType === 'cockpit' ||
+    (part.role === 'SHD' && (part.absorbs ?? part.partType === 'passive-module')));
 
 /** Energy this activation costs from the module's own pool. */
 export function energyCostOf(part: PartCard, config: GameConfig, diceCount = 1): number {
@@ -77,7 +80,15 @@ export function rollPayload(part: PartCard, count: number, rng: Rng): RollOutcom
   return { value: base + hits * (perHit ?? 1), dice, hits };
 }
 
-/** Slots holding a live module, with the card resolved. */
+/**
+ * Slots holding a live module, with the card resolved.
+ *
+ * The cockpit is deliberately *not* in here. It carries its own weapon,
+ * shield and generator, but it isn't a fitted module: it never takes upkeep
+ * from the reactor spread, never bleeds to an infestation, and never counts
+ * toward a role chain. Everything the cockpit does goes through the helpers
+ * below instead, so the two never double up.
+ */
 export function liveModules(
   content: Content,
   ship: Ship,
@@ -89,6 +100,53 @@ export function liveModules(
     if (part && part.partType !== 'cockpit') out.push({ slot, part });
   }
   return out;
+}
+
+// ------------------------------------------------------------- the cockpit
+
+/**
+ * The cockpit as a card, plus the slot it sits in.
+ *
+ * With HP gone this is the ship's whole baseline: `power` is the basic attack
+ * a down always buys, `energyCapacity` is the basic shield, and `genPerDown`
+ * is what the basic generator puts back per down.
+ */
+export function cockpitOf(
+  content: Content,
+  ship: Ship,
+): { slot: ShipSlot; part: PartCard } | null {
+  const index = ship.slots.findIndex((s) => s.partId === ship.cockpitId);
+  const slot = ship.slots[index];
+  const part = partOf(content, slot?.partId);
+  return slot && part ? { slot, part } : null;
+}
+
+/** ⚔ the cockpit's basic attack deals. 0 when the card prints none. */
+export const cockpitPower = (content: Content, ship: Ship): number =>
+  cockpitOf(content, ship)?.part.power ?? 0;
+
+/** ⚡ one down of the basic generator puts into the cockpit's shield. */
+export const cockpitGeneration = (content: Content, ship: Ship): number =>
+  cockpitOf(content, ship)?.part.genPerDown ?? 0;
+
+/** Charge currently in the cockpit's shield pool. */
+export const cockpitCharge = (content: Content, ship: Ship): number =>
+  cockpitOf(content, ship)?.slot.energy ?? 0;
+
+/** Size of the cockpit's shield pool. */
+export const cockpitCapacity = (content: Content, ship: Ship): number =>
+  cockpitOf(content, ship)?.part.energyCapacity ?? 0;
+
+/**
+ * Everything standing between this ship and a wreck: charged shield modules
+ * plus the cockpit's own pool. This is the number that replaced hull — what
+ * targeting reads to pick the softest ship on the table.
+ */
+export function shieldPool(content: Content, ship: Ship): number {
+  const modules = liveModules(content, ship)
+    .filter((m) => isAbsorber(m.part))
+    .reduce((sum, m) => sum + m.slot.energy, 0);
+  return modules + cockpitCharge(content, ship);
 }
 
 /** Total energy sitting in module pools. */
