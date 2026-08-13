@@ -63,20 +63,6 @@ export function CardTile({ card }: { card: Card }) {
           {card.name}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span
-            className="border px-[5px] py-px font-mono text-[9px] tracking-[0.1em]"
-            style={{ color: ROLE_COLOR[role], borderColor: ROLE_COLOR[role] }}
-          >
-            {role}
-          </span>
-          {subtitle && (
-            <span className="truncate font-body text-[12px] tracking-[0.06em] text-n-600 uppercase">
-              {subtitle}
-            </span>
-          )}
-        </div>
-
         <div className="flex min-h-0 flex-1 flex-col gap-[5px] overflow-hidden">
           {lines.map((line, i) => {
             const chip = TIMING_CHIP[line.timing];
@@ -133,11 +119,17 @@ function Footer({ card }: { card: Card }) {
   }
 
   if (card.energyCapacity === null || card.energyCapacity === undefined) return null;
+  const isCockpit = card.kind === 'part' && card.role === 'COCKPIT';
   return (
     <div
       className={`${strip} justify-end gap-1`}
       title="the most ⚡ this module’s own pool holds"
     >
+      {isCockpit && (
+        <span className="mr-1.5 truncate font-body text-[12px] tracking-[0.06em] text-n-600 uppercase">
+          {card.slots} SLOTS
+        </span>
+      )}
       <span className="font-mono text-[9px] tracking-[0.1em] text-putty-600">MAX</span>
       <span className="font-mono text-[13px] text-n-800">{card.energyCapacity}⚡</span>
     </div>
