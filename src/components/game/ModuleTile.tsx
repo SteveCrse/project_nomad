@@ -137,7 +137,7 @@ export function ModuleTile({
   // The cockpit is a weapon, a shield and a generator at once, so its tile
   // carries all three: ⚔ it always shoots for, the pips of its own shield
   // pool, and the ⚡ a down of its generator puts back.
-  if (part.partType === 'cockpit') {
+  if (part.role === 'COCKPIT') {
     return (
       <div
         {...drag}

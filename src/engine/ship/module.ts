@@ -14,22 +14,28 @@ import type { Rng } from '../rng';
  * compiled from it — never from a card id — so new content stays a data edit.
  */
 
-export const isActive = (part: PartCard): boolean => part.partType === 'active-module';
+/**
+ * Can a down be spent on this module?
+ *
+ * Its effect list is the whole answer — a module carrying an active effect can
+ * be fired, whatever else it also does passively.
+ */
+export const isActive = (part: PartCard): boolean => activeEffects(part).length > 0;
 
 /** Offensive modules are the ones a blanket once-per-set rule would cap. */
 export const isOffensive = (part: PartCard): boolean =>
-  isActive(part) && activeEffects(part).some((e) => isDamageEffect(e.type));
+  activeEffects(part).some((e) => isDamageEffect(e.type));
 
 /**
  * A charged shield soaks damage before the cockpit has to — the cards that
- * print an `absorb` effect. Active SHD modules (a Defense Turret) spend their
- * charge on their own action instead, so they don't carry one.
+ * print an `absorb` effect. A SHD module that spends its charge on an action
+ * instead (a Defense Turret) simply doesn't carry one.
  *
  * A cockpit is always an absorber: its pool is the ship's basic shield, and
  * the last one standing.
  */
 export const isAbsorber = (part: PartCard): boolean =>
-  (part.energyCapacity ?? 0) > 0 && (part.partType === 'cockpit' || !!part.absorbs);
+  (part.energyCapacity ?? 0) > 0 && (part.role === 'COCKPIT' || !!part.absorbs);
 
 /**
  * Energy one activation costs from the card's own pool.
@@ -100,7 +106,7 @@ export function liveModules(
   for (const slot of ship.slots) {
     if (slot.disabled) continue;
     const part = partOf(content, slot.partId);
-    if (part && part.partType !== 'cockpit') out.push({ slot, part });
+    if (part && part.role !== 'COCKPIT') out.push({ slot, part });
   }
   return out;
 }

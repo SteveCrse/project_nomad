@@ -46,16 +46,15 @@ export const timingOf = (effect: CardEffect): EffectTiming =>
 /**
  * The effects an activation resolves, in printed order.
  *
- * An active module with nothing resolvable still activates as `manual`: the
- * down and the ⚡ are spent and the table adjudicates, which is what a
- * half-built card should do rather than quietly nothing.
+ * A card is activatable exactly when it has one of these — there's no separate
+ * "active module" flag to disagree with the effect list. A card carrying only
+ * passives is simply never activated; its passives are on regardless.
  */
-export function activeEffects(card: Card): CardEffect[] {
-  const active = effectsOf(card).filter((e) => timingOf(e) === 'active');
-  if (active.length > 0) return active;
-  const activatable = card.kind === 'part' ? card.partType === 'active-module' : card.kind === 'item';
-  return activatable ? [{ type: 'manual' }] : [];
-}
+export const activeEffects = (card: Card): CardEffect[] =>
+  effectsOf(card).filter((e) => timingOf(e) === 'active');
+
+/** Can a down be spent on this card at all? */
+export const isActivatable = (card: Card): boolean => activeEffects(card).length > 0;
 
 export const passiveEffects = (card: Card): CardEffect[] =>
   effectsOf(card).filter((e) => timingOf(e) === 'passive');
@@ -280,7 +279,7 @@ function cockpitLines(card: PartCard): PrintedLine[] {
  */
 export function printedLines(card: Card): PrintedLine[] {
   const lines: PrintedLine[] =
-    card.kind === 'part' && card.partType === 'cockpit' ? cockpitLines(card) : [];
+    card.kind === 'part' && card.role === 'COCKPIT' ? cockpitLines(card) : [];
   for (const effect of effectsOf(card)) {
     const text = effectLine(effect);
     // Nothing on an event card is fitted to a ship: the whole card resolves
@@ -336,16 +335,10 @@ export function cardWarnings(card: Card): string[] {
   if (card.kind === 'part') {
     const pool = card.energyCapacity ?? 0;
     const cost = cardCost(card);
-    if (card.partType === 'active-module') {
-      if (cost > pool && !card.freeReroute) {
-        out.push(`costs ${cost}⚡ out of a ${pool}⚡ pool — can never fire on its own charge`);
-      }
-      if (actives.length === 0) out.push('active module with no active effect');
+    if (actives.length > 0 && cost > pool && !card.freeReroute) {
+      out.push(`costs ${cost}⚡ out of a ${pool}⚡ pool — can never fire on its own charge`);
     }
-    if (card.partType === 'passive-module' && actives.length > 0) {
-      out.push('passive module carrying an active effect — it will never be activated');
-    }
-    if (card.partType === 'cockpit') {
+    if (card.role === 'COCKPIT') {
       if (!card.slots) out.push('cockpit with no slots');
       if (!card.energyCapacity) out.push('cockpit with no shield pool — one hit wrecks it');
     } else if (effects.length === 0) {
@@ -367,19 +360,9 @@ export function cardWarnings(card: Card): string[] {
 /** A blank card of the given kind, ready to be filled in by the editor. */
 export function blankCard(kind: CardKind, id: CardId, name = 'New Card'): Card {
   const base = { id, name, rarity: 1 as const, amount: 1, effects: [] };
-  if (kind === 'item') {
-    return { ...base, kind: 'item', role: 'OTH', consumable: true };
-  }
-  if (kind === 'event') {
-    return { ...base, kind: 'event', subtype: 'Empty Space · Player Event' };
-  }
-  return {
-    ...base,
-    kind: 'part',
-    partType: 'active-module',
-    role: 'OTH',
-    energyCapacity: 2,
-  };
+  if (kind === 'item') return { ...base, kind: 'item', role: 'OTH' };
+  if (kind === 'event') return { ...base, kind: 'event', subtype: 'Empty Space · Player Event' };
+  return { ...base, kind: 'part', role: 'OTH', energyCapacity: 2 };
 }
 
 // ------------------------------------------------------------- migration
@@ -389,9 +372,10 @@ export function blankCard(kind: CardKind, id: CardId, name = 'New Card'): Card {
  *
  * Cards edited in the browser are persisted, so a designer's playtest overlay
  * outlives the schema. A card-level `energyCost`/`dice` becomes a modifier on
- * the first active effect — which is what they always were in practice — and
- * hand-written rules text survives on whichever coded effect used to carry it.
- * Anything else printed by hand is dropped: text is derived now.
+ * the first active effect — which is what they always were in practice — the
+ * old `partType: 'cockpit'` becomes the COCKPIT role, and hand-written rules
+ * text survives on whichever coded effect used to carry it. Anything else
+ * printed by hand is dropped: text is derived now.
  */
 export function migrateCard(raw: Card): Card {
   const legacy = raw as Card & {
@@ -399,18 +383,24 @@ export function migrateCard(raw: Card): Card {
     dice?: DiceSpec;
     text?: string;
     status?: string;
+    partType?: string;
+    consumable?: boolean;
   };
   if (
     legacy.energyCost === undefined &&
     legacy.dice === undefined &&
     legacy.text === undefined &&
-    legacy.status === undefined
+    legacy.status === undefined &&
+    legacy.partType === undefined &&
+    legacy.consumable === undefined
   ) {
     return raw;
   }
 
-  const { energyCost, dice, text, status, ...rest } = legacy;
-  const card = rest as Card;
+  const { energyCost, dice, text, status, partType, consumable, ...rest } = legacy;
+  const card = (
+    partType === 'cockpit' ? { ...rest, role: 'COCKPIT' } : rest
+  ) as Card;
   const effects = effectsOf(card).map((e) => ({ ...e }));
 
   const first = effects.findIndex((e) => isActiveEffect(e.type));

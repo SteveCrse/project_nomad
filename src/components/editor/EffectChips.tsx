@@ -33,7 +33,7 @@ export function EffectChips({ card, onOpen }: { card: Card; onOpen?: () => void 
   if (effects.length === 0) {
     // A cockpit's weapon, shield and generator are intrinsic to being a
     // cockpit — an empty list is right there, and only there.
-    const intrinsic = card.kind === 'part' && card.partType === 'cockpit';
+    const intrinsic = card.kind === 'part' && card.role === 'COCKPIT';
     return (
       <button
         type="button"

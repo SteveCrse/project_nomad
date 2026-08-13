@@ -57,7 +57,7 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
   const modules = moduleOptions(state, config, side, choice);
   const shields = shieldOptions(state, config, side);
   const cockpit = cockpitOptions(state, config, side, choice);
-  const active = modules.filter((m) => m.part.partType === 'active-module');
+  const active = modules.filter((m) => m.activatable);
   const buysDice = active.some((m) => hasVariableDice(m.part));
   const hasManual = active.some((m) => m.manual);
 

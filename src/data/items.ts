@@ -15,7 +15,6 @@ export const ITEMS: ItemCard[] = [
     role: 'WPN',
     rarity: 2,
     amount: 3,
-    consumable: true,
     // Negation aimed at *someone else's* attack isn't in the vocabulary —
     // `negate-next-attack` shields the player who plays it.
     effects: [
@@ -33,7 +32,6 @@ export const ITEMS: ItemCard[] = [
     role: 'OTH',
     rarity: 3,
     amount: 1,
-    consumable: true,
     effects: [{ type: 'manual', text: 'Reroll any die roll.' }],
     flavor: 'Activate the Omega-13!',
   },
@@ -44,7 +42,6 @@ export const ITEMS: ItemCard[] = [
     role: 'WPN',
     rarity: 1,
     amount: 4,
-    consumable: true,
     // Placeholder — gives Loot steps something to pay out.
     effects: [{ type: 'damage', params: { power: 4 }, cost: 1 }],
   },
@@ -55,7 +52,6 @@ export const ITEMS: ItemCard[] = [
     role: 'SHD',
     rarity: 1,
     amount: 3,
-    consumable: true,
     effects: [{ type: 'restore-shield', params: { amount: 6 } }],
   },
 ];

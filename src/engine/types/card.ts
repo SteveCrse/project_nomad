@@ -4,11 +4,17 @@ import type { CardId } from './ids';
 export type CardKind = 'part' | 'item' | 'event';
 
 /**
- * Module role. Codes match the test tool's ROLE map so card data and UI
- * colour keys stay in sync.
+ * What a part is for.
+ *
  *   GEN generator · WPN weapon · SHD shield · RDS redistributor · OTH other
+ *   COCKPIT — the ship anchor, and the Parts deck's enemy-spawn delimiter
+ *
+ * There is no active/passive distinction on top of this: **a module is just a
+ * module**. Whatever active effects it carries can be fired for a down, and
+ * whatever passive effects it carries are on the whole time. A card can do
+ * both, and most interesting ones should.
  */
-export type ModuleRole = 'GEN' | 'WPN' | 'SHD' | 'RDS' | 'OTH';
+export type ModuleRole = 'GEN' | 'WPN' | 'SHD' | 'RDS' | 'OTH' | 'COCKPIT';
 
 /**
  * Optional build specialization from the rules ("tank/DPS/luck"). Distinct
@@ -134,8 +140,7 @@ interface CardBase {
 /** Parts deck: becomes ship components, and generates enemy ships. */
 export interface PartCard extends CardBase {
   kind: 'part';
-  /** Cockpits anchor a ship and are the enemy-spawn delimiter. */
-  partType: 'cockpit' | 'active-module' | 'passive-module';
+  /** `COCKPIT` anchors a ship and delimits an enemy spawn; the rest are modules. */
   role: ModuleRole;
   specialization?: Specialization;
   /**
@@ -188,12 +193,15 @@ export interface PartCard extends CardBase {
   targetsModule?: boolean;
 }
 
-/** Items deck: loot drawn from Loot steps. */
+/**
+ * Items deck: loot drawn from Loot steps.
+ *
+ * Every item is single use — it leaves play the moment it resolves — so that
+ * isn't a flag, it's what an item *is*, and the card face prints it.
+ */
 export interface ItemCard extends CardBase {
   kind: 'item';
   role: ModuleRole;
-  /** Single-use items leave play after resolving. */
-  consumable: boolean;
   /** Derived from a damage effect by `compileCard`. */
   power?: number;
 }
@@ -222,4 +230,4 @@ export type Card = PartCard | ItemCard | EventCard;
 export const isPart = (c: Card): c is PartCard => c.kind === 'part';
 export const isItem = (c: Card): c is ItemCard => c.kind === 'item';
 export const isEvent = (c: Card): c is EventCard => c.kind === 'event';
-export const isCockpit = (c: Card): c is PartCard => isPart(c) && c.partType === 'cockpit';
+export const isCockpit = (c: Card): c is PartCard => isPart(c) && c.role === 'COCKPIT';

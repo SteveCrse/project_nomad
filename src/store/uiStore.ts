@@ -25,6 +25,11 @@ interface UiStore {
   /** null = every deck. */
   deckKind: CardKind | null;
   deckSearch: string;
+  /**
+   * Spreadsheet column widths in px, by column key. Only the columns the
+   * designer has dragged are in here; the rest fall back to their defaults.
+   */
+  deckColumnWidths: Record<string, number>;
   /** Card open in the editor panel. */
   editingCardId: CardId | null;
   /** Whose ship the builder is editing. */
@@ -59,6 +64,9 @@ interface UiStore {
   setDeckMode: (mode: DeckMode) => void;
   setDeckKind: (kind: CardKind | null) => void;
   setDeckSearch: (search: string) => void;
+  setDeckColumnWidth: (key: string, width: number) => void;
+  /** Drop one column back to its default width, or all of them. */
+  resetDeckColumn: (key?: string) => void;
   editCard: (id: CardId | null) => void;
   setBuilderPlayer: (id: PlayerId) => void;
   selectPart: (id: CardId | null) => void;
@@ -80,6 +88,7 @@ export const useUiStore = create<UiStore>((set) => ({
   deckMode: 'gallery',
   deckKind: null,
   deckSearch: '',
+  deckColumnWidths: {},
   editingCardId: null,
   builderPlayerId: 'p1',
   selectedPartId: null,
@@ -98,6 +107,14 @@ export const useUiStore = create<UiStore>((set) => ({
   setDeckMode: (deckMode) => set({ deckMode }),
   setDeckKind: (deckKind) => set({ deckKind }),
   setDeckSearch: (deckSearch) => set({ deckSearch }),
+  setDeckColumnWidth: (key, width) =>
+    set((s) => ({ deckColumnWidths: { ...s.deckColumnWidths, [key]: Math.max(28, Math.round(width)) } })),
+  resetDeckColumn: (key) =>
+    set((s) => ({
+      deckColumnWidths: key
+        ? Object.fromEntries(Object.entries(s.deckColumnWidths).filter(([k]) => k !== key))
+        : {},
+    })),
   editCard: (editingCardId) => set({ editingCardId }),
   setBuilderPlayer: (builderPlayerId) => set({ builderPlayerId }),
   selectPart: (selectedPartId) => set({ selectedPartId }),

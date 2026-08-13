@@ -16,7 +16,7 @@ export function DeckStats({ cards }: { cards: Card[] }) {
   const parts = cards.filter((c) => c.kind === 'part');
   const partCopies = parts.reduce((sum, c) => sum + c.amount, 0);
   const cockpitCopies = parts
-    .filter((c) => c.partType === 'cockpit')
+    .filter((c) => c.role === 'COCKPIT')
     .reduce((sum, c) => sum + c.amount, 0);
 
   // ⚔️ bought per ⚡ spent — the cleanest cross-card read on a weapon's rate.

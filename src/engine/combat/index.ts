@@ -360,7 +360,7 @@ export function actionError(
       if (slot.disabled) return 'module is knocked out';
       const part = partOf(content, slot.partId);
       if (!part) return 'unknown part';
-      if (part.partType !== 'active-module') return `${part.name} is passive`;
+      if (activeEffects(part).length === 0) return `${part.name} has nothing to activate`;
       if (cappedPerSet(part, config) && slot.usedThisDownSet) {
         return 'already fired this set of downs';
       }

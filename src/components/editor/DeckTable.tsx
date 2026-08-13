@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import type { Card, CardKind, ModuleRole, PartCard, Rarity } from '@engine/types';
+import type { Card, CardKind, ModuleRole, Rarity } from '@engine/types';
 import {
   attackOf,
   cardCost,
@@ -12,6 +12,7 @@ import {
 import { RARITY_NAME, ROLE_COLOR, rarityColor } from '@/lib/palette';
 import { artUrl } from '@/lib/art';
 import { useDeckStore } from '@/store/deckStore';
+import { useUiStore } from '@/store/uiStore';
 import { EffectChips } from './EffectChips';
 import { NumberCell, SelectCell, TextCell } from './inputs';
 
@@ -32,30 +33,36 @@ const KIND_SECTIONS: { kind: CardKind; label: string }[] = [
   { kind: 'event', label: 'EVENTS DECK' },
 ];
 
-const ROLES: ModuleRole[] = ['GEN', 'WPN', 'SHD', 'RDS', 'OTH'];
+/** A cockpit is a role now, so it's one option in the same dropdown. */
+const PART_ROLES: ModuleRole[] = ['COCKPIT', 'GEN', 'WPN', 'SHD', 'RDS', 'OTH'];
+const ITEM_ROLES: ModuleRole[] = ['GEN', 'WPN', 'SHD', 'RDS', 'OTH'];
 
-const PART_TYPES: { value: PartCard['partType']; label: string }[] = [
-  { value: 'cockpit', label: 'COCKPIT' },
-  { value: 'active-module', label: 'ACTIVE' },
-  { value: 'passive-module', label: 'PASSIVE' },
+interface Column {
+  key: string;
+  label: string;
+  width: number;
+  title?: string;
+  right?: boolean;
+}
+
+const COLUMNS: Column[] = [
+  { key: 'art', label: '', width: 30, title: 'art' },
+  { key: 'name', label: 'NAME', width: 168 },
+  { key: 'subtype', label: 'SUBTYPE', width: 104, title: 'events only — the classification printed on the card' },
+  { key: 'role', label: 'ROLE', width: 86 },
+  { key: 'rarity', label: 'RARITY', width: 104 },
+  { key: 'amount', label: '×N', width: 46, title: 'copies in the deck', right: true },
+  { key: 'cost', label: 'COST⚡', width: 58, right: true, title: '⚡ one activation draws, across the card’s active effects' },
+  { key: 'max', label: 'MAX⚡', width: 58, right: true, title: 'the most ⚡ this module’s own pool holds' },
+  { key: 'atk', label: 'ATK⚔️', width: 56, right: true },
+  { key: 'slots', label: 'SLOTS', width: 50, right: true },
+  { key: 'gen', label: 'GEN⚡', width: 52, right: true, title: 'cockpit generator, per down' },
+  { key: 'effects', label: 'EFFECTS', width: 210 },
+  { key: 'text', label: 'PRINTS AS', width: 320, title: 'derived from the effects — edit the effect, not the text' },
+  { key: 'actions', label: '', width: 60 },
 ];
 
-const HEADERS = [
-  { label: '', width: 30, title: 'art' },
-  { label: 'NAME', width: 168 },
-  { label: 'TYPE', width: 104 },
-  { label: 'ROLE', width: 60 },
-  { label: 'RARITY', width: 104 },
-  { label: '×N', width: 46, title: 'copies in the deck', right: true },
-  { label: 'COST⚡', width: 58, right: true, title: '⚡ one activation draws, across the card’s active effects' },
-  { label: 'MAX⚡', width: 58, right: true, title: 'the most ⚡ this module’s own pool holds' },
-  { label: 'ATK⚔️', width: 56, right: true },
-  { label: 'SLOTS', width: 50, right: true },
-  { label: 'GEN⚡', width: 52, right: true, title: 'cockpit generator, per down' },
-  { label: 'EFFECTS', width: 210 },
-  { label: 'PRINTS AS', width: 0, title: 'derived from the effects — edit the effect, not the text' },
-  { label: '', width: 60 },
-];
+const MIN_WIDTH = 28;
 
 export function DeckTable({
   cards,
@@ -66,26 +73,64 @@ export function DeckTable({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const widths = useUiStore((s) => s.deckColumnWidths);
+  const setWidth = useUiStore((s) => s.setDeckColumnWidth);
+  const resetColumn = useUiStore((s) => s.resetDeckColumn);
+
+  const widthOf = (column: Column) => widths[column.key] ?? column.width;
+  const total = COLUMNS.reduce((sum, c) => sum + widthOf(c), 0);
+
+  /**
+   * Drag the right edge of a header to size its column.
+   *
+   * The listeners go on the window rather than the handle: a fast drag leaves
+   * a 6px target behind, and the column should keep tracking the pointer.
+   * Double-click puts one column back to its default.
+   */
+  const startResize = (column: Column, event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = widthOf(column);
+    const onMove = (e: MouseEvent) =>
+      setWidth(column.key, Math.max(MIN_WIDTH, startWidth + e.clientX - startX));
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
   return (
     <div className="min-h-0 flex-1 overflow-auto border-2 border-n-900 bg-cream-100">
-      <table className="w-full border-collapse">
+      <table className="table-fixed border-collapse" style={{ width: total }}>
         <colgroup>
-          {HEADERS.map((h, i) => (
-            <col key={i} style={h.width ? { width: h.width } : undefined} />
+          {COLUMNS.map((c) => (
+            <col key={c.key} style={{ width: widthOf(c) }} />
           ))}
         </colgroup>
         <thead className="sticky top-0 z-10">
           <tr className="bg-n-900 text-cream-100">
-            {HEADERS.map((h, i) => (
+            {COLUMNS.map((c) => (
               <th
-                key={i}
-                title={h.title}
+                key={c.key}
+                title={c.title}
                 className={[
-                  'border-r border-n-700 px-1.5 py-1.5 font-mono text-[10px] font-normal tracking-[0.1em] whitespace-nowrap',
-                  h.right ? 'text-right' : 'text-left',
+                  'relative border-r border-n-700 px-1.5 py-1.5 font-mono text-[10px] font-normal tracking-[0.1em] whitespace-nowrap',
+                  c.right ? 'text-right' : 'text-left',
                 ].join(' ')}
               >
-                {h.label}
+                <span className="block overflow-hidden text-ellipsis">{c.label}</span>
+                <span
+                  onMouseDown={(e) => startResize(c, e)}
+                  onDoubleClick={() => resetColumn(c.key)}
+                  title="drag to resize · double-click to reset"
+                  className="absolute top-0 -right-[3px] z-20 h-full w-[6px] cursor-col-resize hover:bg-crt-green-500"
+                />
               </th>
             ))}
           </tr>
@@ -100,7 +145,7 @@ export function DeckTable({
               <Fragment key={kind}>
                 <tr className="bg-putty-300">
                   <td
-                    colSpan={HEADERS.length}
+                    colSpan={COLUMNS.length}
                     className="border-y border-putty-500 px-2 py-1 font-mono text-[10px] tracking-[0.14em] text-n-800"
                   >
                     {label} · {rows.length} CARDS · {copies} COPIES
@@ -149,7 +194,7 @@ function Row({
 
   const warnings = cardWarnings(card);
   const isPart = card.kind === 'part';
-  const isCockpit = isPart && card.partType === 'cockpit';
+  const isCockpit = isPart && card.role === 'COCKPIT';
   const part = isPart ? card : null;
 
   // ⚔️ lives in the damage effect for a module, but a cockpit's basic attack is
@@ -207,28 +252,15 @@ function Row({
       </td>
 
       <td className={cell}>
-        {card.kind === 'part' ? (
-          <SelectCell
-            value={card.partType}
-            options={PART_TYPES}
-            onChange={(partType) => patchCard(card.id, { partType })}
-          />
-        ) : card.kind === 'item' ? (
-          <SelectCell
-            value={card.consumable ? 'yes' : 'no'}
-            options={[
-              { value: 'yes', label: 'CONSUMABLE' },
-              { value: 'no', label: 'KEEPS' },
-            ]}
-            onChange={(v) => patchCard(card.id, { consumable: v === 'yes' })}
-          />
-        ) : (
+        {card.kind === 'event' ? (
           <TextCell
             value={card.subtype}
             mono
             onChange={(subtype) => patchCard(card.id, { subtype })}
             placeholder="subtype"
           />
+        ) : (
+          <div className="px-1.5 py-1 text-center font-mono text-[12px] text-putty-500">—</div>
         )}
       </td>
 
@@ -239,7 +271,10 @@ function Row({
           <div style={{ color: ROLE_COLOR[card.role] }}>
             <SelectCell
               value={card.role}
-              options={ROLES.map((r) => ({ value: r, label: r }))}
+              options={(card.kind === 'part' ? PART_ROLES : ITEM_ROLES).map((r) => ({
+                value: r,
+                label: r,
+              }))}
               onChange={(role) => patchCard(card.id, { role })}
             />
           </div>

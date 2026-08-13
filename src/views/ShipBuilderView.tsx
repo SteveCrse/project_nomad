@@ -379,10 +379,6 @@ function Grid({
                 {ROLE_LABEL[role]}
               </div>
             ))}
-            <div className="flex items-center gap-1.5">
-              <span className="h-3 w-3 border-2 border-n-900" />
-              COCKPIT
-            </div>
           </div>
         </div>
       </div>
@@ -544,7 +540,7 @@ function SelectedPanel({
       {selected ? (
         <div className="flex flex-col gap-2 border border-border-strong bg-crt-glass p-2.5">
           <div className="flex flex-wrap gap-3.5 font-mono text-[12px] text-crt-white">
-            {selected.partType === 'cockpit' ? (
+            {selected.role === 'COCKPIT' ? (
               <>
                 <span>
                   SLOTS <span className="text-crt-green-500">{selected.slots ?? 0}</span>
@@ -593,7 +589,7 @@ function SelectedPanel({
 
       {selectedPartId && (inHold || inScrap) && canEdit && (
         <div className="mt-2.5 flex flex-col gap-2">
-          {selected?.partType === 'cockpit' && inHold ? (
+          {selected?.role === 'COCKPIT' && inHold ? (
             <Button
               size="sm"
               onClick={() => act(() => installCockpit(player.id, selectedPartId))}

@@ -260,7 +260,7 @@ export function drawStartingPart(
 
   // A cockpit is what sets slot capacity, so the first one a seat draws takes
   // the hull over immediately — assemble into the grid you're going to fly.
-  if (part?.partType === 'cockpit' && !setup.anchored.includes(who)) {
+  if (part?.role === 'COCKPIT' && !setup.anchored.includes(who)) {
     next = installCockpit(content, next, config, who, cardId);
   }
   return next;
@@ -277,7 +277,7 @@ export function installCockpit(
   const setup = state.setup;
   const player = state.party.players.find((p) => p.id === playerId);
   const part = partOf(content, cardId);
-  if (!setup || !player || part?.partType !== 'cockpit') return state;
+  if (!setup || !player || part?.role !== 'COCKPIT') return state;
 
   const held = player.carriedParts.indexOf(cardId);
   if (held < 0) return state;
@@ -323,7 +323,7 @@ export function assemblePart(
   const held = player.carriedParts.indexOf(cardId);
   const part = partOf(content, cardId);
   if (held < 0 || !part) return state;
-  if (part.partType === 'cockpit') {
+  if (part.role === 'COCKPIT') {
     return installCockpit(content, state, config, playerId, cardId);
   }
 

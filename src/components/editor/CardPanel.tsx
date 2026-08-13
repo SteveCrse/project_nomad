@@ -91,7 +91,7 @@ export function CardPanel({ card, onClose }: { card: Card; onClose: () => void }
           </Field>
         )}
 
-        {card.kind === 'part' && card.partType === 'active-module' && (
+        {card.kind === 'part' && card.role !== 'COCKPIT' && (
           <label className="flex cursor-pointer items-center gap-2 pb-2">
             <input
               type="checkbox"
@@ -151,7 +151,7 @@ function Effects({ card }: { card: Card }) {
 
       {effects.length === 0 && (
         <div className="pb-1.5 text-[12px] text-putty-700 italic">
-          {card.kind === 'part' && card.partType === 'cockpit'
+          {card.kind === 'part' && card.role === 'COCKPIT'
             ? 'None — a cockpit’s weapon, shield and generator are intrinsic, and print from its own numbers.'
             : 'Nothing yet — this card does nothing in play, and prints nothing.'}
         </div>

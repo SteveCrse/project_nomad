@@ -33,6 +33,8 @@ export interface ModuleOption {
   /** Fired already in this set of downs. */
   spent: boolean;
   offensive: boolean;
+  /** Carries at least one active effect, so a down can be spent on it. */
+  activatable: boolean;
   /** The player has to pick an enemy module for this one. */
   needsModuleTarget: boolean;
   manual: boolean;
@@ -60,9 +62,10 @@ export function moduleOptions(
   return ship.slots
     .map((slot): ModuleOption | null => {
       const part = getPart(slot.partId);
-      if (!part || part.partType === 'cockpit') return null;
+      if (!part || part.role === 'COCKPIT') return null;
 
       const manual = activeEffects(part).some((e) => e.type === 'manual');
+      const activatable = activeEffects(part).length > 0;
       const needsModuleTarget = !!part.targetsModule;
       const action: DownAction = {
         type: 'activate-module',
@@ -75,10 +78,11 @@ export function moduleOptions(
         ...(manual && choice.manualDamage ? { manualDamage: choice.manualDamage } : {}),
       };
 
-      const error =
-        part.partType === 'passive-module'
-          ? 'passive — always on'
-          : combat.actionError(CONTENT, battle, config, side, action);
+      // A module with nothing active isn't broken — its passives are simply
+      // doing their job without a down being spent on them.
+      const error = activatable
+        ? combat.actionError(CONTENT, battle, config, side, action)
+        : 'nothing to activate — its effects are always on';
 
       return {
         slot: slot.index,
@@ -88,6 +92,7 @@ export function moduleOptions(
         energyCost: shipEngine.energyCostOf(part, config, choice.diceCount),
         spent: slot.usedThisDownSet,
         offensive: shipEngine.isOffensive(part),
+        activatable,
         needsModuleTarget,
         manual,
       };
@@ -110,7 +115,7 @@ export function shieldOptions(
       const part = getPart(slot.partId);
       // The cockpit has its own row in the action bar — its generator is the
       // way it recharges, so it isn't listed among the chargeable shields.
-      if (!part || part.role !== 'SHD' || part.partType === 'cockpit') return null;
+      if (!part || part.role !== 'SHD') return null;
       const action: DownAction = { type: 'charge-shield', slot: slot.index, amount: 1 };
       return { slot: slot.index, part, error: combat.actionError(CONTENT, battle, config, side, action) };
     })

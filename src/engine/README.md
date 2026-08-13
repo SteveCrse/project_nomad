@@ -68,9 +68,10 @@ instead of a corrupted state. The store never mutates game state itself.
   the ship's last charge) and `genPerDown` (what one down of the basic
   generator puts back). Two extra down actions expose them — `cockpit-attack` and
   `cockpit-generate` — and neither costs ⚡, so a ship stripped to bare metal
-  still has something to spend a down on. The cockpit sits outside
-  `liveModules`, so it never doubles up with the upkeep spread or a role chain;
-  everything it does goes through the `cockpit*` helpers in `ship/module.ts`.
+  still has something to spend a down on. A cockpit is the part whose `role` is
+  `COCKPIT`; it sits outside `liveModules`, so it never doubles up with the
+  upkeep spread or a role chain, and everything it does goes through the
+  `cockpit*` helpers in `ship/module.ts`.
 - A module fires as often as its own pool can pay for — one down per shot. A
   card printed `oncePerSet` is capped at one, and `offensiveOncePerSet` puts
   every gun back under that cap for comparison. What actually rations a volley
@@ -111,6 +112,14 @@ effects: [
 an effect, on the same footing: what an activation pays is the sum across the
 active effects it resolves (`cardCost`), and each rolls its own dice. A cost on
 a passive is meaningless and `cardWarnings` says so.
+
+**A module is just a module.** There is no active/passive kind sitting on top
+of the effect list to disagree with it: a card can be fired for a down exactly
+when it carries an active effect (`isActivatable`), and whatever passives it
+also carries are on the whole time. One card can do both, and the good ones do.
+`COCKPIT` is a **role** like GEN or WPN — the one that anchors a ship, delimits
+an enemy spawn, and prints its three intrinsic lines off `power`, `genPerDown`
+and `energyCapacity`.
 
 `effects.ts` is the catalogue — label, timing, tunable params, printed-text
 fragment — and `cards.ts` compiles a card's list into the flat fields the rest

@@ -45,6 +45,7 @@ export {
   hasEffect,
   hasVariableDice,
   hydrateDeck,
+  isActivatable,
   makeEffect,
   migrateCard,
   passiveEffects,

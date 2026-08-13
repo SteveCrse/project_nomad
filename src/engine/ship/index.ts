@@ -9,7 +9,7 @@ import type { Deck } from '../deck';
 import { discard, draw } from '../deck';
 import type { Rng } from '../rng';
 import { cardCost } from '../cards';
-import { capacityOf, liveModules } from './module';
+import { capacityOf, isActive, liveModules } from './module';
 
 export * from './module';
 
@@ -315,7 +315,7 @@ export function runUpkeep(
       .map((m) => ({
         ...m,
         rank:
-          m.part.partType === 'active-module' ? 0 : m.part.role === 'SHD' ? 1 : 2,
+          isActive(m.part) ? 0 : m.part.role === 'SHD' ? 1 : 2,
         want: cardCost(m.part) || 1,
       }))
       .sort((a, b) => a.rank - b.rank || b.want - a.want);
@@ -390,7 +390,7 @@ export function spawnEnemyShip(
     for (const id of statBlock.fixedPartIds) {
       const part = partOf(content, id);
       if (!part) continue;
-      if (part.partType === 'cockpit' && !cockpitId) cockpitId = id;
+      if (part.role === 'COCKPIT' && !cockpitId) cockpitId = id;
       else modules.push(id);
     }
   } else {
@@ -407,7 +407,7 @@ export function spawnEnemyShip(
       const part = partOf(content, id);
       if (!part) continue;
 
-      if (part.partType === 'cockpit') {
+      if (part.role === 'COCKPIT') {
         if (!cockpitId) {
           cockpitId = id;
           continue;
@@ -465,6 +465,6 @@ export function spawnEnemyShip(
 }
 
 function firstCockpitIn(content: Content): PartId | null {
-  const found = Object.values(content.parts).find((p) => p.partType === 'cockpit');
+  const found = Object.values(content.parts).find((p) => p.role === 'COCKPIT');
   return found?.id ?? null;
 }
