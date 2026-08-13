@@ -155,6 +155,8 @@ function buildPlayer(
 ): PlayerState {
   let ship = createShip(content, seat.cockpitId, seat.shipName, config);
   for (const partId of partIds) {
+    // A loadout can outlive the card it names once the deck is edited.
+    if (!partOf(content, partId)) continue;
     const free = firstAttachableSlot(ship);
     if (free < 0) break;
     ship = equipPart(ship, free, partId);

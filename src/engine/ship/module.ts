@@ -1,83 +1,89 @@
-import type { ModuleEffect, PartCard } from '../types/card';
+import type { DiceSpec, PartCard } from '../types/card';
 import type { GameConfig } from '../types/config';
 import type { Ship, ShipSlot } from '../types/ship';
 import type { Content } from '../content';
 import { partOf } from '../content';
+import { activeEffects } from '../cards';
+import { isDamageEffect } from '../effects';
 import type { Rng } from '../rng';
 
 /**
  * Reading a module's behaviour off its card.
  *
- * Everything here derives from the structured fields on `PartCard` — never
- * from a card id — so new content stays a data edit.
+ * Everything here derives from the card's effect list and the flat fields
+ * compiled from it — never from a card id — so new content stays a data edit.
  */
-
-/** What activating this module does. Passives have nothing to activate. */
-export function effectOf(part: PartCard): ModuleEffect {
-  if (part.effect) return part.effect;
-  if (part.partType === 'active-module') {
-    return part.power ? { kind: 'damage' } : { kind: 'manual' };
-  }
-  return { kind: 'manual' };
-}
 
 export const isActive = (part: PartCard): boolean => part.partType === 'active-module';
 
-/** Offensive modules are the ones limited to once per fresh set of downs. */
+/** Offensive modules are the ones a blanket once-per-set rule would cap. */
 export const isOffensive = (part: PartCard): boolean =>
-  isActive(part) && effectOf(part).kind === 'damage';
+  isActive(part) && activeEffects(part).some((e) => isDamageEffect(e.type));
 
 /**
- * A charged shield soaks damage before the cockpit has to. Active SHD modules
- * (a Defense Turret) spend their charge on their own action instead, so they
- * only soak when the card says so.
+ * A charged shield soaks damage before the cockpit has to — the cards that
+ * print an `absorb` effect. Active SHD modules (a Defense Turret) spend their
+ * charge on their own action instead, so they don't carry one.
  *
  * A cockpit is always an absorber: its pool is the ship's basic shield, and
  * the last one standing.
  */
 export const isAbsorber = (part: PartCard): boolean =>
-  (part.energyCapacity ?? 0) > 0 &&
-  (part.partType === 'cockpit' ||
-    (part.role === 'SHD' && (part.absorbs ?? part.partType === 'passive-module')));
+  (part.energyCapacity ?? 0) > 0 && (part.partType === 'cockpit' || !!part.absorbs);
 
-/** Energy this activation costs from the module's own pool. */
-export function energyCostOf(part: PartCard, config: GameConfig, diceCount = 1): number {
-  const base = part.energyCost ?? 0;
-  const perDie = part.dice?.count === 'variable' ? Math.max(1, diceCount) : 1;
+/**
+ * Energy this activation costs from the card's own pool.
+ *
+ * Takes the shape rather than the card so an item off the hand costs what its
+ * printed line says, the same way a fitted module does.
+ */
+export function energyCostOf(
+  card: { energyCost?: number | null; dice?: DiceSpec },
+  config: GameConfig,
+  diceCount = 1,
+): number {
+  const base = card.energyCost ?? 0;
+  const perDie = card.dice?.count === 'variable' ? Math.max(1, diceCount) : 1;
   return Math.max(0, Math.round(base * perDie * config.energyCostMult));
 }
 
 /** How many dice this activation rolls. */
-export function diceCountOf(part: PartCard, requested?: number): number {
-  if (!part.dice) return 0;
-  if (part.dice.count === 'variable') return Math.max(1, requested ?? 1);
-  return part.dice.count;
+export function diceCountOf(card: { dice?: DiceSpec }, requested?: number): number {
+  if (!card.dice) return 0;
+  if (card.dice.count === 'variable') return Math.max(1, requested ?? 1);
+  return card.dice.count;
 }
 
-export interface RollOutcome {
-  /** Damage or energy, depending on the effect. */
-  value: number;
+export interface DiceRoll {
   dice: number[];
   hits: number;
+  /** What the roll adds to a payload: `perHit` per hit, or the plain sum. */
+  bonus: number;
+  /** True when the card prints a hit rule, i.e. the roll can miss. */
+  hitRule: boolean;
 }
 
-/**
- * Roll a module's payload. Dice with a hit rule pay out `perHit` per hit
- * (Laser Array); dice without one are summed on top of the printed power.
- */
-export function rollPayload(part: PartCard, count: number, rng: Rng): RollOutcome {
-  const base = part.power ?? 0;
-  if (!part.dice || count <= 0) return { value: base, dice: [], hits: 0 };
+export const NO_ROLL: DiceRoll = { dice: [], hits: 0, bonus: 0, hitRule: false };
 
-  const dice = rng.rollMany(count, part.dice.die);
-  const { hitUnder, hitOver, perHit } = part.dice;
+/**
+ * Roll a card's dice once for the whole activation.
+ *
+ * One roll, shared by every effect on the card: a card that both hurts and
+ * charges off the same dice should read them the same way. Dice with a hit
+ * rule pay `perHit` per hit (Laser Array); dice without one are summed.
+ */
+export function rollDice(spec: DiceSpec | undefined, count: number, rng: Rng): DiceRoll {
+  if (!spec || count <= 0) return NO_ROLL;
+
+  const dice = rng.rollMany(count, spec.die);
+  const { hitUnder, hitOver, perHit } = spec;
   if (hitUnder === undefined && hitOver === undefined) {
-    return { value: base + dice.reduce((a, b) => a + b, 0), dice, hits: dice.length };
+    return { dice, hits: dice.length, bonus: dice.reduce((a, b) => a + b, 0), hitRule: false };
   }
   const hits = dice.filter(
     (d) => (hitUnder !== undefined && d <= hitUnder) || (hitOver !== undefined && d >= hitOver),
   ).length;
-  return { value: base + hits * (perHit ?? 1), dice, hits };
+  return { dice, hits, bonus: hits * (perHit ?? 1), hitRule: true };
 }
 
 /**

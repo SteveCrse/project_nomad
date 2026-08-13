@@ -16,7 +16,10 @@ import type { PlayerId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
 import type { Rng } from '../rng';
-import type { PartCard } from '../types/card';
+import type { Card, CardEffect, PartCard } from '../types/card';
+import { activeEffects, effectParam } from '../cards';
+import { isDamageEffect } from '../effects';
+import type { DiceRoll } from '../ship';
 import {
   areAdjacent,
   capacityOf,
@@ -27,7 +30,6 @@ import {
   cockpitOf,
   cockpitPower,
   cockpitSlotIndex,
-  effectOf,
   energyCostOf,
   diceCountOf,
   hasFreeReroute,
@@ -36,7 +38,7 @@ import {
   liveModules,
   rerouteEnergy,
   resetDownSetFlags,
-  rollPayload,
+  rollDice,
   runUpkeep,
   shieldPool,
 } from '../ship';
@@ -366,7 +368,8 @@ export function actionError(
       if (cost > slot.energy + spareEnergyFor(content, battle, side)) {
         return `needs ${cost}⚡ in the module`;
       }
-      if (effectOf(part).kind === 'damage' && livingEnemies(battle.combat).length === 0 && side.kind === 'player') {
+      const shoots = activeEffects(part).some((e) => isDamageEffect(e.type));
+      if (shoots && livingEnemies(battle.combat).length === 0 && side.kind === 'player') {
         return 'nothing left to shoot';
       }
       return null;
@@ -426,6 +429,11 @@ export function actionError(
     case 'play-card': {
       if (!player) return 'enemies hold no cards';
       if (!player.hand.includes(action.cardId)) return 'not in hand';
+      const card = content.cards[action.cardId];
+      // An item prints its cost like a module does, and pays it out of the
+      // loose ⚡ the seat is holding rather than out of a module pool.
+      const cost = card && card.kind !== 'event' ? (card.energyCost ?? 0) : 0;
+      if (cost > availableLooseEnergy(content, battle, side)) return `needs ${cost}⚡`;
       return null;
     }
 
@@ -519,6 +527,194 @@ function withPlayer(battle: Battle, id: PlayerId, patch: Partial<PlayerState>): 
   };
 }
 
+// ---------------------------------------------------------------- effects
+
+/** What one effect did to the fight. */
+interface EffectOutcome {
+  battle: Battle;
+  /** Damage counted toward the resolver's conversion threshold. */
+  damage: number;
+  lines: string[];
+}
+
+/** Everything an effect needs that isn't the effect itself. */
+interface EffectContext {
+  /** The card being resolved — its name, and the dice it printed. */
+  card: Card;
+  /** Slot the module sits in. Absent for a card played from hand. */
+  slot?: SlotIndex;
+  side: SideRef;
+  name: string;
+  /** The one roll for this activation, shared by every effect on the card. */
+  roll: DiceRoll;
+  target?: SideRef;
+  targetSlot?: SlotIndex;
+  manualDamage?: number;
+}
+
+/**
+ * Resolve one effect off a card.
+ *
+ * This is the whole of the engine's effect vocabulary, and the reason cards
+ * can be assembled in the editor: a card is a list of these, each with its own
+ * numbers, and combat walks the list. Adding a *card* never comes back here.
+ */
+function resolveEffect(
+  content: Content,
+  battle: Battle,
+  config: GameConfig,
+  effect: CardEffect,
+  ctx: EffectContext,
+): EffectOutcome {
+  const { card, side, name, roll } = ctx;
+  const rolled = roll.dice.length > 0 ? ` [${roll.dice.join(',')}]` : '';
+  const lines: string[] = [];
+  let next = battle;
+  let damage = 0;
+
+  /** Attack power after the roll and any power penalty the seat is carrying. */
+  const payload = (base: number): number => {
+    const penalty = side.kind === 'player' ? (playerOf(next, side.id)?.powerPenalty ?? 0) : 0;
+    return Math.max(0, base + roll.bonus - penalty);
+  };
+
+  /** Land one attack: tally what it credits, and take any retaliation back. */
+  const strike = (target: SideRef, raw: number, targetSlot?: SlotIndex): void => {
+    const shot = applyDamage(content, next, target, raw, targetSlot);
+    next = shot.battle;
+    damage += thresholdCredit(shot.report, config);
+    lines.push(
+      `${name} fires ${card.name}${rolled} at ${sideName(next, target)} ` +
+        `for ${raw}⚔ — ${describeHit(shot.report)}.`,
+    );
+    for (const note of shot.report.notes) lines.push(`  ${note}`);
+    if (shot.report.retaliated > 0) {
+      next = applyDamage(content, next, side, shot.report.retaliated).battle;
+      lines.push(`  retaliation: ${name} takes ${shot.report.retaliated}⚔.`);
+    }
+  };
+
+  const withFlags = (patch: Partial<Ship['flags']>): void => {
+    const ship = shipOf(next, side);
+    if (ship) next = withShip(next, side, { ...ship, flags: { ...ship.flags, ...patch } });
+  };
+
+  switch (effect.type) {
+    case 'damage':
+    case 'damage-module': {
+      const target = ctx.target ?? defaultTarget(content, next, side);
+      if (!target) {
+        lines.push(`${card.name} has nothing to shoot.`);
+        break;
+      }
+      strike(target, payload(effectParam(effect, 'power')), ctx.targetSlot);
+      break;
+    }
+
+    case 'damage-all': {
+      const targets: SideRef[] =
+        side.kind === 'player'
+          ? livingEnemies(next.combat).map((e) => ({ kind: 'enemy', id: e.instanceId }))
+          : livingParticipants(next).map((p) => ({ kind: 'player', id: p.id }));
+      if (targets.length === 0) {
+        lines.push(`${card.name} has nothing to shoot.`);
+        break;
+      }
+      const raw = payload(effectParam(effect, 'power'));
+      for (const target of targets) strike(target, raw);
+      break;
+    }
+
+    case 'gain-energy': {
+      // A hit rule turns this into a gamble: no hits and the card takes the
+      // loss instead. Dice without one just add their sum to the payout.
+      const won = !roll.hitRule || roll.hits > 0;
+      const delta = won
+        ? effectParam(effect, 'amount') + (roll.hitRule ? 0 : roll.bonus)
+        : -effectParam(effect, 'loseOnMiss');
+
+      if (ctx.slot === undefined) {
+        // Played from hand: there's no module pool, so it lands in the seat's.
+        if (side.kind === 'player') {
+          const player = playerOf(next, side.id);
+          if (player) {
+            next = withPlayer(next, side.id, { energy: Math.max(0, player.energy + delta) });
+            lines.push(`${name} gains ${delta}⚡ from ${card.name}.`);
+          }
+        }
+        break;
+      }
+
+      const ship = shipOf(next, side)!;
+      if (delta >= 0) {
+        const charged = chargeSlot(content, ship, ctx.slot, delta);
+        next = withShip(next, side, charged.ship);
+        lines.push(`${name} runs ${card.name}${rolled}: +${delta - charged.overflow}⚡.`);
+      } else {
+        const current = ship.slots[ctx.slot]!;
+        const slots = ship.slots.slice();
+        slots[ctx.slot] = { ...current, energy: Math.max(0, current.energy + delta) };
+        next = withShip(next, side, { ...ship, slots });
+        lines.push(`${name} runs ${card.name}${rolled}: ${delta}⚡. Ouch.`);
+      }
+      break;
+    }
+
+    case 'restore-shield': {
+      const ship = shipOf(next, side);
+      if (!ship) break;
+      const cockpit = cockpitOf(content, ship);
+      if (!cockpit) break;
+      const amount = effectParam(effect, 'amount');
+      const charged = chargeSlot(content, ship, cockpit.slot.index, amount);
+      next = withShip(next, side, charged.ship);
+      lines.push(
+        `${name} patches the cockpit shield with ${card.name}: +${amount - charged.overflow}⚡ ` +
+          `(${cockpitCharge(content, charged.ship)}/${cockpitCapacity(content, charged.ship)}).`,
+      );
+      break;
+    }
+
+    case 'negate-next-attack': {
+      const ship = shipOf(next, side);
+      withFlags({ negateNext: (ship?.flags.negateNext ?? 0) + 1 });
+      lines.push(`${name} primes ${card.name} — the next attack is negated.`);
+      break;
+    }
+
+    case 'retaliate': {
+      const ship = shipOf(next, side);
+      const amount = effectParam(effect, 'amount');
+      withFlags({ retaliate: (ship?.flags.retaliate ?? 0) + amount });
+      lines.push(`${name} arms ${card.name} — next attacker takes ${amount}⚔.`);
+      break;
+    }
+
+    case 'manual': {
+      const manual = Math.max(0, ctx.manualDamage ?? 0);
+      const target = ctx.target ?? defaultTarget(content, next, side);
+      if (manual > 0 && target) {
+        const shot = applyDamage(content, next, target, manual, ctx.targetSlot);
+        next = shot.battle;
+        damage += thresholdCredit(shot.report, config);
+        lines.push(
+          `${name} resolves ${card.name} by hand: ${manual}⚔ to ${sideName(next, target)}.`,
+        );
+        break;
+      }
+      lines.push(`${name} activates ${card.name} — resolve its text at the table.`);
+      break;
+    }
+
+    default:
+      // Passive effects (absorb, generate, drain, the event ones) are read
+      // where they apply — upkeep, the damage chain, the board — not fired.
+      break;
+  }
+
+  return { battle: next, damage, lines };
+}
+
 // ---------------------------------------------------------------- resolution
 
 /** Resolve a single down: apply the action, roll any dice, tally damage. */
@@ -563,7 +759,6 @@ export function resolveDown(
       const ship = shipOf(next, side)!;
       const slot = ship.slots[action.slot]!;
       const part = partOf(content, slot.partId)!;
-      const effect = effectOf(part);
       const diceCount = diceCountOf(part, action.diceCount);
       const energy = energyCostOf(part, config, action.diceCount);
 
@@ -587,95 +782,26 @@ export function resolveDown(
         lines.push(`  redistributor feeds ${fromSpare}⚡ into ${part.name}.`);
       }
 
-      switch (effect.kind) {
-        case 'damage': {
-          const target = action.target ?? defaultTarget(content, next, side);
-          if (!target) {
-            lines.push(`${part.name} has nothing to shoot.`);
-            break;
-          }
-          const penalty = side.kind === 'player' ? (playerOf(next, side.id)?.powerPenalty ?? 0) : 0;
-          const payload = rollPayload(part, diceCount, rng);
-          dice = payload.dice;
-          const raw = Math.max(0, payload.value - penalty);
-          const hit = applyDamage(content, next, target, raw, action.targetSlot);
-          next = hit.battle;
-          damage = thresholdCredit(hit.report, config);
-          lines.push(
-            `${name} fires ${part.name}${dice.length ? ` [${dice.join(',')}]` : ''} at ` +
-              `${sideName(next, target)} for ${raw}⚔ — ${describeHit(hit.report)}.`,
-          );
-          for (const note of hit.report.notes) lines.push(`  ${note}`);
-          if (hit.report.retaliated > 0) {
-            const back = applyDamage(content, next, side, hit.report.retaliated);
-            next = back.battle;
-            lines.push(`  retaliation: ${name} takes ${hit.report.retaliated}⚔.`);
-          }
-          break;
-        }
+      // One roll for the activation, then every effect the card prints, in
+      // printed order. A card that shoots *and* charges resolves both off the
+      // same dice, and each reads its own numbers off its own parameters.
+      const roll = rollDice(part.dice, diceCount, rng);
+      dice = roll.dice;
 
-        case 'gain-energy': {
-          const payload = rollPayload(part, diceCount, rng);
-          dice = payload.dice;
-          // Dice with a hit rule gamble: no hits means the loss instead.
-          const won = !part.dice || payload.hits > 0 || payload.value > 0;
-          const delta = won ? effect.amount : -(effect.loseOnMiss ?? 0);
-          const shipNow = shipOf(next, side)!;
-          if (delta >= 0) {
-            const charged = chargeSlot(content, shipNow, action.slot, delta);
-            next = withShip(next, side, charged.ship);
-            lines.push(
-              `${name} runs ${part.name}${dice.length ? ` [${dice.join(',')}]` : ''}: +${delta - charged.overflow}⚡.`,
-            );
-          } else {
-            const current = shipNow.slots[action.slot]!;
-            const slotsNow = shipNow.slots.slice();
-            slotsNow[action.slot] = { ...current, energy: Math.max(0, current.energy + delta) };
-            next = withShip(next, side, { ...shipNow, slots: slotsNow });
-            lines.push(
-              `${name} runs ${part.name}${dice.length ? ` [${dice.join(',')}]` : ''}: ${delta}⚡. Ouch.`,
-            );
-          }
-          break;
-        }
-
-        case 'negate-next-attack': {
-          const shipNow = shipOf(next, side)!;
-          next = withShip(next, side, {
-            ...shipNow,
-            flags: { ...shipNow.flags, negateNext: shipNow.flags.negateNext + 1 },
-          });
-          lines.push(`${name} primes ${part.name} — the next attack is negated.`);
-          break;
-        }
-
-        case 'retaliate': {
-          const shipNow = shipOf(next, side)!;
-          next = withShip(next, side, {
-            ...shipNow,
-            flags: { ...shipNow.flags, retaliate: shipNow.flags.retaliate + effect.amount },
-          });
-          lines.push(`${name} arms ${part.name} — next attacker takes ${effect.amount}⚔.`);
-          break;
-        }
-
-        case 'manual': {
-          const manual = Math.max(0, action.manualDamage ?? 0);
-          if (manual > 0) {
-            const target = action.target ?? defaultTarget(content, next, side);
-            if (target) {
-              const hit = applyDamage(content, next, target, manual, action.targetSlot);
-              next = hit.battle;
-              damage = thresholdCredit(hit.report, config);
-              lines.push(
-                `${name} resolves ${part.name} by hand: ${manual}⚔ to ${sideName(next, target)}.`,
-              );
-              break;
-            }
-          }
-          lines.push(`${name} activates ${part.name} — resolve its text at the table.`);
-          break;
-        }
+      for (const effect of activeEffects(part)) {
+        const outcome = resolveEffect(content, next, config, effect, {
+          card: part,
+          slot: action.slot,
+          side,
+          name,
+          roll,
+          target: action.target,
+          targetSlot: action.targetSlot,
+          manualDamage: action.manualDamage,
+        });
+        next = outcome.battle;
+        damage += outcome.damage;
+        lines.push(...outcome.lines);
       }
       break;
     }
@@ -763,22 +889,40 @@ export function resolveDown(
       break;
     }
 
+    /**
+     * An item off the seat's hand. It resolves through the same effect
+     * vocabulary a module does — it just has no slot of its own, so its ⚡
+     * comes out of the seat's loose charge and its payout goes back there.
+     */
     case 'play-card': {
       const player = playerOf(next, side.id)!;
       const card = content.cards[action.cardId];
-      const manual = Math.max(0, action.manualDamage ?? 0);
       const hand = player.hand.slice();
       hand.splice(hand.indexOf(action.cardId), 1);
       next = withPlayer(next, side.id, { hand });
-      if (manual > 0) {
-        const target = action.target ?? defaultTarget(content, next, side);
-        if (target) {
-          const hit = applyDamage(content, next, target, manual);
-          next = hit.battle;
-          damage = thresholdCredit(hit.report, config);
-        }
+      lines.push(`${name} plays ${card?.name ?? action.cardId}.`);
+      if (!card) break;
+
+      const cost = card.kind !== 'event' ? (card.energyCost ?? 0) : 0;
+      if (cost > 0) next = spendLooseEnergy(content, next, side, cost);
+
+      const spec = card.kind !== 'event' ? card.dice : undefined;
+      const roll = rollDice(spec, diceCountOf({ dice: spec }, action.diceCount), rng);
+      dice = roll.dice;
+
+      for (const effect of activeEffects(card)) {
+        const outcome = resolveEffect(content, next, config, effect, {
+          card,
+          side,
+          name,
+          roll,
+          target: action.target,
+          manualDamage: action.manualDamage,
+        });
+        next = outcome.battle;
+        damage += outcome.damage;
+        lines.push(...outcome.lines);
       }
-      lines.push(`${name} plays ${card?.name ?? action.cardId}${manual ? ` for ${manual}⚔` : ''}.`);
       break;
     }
   }

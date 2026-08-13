@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { GameState, PlayerId } from '@engine/types';
+import { renderText } from '@engine';
 import { Button } from '@/components/ds';
 import { CardTile } from './CardTile';
 import { ModuleTile } from './ModuleTile';
@@ -54,7 +55,7 @@ function EventPrompt({ state, cardId }: { state: GameState; cardId: string }) {
         {card && <CardTile card={card} />}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="border border-border-strong bg-crt-glass p-3 text-[15px] leading-[1.4] text-crt-white">
-            {card?.text}
+            {card && renderText(card)}
           </div>
           <div className="text-[14px] text-putty-700">
             The tool resolves the structured half of the card — markers, damage, loot draws,

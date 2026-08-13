@@ -36,23 +36,53 @@ export interface DiceSpec {
 }
 
 /**
- * What activating an active module does, in terms the engine can resolve.
+ * The vocabulary a card's behaviour is built from.
  *
- * Deliberately small: anything outside this vocabulary is `manual`, which
- * still spends the down and the energy but leaves the payload to the table.
- * Better a knowingly-manual card than a silently-wrong one.
+ * Every entry has a definition in `engine/effects.ts` — label, tunable
+ * parameters, printed-text fragment — and the active ones have a case in
+ * combat's resolver. A card is a *list* of these, so new content is assembled
+ * from parts that already work rather than written as a new special case.
+ *
+ * Deliberately small. Anything outside the vocabulary is `manual` (active) or
+ * `reminder` (passive): the tool still spends the down and the energy, and the
+ * table adjudicates the payload. Better a knowingly-manual card than a
+ * silently-wrong one.
  */
-export type ModuleEffect =
-  /** Deal `power` (plus any dice) to the target. */
-  | { kind: 'damage' }
-  /** Add energy to this module's own pool; dice decide hit/miss when present. */
-  | { kind: 'gain-energy'; amount: number; loseOnMiss?: number }
-  /** The next attack against this ship deals nothing. */
-  | { kind: 'negate-next-attack' }
-  /** The next attacker takes `amount` back. */
-  | { kind: 'retaliate'; amount: number }
-  /** Resolve by hand at the table; the tool just tracks the cost. */
-  | { kind: 'manual' };
+export type EffectType =
+  // ---- active: spend a down (and the card's ⚡ cost) to fire ----
+  | 'damage'
+  | 'damage-all'
+  | 'damage-module'
+  | 'gain-energy'
+  | 'restore-shield'
+  | 'negate-next-attack'
+  | 'retaliate'
+  | 'manual'
+  // ---- passive: always on while the module is fitted ----
+  | 'absorb'
+  | 'generate'
+  | 'damage-reduction'
+  | 'drain'
+  | 'free-reroute'
+  | 'scrap-cap'
+  | 'reminder'
+  // ---- events: resolved when the card is drawn on a step ----
+  | 'event-damage'
+  | 'grant-loot'
+  | 'spawn-combat'
+  | 'place-marker';
+
+/**
+ * One effect on a card, with its numbers.
+ *
+ * Params are the ⚡/⚔️/🎲 values a card prints: tuning a card means changing
+ * a number here, never writing a new effect. Keys the card omits fall back to
+ * the registry's default, so an effect is always resolvable.
+ */
+export interface CardEffect {
+  type: EffectType;
+  params?: Record<string, number>;
+}
 
 interface CardBase {
   id: CardId;
@@ -61,14 +91,26 @@ interface CardBase {
   rarity: Rarity;
   /** Copies of this card in the deck. */
   amount: number;
-  /** Rules text as printed on the card. */
+  /**
+   * Rules text as printed on the card.
+   *
+   * `{placeholders}` are filled from the card's own numbers by
+   * `renderText` — `{cost}`, `{power}`, an effect's `{amount}` — so retuning a
+   * card's ⚡ or ⚔️ reprints its text instead of silently contradicting it.
+   */
   text: string;
   /** Italic, non-mechanical line. */
   flavor?: string;
   /** Persistent condition printed under the effect (e.g. "Infested: ..."). */
   status?: string;
-  /** Filename in Project N.O.M.A.D._pngs/fronts, once art is mapped. */
+  /** Filename in Project N.O.M.A.D._pngs/fronts, or any image URL. */
   art?: string;
+  /**
+   * What the card does, assembled from the effect vocabulary. The engine's
+   * flat fields below are *derived* from this by `compileCard` — this list is
+   * what a card is authored and edited as.
+   */
+  effects?: CardEffect[];
 }
 
 /** Parts deck: becomes ship components, and generates enemy ships. */
@@ -112,24 +154,26 @@ export interface PartCard extends CardBase {
    */
   oncePerSet?: boolean;
 
-  // ---- structured behaviour: what the engine actually resolves ----
   /**
    * Energy drawn from this module's own pool per activation. With variable
    * dice this is the cost *per die* ("spend X⚡ to cast X🎲").
    */
   energyCost?: number;
+
+  // ---- derived from `effects` by `compileCard`; don't author by hand ----
+  // The engine reads these directly, so they stay flat and cheap. Editing a
+  // card's effect list rewrites them, which is what makes a retuned number
+  // show up in play.
   /** Passive: energy added to this module's pool at the start of its turn. */
   generates?: number;
   /** Passive: flat cut off each incoming attack, draining 1⚡ per use. */
   damageReduction?: number;
   /** Passive: energy this module bleeds from the whole ship each turn (Infested). */
   drainPerTurn?: number;
-  /** Passive SHD with a pool soaks damage before the cockpit; set false to opt out. */
+  /** Passive SHD with a pool soaks damage before the cockpit. */
   absorbs?: boolean;
   /** Passive: energy may be rerouted without spending a down (RDS chains). */
   freeReroute?: boolean;
-  /** What activating this module does. Defaults to damage when it has power. */
-  effect?: ModuleEffect;
   /** Attacks that hit a single enemy module rather than its shields. */
   targetsModule?: boolean;
 }
@@ -143,10 +187,8 @@ export interface ItemCard extends CardBase {
   dice?: DiceSpec;
   /** Single-use items leave play after resolving. */
   consumable: boolean;
-  /** Damage dealt when played, if any. */
+  /** Derived from a damage effect by `compileCard`. */
   power?: number;
-  /** What playing this card does; defaults to manual. */
-  effect?: ModuleEffect;
 }
 
 /** Events deck: drawn on Event steps. */
@@ -154,10 +196,12 @@ export interface EventCard extends CardBase {
   kind: 'event';
   /** Free-text classification shown on the card, e.g. "Empty Space · Board Change". */
   subtype: string;
+  /** Marker text dropped on the node when a `place-marker` effect resolves. */
+  marker?: string;
+
+  // ---- derived from `effects` by `compileCard`; don't author by hand ----
   /** Events that alter the board place a marker on the current node. */
   placesMarker?: boolean;
-  /** Marker text dropped on the node when `placesMarker` is set. */
-  marker?: string;
   /** Loot cards handed out when the event resolves. */
   grantsLoot?: number;
   /** ⚔ dealt to every ship at the node, resolved through shields as usual. */

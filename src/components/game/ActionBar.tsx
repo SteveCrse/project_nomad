@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import type { DownAction, GameState, SideRef } from '@engine/types';
-import { ship as shipEngine } from '@engine';
+import { renderText, ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ROLE_COLOR } from '@/lib/palette';
 import { cockpitOptions, moduleOptions, shieldOptions } from '@/lib/combatView';
@@ -165,7 +165,7 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
           <button
             key={m.slot}
             disabled={!!m.error}
-            title={m.error ?? m.part.text}
+            title={m.error ?? renderText(m.part)}
             onClick={() => fire(m.action)}
             className={[
               'flex min-w-[132px] cursor-pointer flex-col items-start gap-0.5 border px-2 py-1.5 text-left',

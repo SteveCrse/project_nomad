@@ -27,7 +27,14 @@ export type DownAction =
   /** The cockpit's basic generator: one down, ⚡ into its own shield pool. */
   | { type: 'cockpit-generate' }
   | { type: 'charge-shield'; slot: SlotIndex; amount: number }
-  | { type: 'play-card'; cardId: CardId; target?: SideRef; manualDamage?: number }
+  | {
+      type: 'play-card';
+      cardId: CardId;
+      target?: SideRef;
+      /** Dice bought for an item printed "spend X⚡ → X🎲". */
+      diceCount?: number;
+      manualDamage?: number;
+    }
   /**
    * One down buys a whole reroute pass: every module on the grid may hand its
    * charge to a neighbour, but each may only be drained once. Transfers

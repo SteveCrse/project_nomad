@@ -17,10 +17,15 @@ import {
   cockpitCharge,
   cockpitPower,
   diceCountOf,
-  effectOf,
   isAbsorber,
   liveModules,
 } from '../ship';
+import { activeEffects, attackOf } from '../cards';
+import { isDamageEffect } from '../effects';
+
+/** Does this module put ⚔️ on something when it fires? */
+const shoots = (part: PartCard): boolean =>
+  activeEffects(part).some((e) => isDamageEffect(e.type));
 
 /**
  * Enemy decision-making — enough for one side of the table to play itself so
@@ -49,7 +54,7 @@ export function chooseEnemyAction(
   //    cockpit's basic shot is in the running like anything else — it costs no
   //    ⚡, so it wins by default once the guns run dry.
   const guns = liveModules(content, ship)
-    .filter((m) => effectOf(m.part).kind === 'damage')
+    .filter((m) => shoots(m.part))
     .map((m) => {
       const dice = diceCountOf(m.part, maxAffordableDice(m.slot.energy, m.part.energyCost ?? 1));
       const action: DownAction = {
@@ -76,10 +81,15 @@ export function chooseEnemyAction(
 
   // 2. Nothing to shoot with — prime defensive tech (turrets, mines).
   const utility = liveModules(content, ship)
-    .filter((m) => {
-      const kind = effectOf(m.part).kind;
-      return kind === 'negate-next-attack' || kind === 'retaliate' || kind === 'gain-energy';
-    })
+    .filter((m) =>
+      activeEffects(m.part).some(
+        (e) =>
+          e.type === 'negate-next-attack' ||
+          e.type === 'retaliate' ||
+          e.type === 'gain-energy' ||
+          e.type === 'restore-shield',
+      ),
+    )
     .map((m): DownAction => ({ type: 'activate-module', slot: m.slot.index }))
     .filter(legal);
   if (utility.length > 0) return rng.pick(utility);
@@ -121,8 +131,8 @@ export function chooseEnemyAction(
 function planReroute(content: Content, ship: Ship): EnergyTransfer[] {
   const modules = liveModules(content, ship);
   const dryGuns = modules
-    .filter((m) => effectOf(m.part).kind === 'damage' && m.slot.energy < (m.part.energyCost ?? 0))
-    .sort((a, b) => (b.part.power ?? 0) - (a.part.power ?? 0));
+    .filter((m) => shoots(m.part) && m.slot.energy < (m.part.energyCost ?? 0))
+    .sort((a, b) => attackOf(b.part) - attackOf(a.part));
 
   const drained = new Set<number>();
   const transfers: EnergyTransfer[] = [];
@@ -148,7 +158,7 @@ function maxAffordableDice(energy: number, perDie: number): number {
 
 /** Rough expected value, only ever compared against other modules' guesses. */
 function expectedDamage(part: PartCard, diceCount: number): number {
-  const base = part.power ?? 0;
+  const base = attackOf(part);
   if (!part.dice) return base;
   const sides = Number(part.dice.die.slice(1));
   const { hitUnder, hitOver, perHit } = part.dice;

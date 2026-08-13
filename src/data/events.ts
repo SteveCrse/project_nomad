@@ -3,9 +3,9 @@ import type { EventCard } from '@engine/types';
 /**
  * Events deck. Drawn on Event steps.
  *
- * The structured fields (`grantsLoot`, `damage`, `spawnsCombat`,
- * `placesMarker`) are what the engine resolves; anything the card asks a
- * player to decide is still decided at the table.
+ * The effects (`grant-loot`, `event-damage`, `spawn-combat`, `place-marker`)
+ * are what the engine resolves; anything the card asks a player to decide is
+ * still decided at the table.
  */
 export const EVENTS: EventCard[] = [
   {
@@ -15,10 +15,9 @@ export const EVENTS: EventCard[] = [
     subtype: 'Empty Space · Board Change',
     rarity: 1,
     amount: 1,
-    placesMarker: true,
     marker: 'GRAVITY WELL',
-    grantsLoot: 1,
-    text: 'Place a Gravity Well chit on this sector. Players on this sector must spend 1 additional ⚡️ to leave it. Draw 1 loot.',
+    effects: [{ type: 'place-marker' }, { type: 'grant-loot', params: { count: 1 } }],
+    text: 'Place a Gravity Well chit on this sector. Players on this sector must spend 1 additional ⚡️ to leave it. Draw {count} loot.',
   },
   {
     id: 'shipwreck',
@@ -27,7 +26,7 @@ export const EVENTS: EventCard[] = [
     subtype: 'Empty Space · Player Event',
     rarity: 1,
     amount: 1,
-    grantsLoot: 1,
+    effects: [{ type: 'grant-loot', params: { count: 1 } }],
     text: 'INVESTIGATE — ⚀ It’s a trap! Draw 1😈 · ⚁⚂ Nothing valuable · ⚃⚄ Draw 1 common loot · ⚅ Draw 1 rare loot. Or LEAVE IT BE.',
     flavor: 'You happen upon a derelict husk of what used to be a ship.',
   },
@@ -38,8 +37,8 @@ export const EVENTS: EventCard[] = [
     subtype: 'Hazard · Damage',
     rarity: 1,
     amount: 2,
-    damage: 4,
-    text: 'Every ship in this sector takes 4⚔️ as it grinds through the wreckage. (placeholder)',
+    effects: [{ type: 'event-damage', params: { amount: 4 } }],
+    text: 'Every ship in this sector takes {amount}⚔️ as it grinds through the wreckage. (placeholder)',
   },
   {
     id: 'ambush',
@@ -48,7 +47,7 @@ export const EVENTS: EventCard[] = [
     subtype: 'Hazard · Combat',
     rarity: 2,
     amount: 2,
-    spawnsCombat: true,
+    effects: [{ type: 'spawn-combat' }],
     text: 'Something was waiting in the dust. Fight it. (placeholder)',
   },
 ];

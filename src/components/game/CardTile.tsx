@@ -1,4 +1,6 @@
 import type { Card, ModuleRole } from '@engine/types';
+import { renderText } from '@engine';
+import { artUrl } from '@/lib/art';
 import { KIND_COLOR, RARITY_COLOR, ROLE_COLOR, rarityColor, rarityName } from '@/lib/palette';
 
 const PART_SUBTYPE: Record<string, string> = {
@@ -27,6 +29,7 @@ export function CardTile({ card }: { card: Card }) {
   // spend a down to fire.
   const cost = card.kind === 'event' ? '—' : dash(card.energyCost);
   const pool = card.kind === 'part' ? dash(card.energyCapacity) : '—';
+  const art = artUrl(card.art);
 
   return (
     <div className="box-border flex h-[302px] w-[214px] flex-col overflow-hidden border-2 border-n-900 bg-cream-100 shadow-card">
@@ -37,6 +40,14 @@ export function CardTile({ card }: { card: Card }) {
         <span>{card.kind.toUpperCase()}</span>
         <span>{rarityName(card.rarity)}</span>
       </div>
+
+      {art && (
+        <img
+          src={art}
+          alt=""
+          className="h-[74px] w-full flex-none border-b-2 border-n-900 object-cover"
+        />
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-[7px] px-2.5 pt-[9px] pb-2">
         <div className="font-display text-[14px] leading-[1.15] font-bold text-pretty">
@@ -60,11 +71,11 @@ export function CardTile({ card }: { card: Card }) {
           <CostBox label="POOL ⚡" value={pool} valueColor="var(--crt-white)" />
         </div>
 
-        <div className="text-[14px] leading-[1.3] text-pretty text-n-800">{card.text}</div>
+        <div className="text-[14px] leading-[1.3] text-pretty text-n-800">{renderText(card)}</div>
 
         {card.status && (
           <div className="border-t border-b border-cream-300 py-1 text-[12px] leading-[1.25] text-amber-700">
-            {card.status}
+            {renderText(card, card.status)}
           </div>
         )}
 

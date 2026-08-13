@@ -13,6 +13,8 @@ without dragging a renderer along.
 | Path         | Holds                                                                 |
 | ------------ | --------------------------------------------------------------------- |
 | `types/`     | The data model — cards, ships, enemies, players, combat, board, config |
+| `effects.ts` | The effect catalogue: what a card can be assembled from                |
+| `cards.ts`   | Compiling a card's effects into what the engine resolves, and its text |
 | `content.ts` | The injected card/enemy bundle. The engine never imports `src/data`    |
 | `combat/`    | Symmetric downs system: downs, conversion, damage, shields             |
 | `deck/`      | Deck building, shuffling, drawing, checkpoint rarity gates             |
@@ -95,12 +97,34 @@ geometry every adjacency rule reads:
 
 ## Card behaviour
 
-Cards carry structured fields (`energyCost`, `power`, `dice`, `effect`,
-`generates`, `genPerDown`, `damageReduction`, …) that the engine resolves. The effect
-vocabulary is deliberately small; anything outside it is
-`effect: { kind: 'manual' }`, which still spends the down and the energy but
-leaves the payload to the table. A knowingly-manual card beats a
+A card is a **list of effects**, each with its own numbers:
+
+```ts
+effects: [
+  { type: 'damage', params: { power: 5 } },
+  { type: 'drain', params: { amount: 1 } },   // the Infested Railgun, both halves
+]
+```
+
+`effects.ts` is the catalogue — label, timing, tunable params, printed-text
+fragment — and `cards.ts` compiles a card's list into the flat fields the rest
+of the engine reads (`power`, `generates`, `absorbs`, `damageReduction`, an
+event's `damage`…). Those flat fields are **derived**: don't author them, and
+don't expect an edit to one to survive the next compile.
+
+Combat rolls the card's dice once per activation and walks the active effects
+in printed order, so a card that shoots *and* charges reads both off the same
+roll. Adding an **effect** means an entry in `effects.ts` and a case in
+`resolveEffect`; adding a **card** means neither, which is what lets the deck
+editor assemble new cards at runtime.
+
+The vocabulary is deliberately small. Anything outside it is `manual` (active)
+or `reminder` (passive): the tool still spends the down and the energy, prints
+the text, and leaves the payload to the table. A knowingly-manual card beats a
 silently-wrong one.
+
+`renderText` fills a card's `{placeholders}` from its own numbers, so printed
+text tracks the parameters instead of drifting from them.
 
 ## Conventions
 

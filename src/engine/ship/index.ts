@@ -34,10 +34,16 @@ const emptySlot = (index: SlotIndex): ShipSlot => ({
  */
 export function createShip(
   content: Content,
-  cockpitId: PartId,
+  wantedCockpitId: PartId,
   name: string,
   config: GameConfig,
 ): Ship {
+  // Content is editable at runtime, so a loadout can name a cockpit the deck
+  // no longer has. Anchor on any cockpit rather than build a hull around a
+  // card that isn't there — a ship with no cockpit has no shield and no gun.
+  const cockpitId = partOf(content, wantedCockpitId)
+    ? wantedCockpitId
+    : (firstCockpitIn(content) ?? wantedCockpitId);
   const cockpit = partOf(content, cockpitId);
   const capacity = Math.max(1, cockpit?.slots ?? config.gridCols * config.gridRows);
   const slots = Array.from({ length: capacity }, (_, i) => emptySlot(i));

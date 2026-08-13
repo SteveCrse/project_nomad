@@ -68,8 +68,9 @@ src/
   components/
     ds/        design-system primitives ported from Claude Design
     game/      module tiles, panels, action bar, log, prompt overlay
+    editor/    the deck spreadsheet, card panel, effect + art pickers
     layout/    top bar + config sidebar
-  views/       Mission, Table, Ship Builder, Card Browser
+  views/       Mission, Table, Ship Builder, Deck
   styles/      design tokens as CSS custom properties
 ```
 
@@ -78,10 +79,11 @@ Three boundaries hold this together:
 1. **Engine never imports UI — or content.** It takes state, `GameConfig` and a
    `Content` bundle and returns new state, so the same rules can run headless
    for balance sweeps.
-2. **Content lives in `src/data`.** Adding a card or enemy is a data edit. The
-   structured fields on each card (`energyCost`, `effect`, `dice`, …) are what
-   the engine resolves; anything outside that vocabulary is marked `manual` and
-   left to the table.
+2. **Content lives in `src/data`.** Adding a card or enemy is a data edit — or
+   no edit at all, since the deck editor writes cards at runtime. A card is a
+   list of `effects` picked from the vocabulary in `engine/effects.ts`, each
+   with its own numbers; anything outside that vocabulary is marked `manual`
+   and left to the table.
 3. **Tunables live in `GameConfig`.** If a playtester might want to change a
    number, it belongs there — not as a literal in engine code.
 
@@ -92,6 +94,40 @@ descriptors in `src/store/configFields.ts`. Adding a tunable is: add it to
 `GameConfig` + `DEFAULT_CONFIG`, add a descriptor, done. Config persists to
 localStorage; `EXPORT JSON` copies it to the clipboard. A new run picks up the
 current config; changes mid-run bite from the next turn.
+
+## Deck editor
+
+The **Deck** tab shows the same cards two ways. *Gallery* is the deck as
+printed. *Spreadsheet* is the deck as an economy: one row per card, with the
+numbers a balance pass actually moves — rarity, copies in the deck, ⚡ cost, ⚡
+pool, ⚔️ attack — editable in place, and a strip along the bottom totalling
+copies per tier, the cockpit-to-parts ratio (which sets how big enemies spawn)
+and average ⚔️ bought per ⚡ spent.
+
+Selecting a row opens the card panel: the card face as it will print, its
+**effect list**, and the wording. Effects are the reusable half of the model —
+`Attack`, `Generate ⚡`, `Absorbs ⚔️`, `Retaliate`, `Drain the ship` and the
+rest — and a card is however many of them you stack up, each carrying its own
+parameters. So a new card is assembled rather than coded, and retuning one is a
+number: change a damage effect from 4⚔️ to 9⚔️ and the next shot in combat
+deals 9. Cards whose rule the vocabulary can't express carry `Manual` (active)
+or `Printed rule` (passive), which print their text and leave the payload to
+the table rather than pretending to resolve it.
+
+Printed text quotes the same numbers through `{placeholders}` — `{cost}`,
+`{power}`, an effect's `{amount}` — so a card can't be retuned into
+contradicting itself, and *redraft text* rewrites the line from the effects
+when you'd rather start from what the card does. Art is picked from the PNG
+fronts in the repo, or any URL.
+
+Edits are saved in the browser as an **overlay** on the shipped deck — the
+cards you touched, the cards you added, the ids you removed — so content added
+to `src/data` later still shows up, and *revert* on a row or *reset* on the
+toolbar puts the repo's version back. `EXPORT JSON` writes the overlay to a
+file and `IMPORT` reads one, which is how a balance pass moves between
+machines. A ⚠ on a row flags a card that would waste a playtest: an active
+module whose cost is larger than its own pool (the printed Infested Railgun),
+an attack that deals 0⚔️, a card with no effects at all.
 
 ## Status
 

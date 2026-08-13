@@ -10,7 +10,7 @@ import type {
   SideRef,
   SlotIndex,
 } from '@engine/types';
-import { combat, ship as shipEngine } from '@engine';
+import { activeEffects, combat, ship as shipEngine } from '@engine';
 import { CONTENT, getPart } from '@data';
 
 /**
@@ -62,7 +62,7 @@ export function moduleOptions(
       const part = getPart(slot.partId);
       if (!part || part.partType === 'cockpit') return null;
 
-      const effect = shipEngine.effectOf(part);
+      const manual = activeEffects(part).some((e) => e.type === 'manual');
       const needsModuleTarget = !!part.targetsModule;
       const action: DownAction = {
         type: 'activate-module',
@@ -72,7 +72,7 @@ export function moduleOptions(
           ? { targetSlot: choice.targetSlot }
           : {}),
         ...(part.dice?.count === 'variable' ? { diceCount: choice.diceCount ?? 1 } : {}),
-        ...(effect.kind === 'manual' && choice.manualDamage ? { manualDamage: choice.manualDamage } : {}),
+        ...(manual && choice.manualDamage ? { manualDamage: choice.manualDamage } : {}),
       };
 
       const error =
@@ -89,7 +89,7 @@ export function moduleOptions(
         spent: slot.usedThisDownSet,
         offensive: shipEngine.isOffensive(part),
         needsModuleTarget,
-        manual: effect.kind === 'manual',
+        manual,
       };
     })
     .filter((o): o is ModuleOption => o !== null);

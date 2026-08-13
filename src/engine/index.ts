@@ -18,6 +18,33 @@ export { createRng, DIE_SIDES } from './rng';
 export type { Rng } from './rng';
 export { makeContent, partOf, cardOf } from './content';
 export type { Content } from './content';
+export {
+  EFFECTS,
+  EFFECT_LIST,
+  DAMAGE_EFFECTS,
+  effectDef,
+  effectsForKind,
+  defaultParams,
+  isDamageEffect,
+} from './effects';
+export type { EffectDef, EffectParamDef } from './effects';
+export {
+  activeEffects,
+  attackOf,
+  blankCard,
+  cardWarnings,
+  compileCard,
+  effectParam,
+  effectsOf,
+  hasEffect,
+  hydrateDeck,
+  makeEffect,
+  passiveEffects,
+  renderText,
+  textFromEffects,
+  textScope,
+  unknownPlaceholders,
+} from './cards';
 export type { Deck } from './deck';
 export type { LootChoice } from './loot';
 export type { Loadout } from './game';

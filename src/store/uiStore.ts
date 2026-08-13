@@ -1,7 +1,10 @@
 import { create } from 'zustand';
-import type { CardId, EnergyTransfer, PlayerId, SlotIndex } from '@engine/types';
+import type { CardId, CardKind, EnergyTransfer, PlayerId, SlotIndex } from '@engine/types';
 
 export type TabId = 'mission' | 'table' | 'builder' | 'cards';
+
+/** How the Cards tab shows the deck: as printed cards, or as a spreadsheet. */
+export type DeckMode = 'gallery' | 'sheet';
 
 export const TABS: { id: TabId; label: string }[] = [
   { id: 'mission', label: 'Mission' },
@@ -16,6 +19,14 @@ interface UiStore {
   configOpen: boolean;
   /** 0 = all rarities. */
   rarityFilter: number;
+
+  // ---- deck editor ----
+  deckMode: DeckMode;
+  /** null = every deck. */
+  deckKind: CardKind | null;
+  deckSearch: string;
+  /** Card open in the editor panel. */
+  editingCardId: CardId | null;
   /** Whose ship the builder is editing. */
   builderPlayerId: PlayerId;
   selectedPartId: CardId | null;
@@ -45,6 +56,10 @@ interface UiStore {
   setTab: (tab: TabId) => void;
   toggleConfig: () => void;
   setRarityFilter: (rarity: number) => void;
+  setDeckMode: (mode: DeckMode) => void;
+  setDeckKind: (kind: CardKind | null) => void;
+  setDeckSearch: (search: string) => void;
+  editCard: (id: CardId | null) => void;
   setBuilderPlayer: (id: PlayerId) => void;
   selectPart: (id: CardId | null) => void;
   setTarget: (enemyId: string | null) => void;
@@ -62,6 +77,10 @@ export const useUiStore = create<UiStore>((set) => ({
   tab: 'mission',
   configOpen: true,
   rarityFilter: 0,
+  deckMode: 'gallery',
+  deckKind: null,
+  deckSearch: '',
+  editingCardId: null,
   builderPlayerId: 'p1',
   selectedPartId: null,
   autoFollow: true,
@@ -76,6 +95,10 @@ export const useUiStore = create<UiStore>((set) => ({
   setTab: (tab) => set({ tab }),
   toggleConfig: () => set((s) => ({ configOpen: !s.configOpen })),
   setRarityFilter: (rarityFilter) => set({ rarityFilter }),
+  setDeckMode: (deckMode) => set({ deckMode }),
+  setDeckKind: (deckKind) => set({ deckKind }),
+  setDeckSearch: (deckSearch) => set({ deckSearch }),
+  editCard: (editingCardId) => set({ editingCardId }),
   setBuilderPlayer: (builderPlayerId) => set({ builderPlayerId }),
   selectPart: (selectedPartId) => set({ selectedPartId }),
   setTarget: (targetEnemyId) => set({ targetEnemyId, targetSlot: null }),

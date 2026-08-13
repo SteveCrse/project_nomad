@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CardId, GameState, PlayerId, PlayerState, SlotIndex } from '@engine/types';
-import { game, ship as shipEngine } from '@engine';
+import { game, renderText, ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ModuleTile } from '@/components/game/ModuleTile';
 import { ROLE_COLOR, ROLE_LABEL } from '@/lib/palette';
@@ -573,11 +573,13 @@ function SelectedPanel({
               TIER <span style={{ color: 'var(--rarity-3)' }}>{selected.rarity}</span>
             </span>
           </div>
-          <div className="text-[15px] leading-[1.35] text-crt-white">{selected.text}</div>
+          <div className="text-[15px] leading-[1.35] text-crt-white">{renderText(selected)}</div>
           {selected.oncePerSet && (
             <div className="font-mono text-[11px] text-amber-300">ONE SHOT PER SET OF DOWNS</div>
           )}
-          {selected.status && <div className="text-[13px] text-amber-300">{selected.status}</div>}
+          {selected.status && (
+            <div className="text-[13px] text-amber-300">{renderText(selected, selected.status)}</div>
+          )}
         </div>
       ) : (
         <div className="text-[14px] text-putty-700">
