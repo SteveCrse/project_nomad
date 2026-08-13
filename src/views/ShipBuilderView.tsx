@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CardId, GameState, PlayerId, PlayerState, SlotIndex } from '@engine/types';
-import { game, renderText, ship as shipEngine } from '@engine';
+import { cardCost, game, printedLines, ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ModuleTile } from '@/components/game/ModuleTile';
 import { ROLE_COLOR, ROLE_LABEL } from '@/lib/palette';
@@ -562,10 +562,10 @@ function SelectedPanel({
             ) : (
               <>
                 <span>
-                  COST <span className="text-crt-green-500">{selected.energyCost ?? '—'}⚡</span>
+                  COST <span className="text-crt-green-500">{cardCost(selected)}⚡</span>
                 </span>
                 <span>
-                  POOL <span className="text-crt-green-500">{selected.energyCapacity ?? '—'}</span>
+                  MAX <span className="text-crt-green-500">{selected.energyCapacity ?? '—'}⚡</span>
                 </span>
               </>
             )}
@@ -573,12 +573,16 @@ function SelectedPanel({
               TIER <span style={{ color: 'var(--rarity-3)' }}>{selected.rarity}</span>
             </span>
           </div>
-          <div className="text-[15px] leading-[1.35] text-crt-white">{renderText(selected)}</div>
+          {printedLines(selected).map((line, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <span className="mt-0.5 flex-none font-mono text-[10px] tracking-[0.08em] text-putty-600">
+                {line.timing === 'active' ? 'ACT' : 'PAS'}
+              </span>
+              <span className="text-[15px] leading-[1.35] text-crt-white">{line.text}</span>
+            </div>
+          ))}
           {selected.oncePerSet && (
             <div className="font-mono text-[11px] text-amber-300">ONE SHOT PER SET OF DOWNS</div>
-          )}
-          {selected.status && (
-            <div className="text-[13px] text-amber-300">{renderText(selected, selected.status)}</div>
           )}
         </div>
       ) : (

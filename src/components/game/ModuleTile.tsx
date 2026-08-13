@@ -1,5 +1,5 @@
 import type { CardId } from '@engine/types';
-import { renderText } from '@engine';
+import { printedText } from '@engine';
 import { getPart } from '@data';
 import { ROLE_COLOR } from '@/lib/palette';
 
@@ -143,7 +143,7 @@ export function ModuleTile({
         {...drag}
         className={`${shell} ${ring} ${fade} ${clickable} border-2 border-n-900 bg-putty-100 shadow-raised`}
         onClick={onClick}
-        title={title ?? `${part.name} — ${renderText(part)}`}
+        title={title ?? `${part.name} — ${printedText(part)}`}
       >
         <div className="flex items-baseline justify-between gap-1">
           <span className={`${NAME_SIZE[variant]} leading-none font-semibold`}>COCKPIT</span>
@@ -173,7 +173,7 @@ export function ModuleTile({
       }`}
       style={{ borderLeft: `4px solid ${roleColor}` }}
       onClick={onClick}
-      title={title ?? `${part.name} — ${renderText(part)}`}
+      title={title ?? `${part.name} — ${printedText(part)}`}
     >
       <div className={`${NAME_SIZE[variant]} leading-[1.05] font-semibold tracking-[-0.01em]`}>
         {part.name}

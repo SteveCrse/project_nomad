@@ -1,6 +1,14 @@
 import { Fragment, type ReactNode } from 'react';
 import type { Card, CardKind, ModuleRole, PartCard, Rarity } from '@engine/types';
-import { attackOf, cardWarnings, effectParam, isDamageEffect, renderText } from '@engine';
+import {
+  attackOf,
+  cardCost,
+  cardWarnings,
+  effectParam,
+  isActiveEffect,
+  isDamageEffect,
+  printedText,
+} from '@engine';
 import { RARITY_NAME, ROLE_COLOR, rarityColor } from '@/lib/palette';
 import { artUrl } from '@/lib/art';
 import { useDeckStore } from '@/store/deckStore';
@@ -11,9 +19,11 @@ import { NumberCell, SelectCell, TextCell } from './inputs';
  * The deck as a spreadsheet.
  *
  * One row per card, every balance-critical number editable in place: rarity,
- * copies in the deck, ⚡ cost, ⚡ pool, ⚔️ attack, and the printed text that
- * quotes them. Anything with more shape than a number — the effect list, dice,
- * art, flavour — lives in the card panel, one click away on the row.
+ * copies in the deck, ⚡ cost, max ⚡, ⚔️ attack — and the rules text those
+ * numbers produce, read-only, because a card's text is derived from its
+ * effects rather than typed. Anything with more shape than a number — the
+ * effect list, its costs and dice, art, flavour — lives in the card panel, one
+ * click away on the row.
  */
 
 const KIND_SECTIONS: { kind: CardKind; label: string }[] = [
@@ -37,13 +47,13 @@ const HEADERS = [
   { label: 'ROLE', width: 60 },
   { label: 'RARITY', width: 104 },
   { label: '×N', width: 46, title: 'copies in the deck', right: true },
-  { label: 'COST⚡', width: 58, right: true },
-  { label: 'POOL⚡', width: 58, right: true },
+  { label: 'COST⚡', width: 58, right: true, title: '⚡ one activation draws, across the card’s active effects' },
+  { label: 'MAX⚡', width: 58, right: true, title: 'the most ⚡ this module’s own pool holds' },
   { label: 'ATK⚔️', width: 56, right: true },
   { label: 'SLOTS', width: 50, right: true },
   { label: 'GEN⚡', width: 52, right: true, title: 'cockpit generator, per down' },
   { label: 'EFFECTS', width: 210 },
-  { label: 'PRINTED TEXT', width: 0 },
+  { label: 'PRINTS AS', width: 0, title: 'derived from the effects — edit the effect, not the text' },
   { label: '', width: 60 },
 ];
 
@@ -130,6 +140,7 @@ function Row({
 }) {
   const patchCard = useDeckStore((s) => s.patchCard);
   const setEffectParam = useDeckStore((s) => s.setEffectParam);
+  const setEffectCost = useDeckStore((s) => s.setEffectCost);
   const duplicateCard = useDeckStore((s) => s.duplicateCard);
   const removeCard = useDeckStore((s) => s.removeCard);
   const revertCard = useDeckStore((s) => s.revertCard);
@@ -146,6 +157,15 @@ function Row({
   const attackIndex = (card.effects ?? []).findIndex((e) => isDamageEffect(e.type));
   const attack = attackIndex >= 0 ? effectParam(card.effects![attackIndex]!, 'power') : attackOf(card);
   const canEditAttack = attackIndex >= 0 || isCockpit;
+
+  // Cost belongs to an effect now. One active effect means the row can still
+  // edit it in place; with two, the sheet shows what an activation totals and
+  // sends the designer to the panel, where each line has its own price.
+  const activeIndexes = (card.effects ?? [])
+    .map((e, i) => (isActiveEffect(e.type) ? i : -1))
+    .filter((i) => i >= 0);
+  const costIndex = activeIndexes.length === 1 ? activeIndexes[0]! : -1;
+  const cost = cardCost(card);
 
   const cell = 'border-b border-r border-putty-300 align-middle';
   const art = artUrl(card.art);
@@ -252,13 +272,24 @@ function Row({
       </td>
 
       <td className={cell}>
-        <NumberCell
-          value={card.kind === 'event' ? null : card.energyCost}
-          disabled={card.kind === 'event'}
-          nullable
-          title="⚡ an activation draws"
-          onChange={(energyCost) => patchCard(card.id, { energyCost })}
-        />
+        {costIndex >= 0 ? (
+          <NumberCell
+            value={cost}
+            title="⚡ this card’s active effect draws to fire"
+            onChange={(value) => setEffectCost(card.id, costIndex, value ?? 0)}
+          />
+        ) : (
+          <div
+            title={
+              activeIndexes.length > 1
+                ? 'total across this card’s active effects — price them one by one in the panel'
+                : 'nothing here is activated'
+            }
+            className="px-1.5 py-1 text-right font-mono text-[12px] text-putty-600"
+          >
+            {activeIndexes.length > 1 ? cost : '—'}
+          </div>
+        )}
       </td>
 
       <td className={cell}>
@@ -266,7 +297,7 @@ function Row({
           value={part ? part.energyCapacity : null}
           disabled={!part}
           nullable
-          title={isCockpit ? 'the cockpit shield — the ship’s last charge' : '⚡ this module holds'}
+          title={isCockpit ? 'the cockpit shield — the ship’s last charge' : 'the most ⚡ this module holds'}
           onChange={(energyCapacity) => patchCard(card.id, { energyCapacity })}
         />
       </td>
@@ -309,12 +340,12 @@ function Row({
       </td>
 
       <td className={cell}>
-        <TextCell
-          value={card.text}
-          onChange={(text) => patchCard(card.id, { text })}
-          title={`prints as: ${renderText(card)}`}
-          placeholder="printed text — {cost}, {power}, {amount} fill from the numbers"
-        />
+        <div
+          title={printedText(card) || 'this card prints nothing — give it an effect'}
+          className="truncate px-1.5 py-1 text-[13px] text-putty-800"
+        >
+          {printedText(card) || <span className="text-putty-500 italic">nothing</span>}
+        </div>
       </td>
 
       <td className={cell}>

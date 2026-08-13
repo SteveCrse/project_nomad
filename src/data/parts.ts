@@ -4,30 +4,30 @@ import type { PartCard } from '@engine/types';
  * Parts deck. Generates enemy ships and becomes player ship components.
  *
  * Content only — adding or tuning a part must never require an engine change.
- * Cards carried over from the design's card browser keep their printed text
- * verbatim; the entries added to back the seeded ships are marked
- * `placeholder` in their notes and have not been balanced.
+ * Cards carried over from the design's card browser keep their printed wording
+ * verbatim on the `manual`/`reminder` effect that carries it; the entries added
+ * to back the seeded ships are marked `placeholder` and have not been balanced.
  *
  * A card's behaviour is its `effects` list: entries from the vocabulary in
- * `engine/effects.ts`, each with its own numbers. `compileCard` folds those
- * into the flat fields the engine resolves, so retuning a card is a number
- * change here (or in the deck editor) and nothing else. Anything the
- * vocabulary can't express is `manual` — the tool still spends the down and
- * the energy, and the table adjudicates the payload.
+ * `engine/effects.ts`, each with its own numbers, its own ⚡ `cost` and its own
+ * `dice`. `compileCard` folds those into the flat fields the engine resolves,
+ * so retuning a card is a number change here (or in the deck editor) and
+ * nothing else. Anything the vocabulary can't express is `manual` — the tool
+ * still spends the down and the energy, and the table adjudicates the payload.
  *
- * Printed text quotes those same numbers with `{placeholders}`, so a card
- * can't be retuned into contradicting itself.
+ * There is no printed-text field: what a card says is derived from what it
+ * does, so a card can't be retuned into contradicting itself.
  */
 export const PARTS: PartCard[] = [
   // ---- cockpits ----
   //
   // A cockpit is a weapon, a shield and a generator in one, and it is the only
   // durability a ship has: `power` is the basic attack (one down, no ⚡),
-  // `energyCapacity` is the basic shield, and `genPerDown` is what one down of
-  // the basic generator puts back into it. Printed line is "N Slots, X⚔, Y⚡".
+  // `energyCapacity` is the basic shield (its max ⚡), and `genPerDown` is what
+  // one down of the basic generator puts back into it.
   //
   // They carry no effects: all three are intrinsic to being a cockpit rather
-  // than fitted to one.
+  // than fitted to one, and `printedLines` prints them off these numbers.
   //
   // Copies deviate from the design sheet's 1-each: the Parts deck delimits
   // enemy ships on the next cockpit drawn, so at one-in-fifty every enemy
@@ -46,7 +46,6 @@ export const PARTS: PartCard[] = [
     energyCapacity: 5,
     genPerDown: 1,
     effects: [],
-    text: '{slots} Slots, {power} ⚔️, {pool}⚡',
     art: 'n04_t.webp',
   },
   {
@@ -62,7 +61,6 @@ export const PARTS: PartCard[] = [
     energyCapacity: 4,
     genPerDown: 1,
     effects: [],
-    text: '{slots} Slots, {power} ⚔️, {pool}⚡',
     art: 't_13.webp',
   },
   {
@@ -78,7 +76,6 @@ export const PARTS: PartCard[] = [
     energyCapacity: 10,
     genPerDown: 1,
     effects: [],
-    text: '{slots} Slots, {power} ⚔️, {pool}⚡',
     art: 't_67.webp',
   },
   {
@@ -94,7 +91,6 @@ export const PARTS: PartCard[] = [
     energyCapacity: 6,
     genPerDown: 1,
     effects: [],
-    text: '{slots} Slots, {power} ⚔️, {pool}⚡',
     art: 't_75.webp',
   },
   {
@@ -110,7 +106,6 @@ export const PARTS: PartCard[] = [
     energyCapacity: 8,
     genPerDown: 2,
     effects: [],
-    text: '{slots} Slots, {power} ⚔️, {pool}⚡',
     art: 't_72.webp',
   },
 
@@ -124,9 +119,7 @@ export const PARTS: PartCard[] = [
     rarity: 1,
     amount: 3,
     energyCapacity: 1,
-    energyCost: 1,
-    effects: [{ type: 'damage', params: { power: 2 } }],
-    text: 'Spend {cost}⚡️ to attack an enemy for {power}⚔️',
+    effects: [{ type: 'damage', params: { power: 2 }, cost: 1 }],
   },
   {
     id: 'kinetic-shield',
@@ -138,7 +131,6 @@ export const PARTS: PartCard[] = [
     amount: 3,
     energyCapacity: 5,
     effects: [{ type: 'absorb' }],
-    text: 'Absorbs incoming ⚔️ while charged.',
   },
   {
     id: 'garbage-cannon',
@@ -150,8 +142,12 @@ export const PARTS: PartCard[] = [
     amount: 3,
     energyCapacity: 0,
     // Sacrificing a card for a variable payload isn't in the vocabulary.
-    effects: [{ type: 'manual' }],
-    text: "Sacrifice 1 module or item to attack an enemy with ⚔️ equal to the card's Power Rating.",
+    effects: [
+      {
+        type: 'manual',
+        text: "Sacrifice 1 module or item to attack an enemy with ⚔️ equal to the card's Power Rating.",
+      },
+    ],
   },
 
   // ---- rarity 2 ----
@@ -165,7 +161,6 @@ export const PARTS: PartCard[] = [
     amount: 3,
     energyCapacity: 2,
     effects: [{ type: 'generate', params: { amount: 1 } }],
-    text: 'Generate {amount}⚡️ at the start of your turn.',
   },
   {
     id: 'overflow-distributor',
@@ -176,8 +171,13 @@ export const PARTS: PartCard[] = [
     rarity: 2,
     amount: 3,
     energyCapacity: 2,
-    effects: [{ type: 'free-reroute' }],
-    text: 'Whenever a module gains ⚡️ when it is full, you may reroute it immediately.',
+    effects: [
+      { type: 'free-reroute' },
+      {
+        type: 'reminder',
+        text: 'Whenever a module gains ⚡️ when it is full, you may reroute it immediately.',
+      },
+    ],
   },
 
   // ---- rarity 3 ----
@@ -190,12 +190,17 @@ export const PARTS: PartCard[] = [
     rarity: 3,
     amount: 1,
     energyCapacity: 5,
-    energyCost: 1, // per die: spend X⚡ → cast X🎲
-    dice: { count: 'variable', die: 'd6', hitUnder: 1, perHit: 10 },
-    // All of this card's damage comes off the dice, so the effect's own power
-    // is 0 and `perHit` is the number worth tuning.
-    effects: [{ type: 'damage', params: { power: 0 } }],
-    text: 'Spend X⚡️ to Cast X🎲 and deal {perHit}⚔️ for every {hitUnder} you roll.',
+    // All of this card's damage comes off the dice, so its own power is 0 and
+    // `perHit` is the number worth tuning. The cost is per die: spend X⚡ →
+    // cast X🎲.
+    effects: [
+      {
+        type: 'damage',
+        params: { power: 0 },
+        cost: 1,
+        dice: { count: 'variable', die: 'd6', hitUnder: 1, perHit: 10 },
+      },
+    ],
   },
   {
     id: 'shock-absorber',
@@ -207,7 +212,6 @@ export const PARTS: PartCard[] = [
     amount: 1,
     energyCapacity: 2,
     effects: [{ type: 'damage-reduction', params: { amount: 1 } }],
-    text: 'Whenever an enemy attacks you, reduce the ⚔️ by {amount}, and remove 1⚡️ from the Shock Absorber.',
   },
 
   // ---- rarity 4 ----
@@ -220,9 +224,13 @@ export const PARTS: PartCard[] = [
     rarity: 4,
     amount: 1,
     energyCapacity: 10,
-    dice: { count: 1, die: 'd6', hitOver: 2 },
-    effects: [{ type: 'gain-energy', params: { amount: 10, loseOnMiss: 10 } }],
-    text: 'Roll {dice}🎲. On {hitOver} or higher you gain {amount}⚡️. Below it, you lose {loseOnMiss}⚡️.',
+    effects: [
+      {
+        type: 'gain-energy',
+        params: { amount: 10, loseOnMiss: 10 },
+        dice: { count: 1, die: 'd6', hitOver: 2 },
+      },
+    ],
     flavor:
       "The great thing about getting energy from the improbability of the universe is that there's quite a lot of it.",
   },
@@ -235,16 +243,13 @@ export const PARTS: PartCard[] = [
     rarity: 4,
     amount: 1,
     // Printed capacity is 1⚡, which can never pay this card's own 2⚡ cost.
-    // Raised to 4 so the card is testable — flag it against the printed text.
+    // Raised to 4 so the card is testable.
     energyCapacity: 4,
-    energyCost: 2,
     // Two effects on one card: the gun, and the infestation that pays for it.
     effects: [
-      { type: 'damage', params: { power: 5 } },
+      { type: 'damage', params: { power: 5 }, cost: 2 },
       { type: 'drain', params: { amount: 1 } },
     ],
-    text: 'Spend {cost}⚡️ to deal {power}⚔️ to an enemy.',
-    status: 'Infested: At the end of your turn drains {2.amount}⚡️ from all modules.',
   },
   {
     id: 'escape-pod',
@@ -255,8 +260,12 @@ export const PARTS: PartCard[] = [
     rarity: 4,
     amount: 1,
     energyCapacity: null,
-    effects: [{ type: 'reminder' }],
-    text: 'When your ship is destroyed, take the Escape Pod ship from the deck, make it your new ship base. If used as cockpit 2 slots, 1⚡, 1⚔️',
+    effects: [
+      {
+        type: 'reminder',
+        text: 'When your ship is destroyed, take the Escape Pod ship from the deck and make it your new ship base. If used as a cockpit: 2 slots, 1⚡, 1⚔️.',
+      },
+    ],
   },
 
   // ---- rarity 5 ----
@@ -269,8 +278,8 @@ export const PARTS: PartCard[] = [
     rarity: 5,
     amount: 1,
     energyCapacity: 20,
-    effects: [{ type: 'manual' }], // sacrificing a card is a table decision
-    text: 'Sacrifice 1 module or item to gain 20⚡️.',
+    // Sacrificing a card is a table decision.
+    effects: [{ type: 'manual', text: 'Sacrifice 1 module or item to gain 20⚡️.' }],
   },
   {
     id: 'igrid',
@@ -281,11 +290,16 @@ export const PARTS: PartCard[] = [
     rarity: 5,
     amount: 1,
     energyCapacity: 0,
-    effects: [{ type: 'free-reroute' }],
-    text: 'Modules can use ⚡️ from other modules without rerouting (except when taking damage).',
+    effects: [
+      { type: 'free-reroute' },
+      {
+        type: 'reminder',
+        text: 'Modules can use ⚡️ from other modules without rerouting (except when taking damage).',
+      },
+    ],
   },
 
-  // ---- placeholders backing the seeded ships: text and numbers not balanced ----
+  // ---- placeholders backing the seeded ships: numbers not balanced ----
   {
     id: 'gauss-canon',
     name: 'Gauss Canon',
@@ -295,9 +309,7 @@ export const PARTS: PartCard[] = [
     rarity: 2,
     amount: 2,
     energyCapacity: 6,
-    energyCost: 3,
-    effects: [{ type: 'damage', params: { power: 4 } }],
-    text: 'Spend {cost}⚡️ to attack an enemy for {power}⚔️. (placeholder)',
+    effects: [{ type: 'damage', params: { power: 4 }, cost: 3 }],
   },
   {
     id: 'fusion-reactor',
@@ -309,7 +321,6 @@ export const PARTS: PartCard[] = [
     amount: 2,
     energyCapacity: 2,
     effects: [{ type: 'generate', params: { amount: 2 } }],
-    text: 'Generate {amount}⚡️ at the start of your turn. (placeholder)',
   },
   {
     id: 'generator',
@@ -321,7 +332,6 @@ export const PARTS: PartCard[] = [
     amount: 4,
     energyCapacity: 3,
     effects: [{ type: 'generate', params: { amount: 1 } }],
-    text: 'Generate {amount}⚡️ at the start of your turn. (placeholder)',
   },
   {
     id: 'aerogel-insulators',
@@ -332,8 +342,12 @@ export const PARTS: PartCard[] = [
     rarity: 2,
     amount: 2,
     energyCapacity: 1,
-    effects: [{ type: 'reminder' }],
-    text: 'Modules adjacent to this one do not lose ⚡️ when damaged. (placeholder)',
+    effects: [
+      {
+        type: 'reminder',
+        text: 'Modules adjacent to this one do not lose ⚡️ when damaged. (placeholder)',
+      },
+    ],
   },
   {
     id: 'medium-shields',
@@ -345,7 +359,6 @@ export const PARTS: PartCard[] = [
     amount: 2,
     energyCapacity: 10,
     effects: [{ type: 'absorb' }],
-    text: 'Absorbs incoming ⚔️ while charged. (placeholder)',
   },
   {
     id: 'subspace-field',
@@ -358,7 +371,6 @@ export const PARTS: PartCard[] = [
     energyCapacity: 7,
     specialization: 'tank',
     effects: [{ type: 'absorb' }],
-    text: 'Absorbs incoming ⚔️ while charged. (placeholder)',
   },
   {
     id: 'defense-turret',
@@ -369,10 +381,8 @@ export const PARTS: PartCard[] = [
     rarity: 2,
     amount: 2,
     energyCapacity: 4,
-    energyCost: 2,
     // No `absorb`: its charge pays for the negate rather than soaking passively.
-    effects: [{ type: 'negate-next-attack' }],
-    text: 'Spend {cost}⚡️ to negate the next attack against your ship. (placeholder)',
+    effects: [{ type: 'negate-next-attack', cost: 2 }],
   },
   {
     id: 'antimatter-torpedo',
@@ -383,10 +393,8 @@ export const PARTS: PartCard[] = [
     rarity: 3,
     amount: 1,
     energyCapacity: 4,
-    energyCost: 4,
     specialization: 'dps',
-    effects: [{ type: 'damage-module', params: { power: 8 } }],
-    text: 'Spend {cost}⚡️ to deal {power}⚔️ to one enemy module. (placeholder)',
+    effects: [{ type: 'damage-module', params: { power: 8 }, cost: 4 }],
   },
   {
     id: 'mines',
@@ -397,9 +405,7 @@ export const PARTS: PartCard[] = [
     rarity: 1,
     amount: 3,
     energyCapacity: 2,
-    energyCost: 2,
-    effects: [{ type: 'retaliate', params: { amount: 3 } }],
-    text: 'Spend {cost}⚡️. The next enemy to attack you takes {amount}⚔️. (placeholder)',
+    effects: [{ type: 'retaliate', params: { amount: 3 }, cost: 2 }],
   },
   {
     id: 'cargo-bay',
@@ -411,7 +417,6 @@ export const PARTS: PartCard[] = [
     amount: 3,
     energyCapacity: 1,
     effects: [{ type: 'scrap-cap', params: { amount: 1 } }],
-    text: 'Raises your Scrap Deck cap by {amount}. (placeholder)',
   },
   {
     id: 'comms-array',
@@ -423,8 +428,12 @@ export const PARTS: PartCard[] = [
     amount: 2,
     energyCapacity: 0,
     specialization: 'support',
-    effects: [{ type: 'reminder' }],
-    text: 'Another player in your sector may spend your ⚡️. (placeholder)',
+    effects: [
+      {
+        type: 'reminder',
+        text: 'Another player in your sector may spend your ⚡️. (placeholder)',
+      },
+    ],
   },
   {
     id: 'decoy',
@@ -435,7 +444,11 @@ export const PARTS: PartCard[] = [
     rarity: 1,
     amount: 2,
     energyCapacity: 0,
-    effects: [{ type: 'reminder' }],
-    text: 'The first attack each combat targets the Decoy instead. (placeholder)',
+    effects: [
+      {
+        type: 'reminder',
+        text: 'The first attack each combat targets the Decoy instead. (placeholder)',
+      },
+    ],
   },
 ];

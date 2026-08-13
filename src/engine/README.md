@@ -14,7 +14,7 @@ without dragging a renderer along.
 | ------------ | --------------------------------------------------------------------- |
 | `types/`     | The data model — cards, ships, enemies, players, combat, board, config |
 | `effects.ts` | The effect catalogue: what a card can be assembled from                |
-| `cards.ts`   | Compiling a card's effects into what the engine resolves, and its text |
+| `cards.ts`   | Compiling a card's effects into what the engine resolves, and the text it prints |
 | `content.ts` | The injected card/enemy bundle. The engine never imports `src/data`    |
 | `combat/`    | Symmetric downs system: downs, conversion, damage, shields             |
 | `deck/`      | Deck building, shuffling, drawing, checkpoint rarity gates             |
@@ -64,9 +64,9 @@ instead of a corrupted state. The store never mutates game state itself.
   `config.thresholdCountsShielded` decides whether damage eaten by shield
   modules still counts toward conversion, or only what reached the cockpit.
 - **The cockpit is a weapon, a shield and a generator.** Its card prints
-  `power` (the basic attack), `energyCapacity` (the basic shield, and the
-  ship's last charge) and `genPerDown` (what one down of the basic generator
-  puts back). Two extra down actions expose them — `cockpit-attack` and
+  `power` (the basic attack), `energyCapacity` (max ⚡ — the basic shield, and
+  the ship's last charge) and `genPerDown` (what one down of the basic
+  generator puts back). Two extra down actions expose them — `cockpit-attack` and
   `cockpit-generate` — and neither costs ⚡, so a ship stripped to bare metal
   still has something to spend a down on. The cockpit sits outside
   `liveModules`, so it never doubles up with the upkeep spread or a role chain;
@@ -97,14 +97,20 @@ geometry every adjacency rule reads:
 
 ## Card behaviour
 
-A card is a **list of effects**, each with its own numbers:
+A card is a **list of effects**, each with its own numbers, its own ⚡ cost and
+its own dice:
 
 ```ts
 effects: [
-  { type: 'damage', params: { power: 5 } },
+  { type: 'damage', params: { power: 5 }, cost: 2 },
   { type: 'drain', params: { amount: 1 } },   // the Infested Railgun, both halves
 ]
 ```
+
+**There is no card-level cost and no card-level dice.** Both are modifiers on
+an effect, on the same footing: what an activation pays is the sum across the
+active effects it resolves (`cardCost`), and each rolls its own dice. A cost on
+a passive is meaningless and `cardWarnings` says so.
 
 `effects.ts` is the catalogue — label, timing, tunable params, printed-text
 fragment — and `cards.ts` compiles a card's list into the flat fields the rest
@@ -112,19 +118,22 @@ of the engine reads (`power`, `generates`, `absorbs`, `damageReduction`, an
 event's `damage`…). Those flat fields are **derived**: don't author them, and
 don't expect an edit to one to survive the next compile.
 
-Combat rolls the card's dice once per activation and walks the active effects
-in printed order, so a card that shoots *and* charges reads both off the same
-roll. Adding an **effect** means an entry in `effects.ts` and a case in
+Combat walks the active effects in printed order, rolling each one's dice as it
+comes. Adding an **effect** means an entry in `effects.ts` and a case in
 `resolveEffect`; adding a **card** means neither, which is what lets the deck
 editor assemble new cards at runtime.
 
 The vocabulary is deliberately small. Anything outside it is `manual` (active)
 or `reminder` (passive): the tool still spends the down and the energy, prints
-the text, and leaves the payload to the table. A knowingly-manual card beats a
-silently-wrong one.
+the effect's own wording, and leaves the payload to the table. A knowingly-
+manual card beats a silently-wrong one.
 
-`renderText` fills a card's `{placeholders}` from its own numbers, so printed
-text tracks the parameters instead of drifting from them.
+**Printed text is derived, not authored.** `printedLines` builds a card's rules
+text from its effects every time — each line tagged `active`, `passive` or
+`event` so the face can chip it ACT/PAS/EVT — off the registry template, the
+effect's numbers, its cost and its dice. A cockpit has no effects, so its three
+intrinsic lines are printed from `power`, `genPerDown` and `energyCapacity`
+instead. There is no text field to fall out of date with the numbers.
 
 ## Conventions
 

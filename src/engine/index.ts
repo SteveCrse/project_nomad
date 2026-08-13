@@ -25,6 +25,7 @@ export {
   effectDef,
   effectsForKind,
   defaultParams,
+  isActiveEffect,
   isDamageEffect,
 } from './effects';
 export type { EffectDef, EffectParamDef } from './effects';
@@ -32,19 +33,26 @@ export {
   activeEffects,
   attackOf,
   blankCard,
+  cardCost,
   cardWarnings,
   compileCard,
+  costPerDie,
+  diceOf,
+  effectCost,
+  effectLine,
   effectParam,
   effectsOf,
   hasEffect,
+  hasVariableDice,
   hydrateDeck,
   makeEffect,
+  migrateCard,
   passiveEffects,
-  renderText,
-  textFromEffects,
-  textScope,
-  unknownPlaceholders,
+  printedLines,
+  printedText,
+  timingOf,
 } from './cards';
+export type { PrintedLine } from './cards';
 export type { Deck } from './deck';
 export type { LootChoice } from './loot';
 export type { Loadout } from './game';

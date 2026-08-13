@@ -10,7 +10,7 @@ import type {
   SideRef,
   SlotIndex,
 } from '@engine/types';
-import { activeEffects, combat, ship as shipEngine } from '@engine';
+import { activeEffects, combat, hasVariableDice, ship as shipEngine } from '@engine';
 import { CONTENT, getPart } from '@data';
 
 /**
@@ -71,7 +71,7 @@ export function moduleOptions(
         ...(needsModuleTarget && choice.targetSlot !== undefined && choice.targetSlot !== null
           ? { targetSlot: choice.targetSlot }
           : {}),
-        ...(part.dice?.count === 'variable' ? { diceCount: choice.diceCount ?? 1 } : {}),
+        ...(hasVariableDice(part) ? { diceCount: choice.diceCount ?? 1 } : {}),
         ...(manual && choice.manualDamage ? { manualDamage: choice.manualDamage } : {}),
       };
 

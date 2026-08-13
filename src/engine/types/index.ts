@@ -14,6 +14,7 @@ export type {
   EventCard,
   ModuleRole,
   CardEffect,
+  EffectTiming,
   EffectType,
   Specialization,
   Rarity,

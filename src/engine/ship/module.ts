@@ -1,9 +1,9 @@
-import type { DiceSpec, PartCard } from '../types/card';
+import type { Card, DiceSpec, PartCard } from '../types/card';
 import type { GameConfig } from '../types/config';
 import type { Ship, ShipSlot } from '../types/ship';
 import type { Content } from '../content';
 import { partOf } from '../content';
-import { activeEffects } from '../cards';
+import { activeEffects, cardCost } from '../cards';
 import { isDamageEffect } from '../effects';
 import type { Rng } from '../rng';
 
@@ -32,26 +32,22 @@ export const isAbsorber = (part: PartCard): boolean =>
   (part.energyCapacity ?? 0) > 0 && (part.partType === 'cockpit' || !!part.absorbs);
 
 /**
- * Energy this activation costs from the card's own pool.
+ * Energy one activation costs from the card's own pool.
  *
- * Takes the shape rather than the card so an item off the hand costs what its
- * printed line says, the same way a fitted module does.
+ * Cost is carried per effect, so this is the sum across everything the
+ * activation resolves — a card that shoots *and* patches pays for both off one
+ * down. Takes the whole card so an item off the hand costs what its printed
+ * lines say, the same way a fitted module does.
  */
-export function energyCostOf(
-  card: { energyCost?: number | null; dice?: DiceSpec },
-  config: GameConfig,
-  diceCount = 1,
-): number {
-  const base = card.energyCost ?? 0;
-  const perDie = card.dice?.count === 'variable' ? Math.max(1, diceCount) : 1;
-  return Math.max(0, Math.round(base * perDie * config.energyCostMult));
+export function energyCostOf(card: Card, config: GameConfig, diceCount = 1): number {
+  return Math.max(0, Math.round(cardCost(card, diceCount) * config.energyCostMult));
 }
 
-/** How many dice this activation rolls. */
-export function diceCountOf(card: { dice?: DiceSpec }, requested?: number): number {
-  if (!card.dice) return 0;
-  if (card.dice.count === 'variable') return Math.max(1, requested ?? 1);
-  return card.dice.count;
+/** How many dice one effect rolls. */
+export function diceCountOf(effect: { dice?: DiceSpec }, requested?: number): number {
+  if (!effect.dice) return 0;
+  if (effect.dice.count === 'variable') return Math.max(1, requested ?? 1);
+  return effect.dice.count;
 }
 
 export interface DiceRoll {
@@ -66,11 +62,12 @@ export interface DiceRoll {
 export const NO_ROLL: DiceRoll = { dice: [], hits: 0, bonus: 0, hitRule: false };
 
 /**
- * Roll a card's dice once for the whole activation.
+ * Roll one effect's dice.
  *
- * One roll, shared by every effect on the card: a card that both hurts and
- * charges off the same dice should read them the same way. Dice with a hit
- * rule pay `perHit` per hit (Laser Array); dice without one are summed.
+ * Dice belong to the effect that calls for them, so a card that both hurts and
+ * charges rolls once for each — its two halves can gamble on different odds.
+ * Dice with a hit rule pay `perHit` per hit (Laser Array); dice without one
+ * are summed onto the payload.
  */
 export function rollDice(spec: DiceSpec | undefined, count: number, rng: Rng): DiceRoll {
   if (!spec || count <= 0) return NO_ROLL;

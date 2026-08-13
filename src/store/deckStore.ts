@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Card, CardEffect, CardId, CardKind, EffectType } from '@engine/types';
-import { blankCard, hydrateDeck, makeEffect, textFromEffects } from '@engine';
+import type { Card, CardEffect, CardId, CardKind, DiceSpec, EffectType } from '@engine/types';
+import { blankCard, hydrateDeck, makeEffect, migrateCard } from '@engine';
 import { DEFAULT_CARDS, setDeck } from '@data';
 
 /**
@@ -41,16 +41,22 @@ function buildDeck(overlay: DeckOverlay): Card[] {
   return hydrateDeck([...shipped, ...added]);
 }
 
-/** Trust nothing out of localStorage or an imported file. */
+/**
+ * Trust nothing out of localStorage or an imported file — and bring anything
+ * saved under the old card shape forward, so a playtest overlay survives a
+ * schema change instead of quietly losing its numbers.
+ */
 function sanitize(value: unknown): DeckOverlay {
   const raw = (value ?? {}) as Partial<DeckOverlay>;
   const isCard = (c: unknown): c is Card =>
     !!c && typeof c === 'object' && typeof (c as Card).id === 'string';
   return {
     edits: Object.fromEntries(
-      Object.entries(raw.edits ?? {}).filter(([, card]) => isCard(card)),
+      Object.entries(raw.edits ?? {})
+        .filter(([, card]) => isCard(card))
+        .map(([id, card]) => [id, migrateCard(card as Card)]),
     ) as Record<CardId, Card>,
-    added: (raw.added ?? []).filter(isCard),
+    added: (raw.added ?? []).filter(isCard).map(migrateCard),
     removed: (raw.removed ?? []).filter((id): id is CardId => typeof id === 'string'),
   };
 }
@@ -68,8 +74,12 @@ interface DeckStore {
   removeEffect: (id: CardId, index: number) => void;
   moveEffect: (id: CardId, index: number, delta: number) => void;
   setEffectParam: (id: CardId, index: number, key: string, value: number) => void;
-  /** Redraft the printed text from the card's effects. */
-  regenerateText: (id: CardId) => void;
+  /** ⚡ this effect draws to fire. Active effects only. */
+  setEffectCost: (id: CardId, index: number, cost: number) => void;
+  /** Attach, retune or drop the dice one effect rolls. */
+  setEffectDice: (id: CardId, index: number, dice: DiceSpec | undefined) => void;
+  /** Printed wording for a coded effect (`manual`, `reminder`). */
+  setEffectText: (id: CardId, index: number, text: string) => void;
 
   addCard: (kind: CardKind) => CardId;
   duplicateCard: (id: CardId) => CardId | null;
@@ -98,6 +108,27 @@ function writeCard(overlay: DeckOverlay, card: Card): DeckOverlay {
     return { ...overlay, edits: { ...overlay.edits, [card.id]: card } };
   }
   return { ...overlay, added: overlay.added.map((c) => (c.id === card.id ? card : c)) };
+}
+
+/**
+ * Overwrite fields on one effect of one card.
+ *
+ * Cost, dice and coded wording all live on the effect now, so they're all the
+ * same edit: read the list, replace one entry, hand it back through
+ * `setEffects` so the card recompiles and the engine sees the change.
+ */
+function patchEffect(
+  get: () => DeckStore,
+  id: CardId,
+  index: number,
+  patch: Partial<CardEffect>,
+): void {
+  const card = get().cards.find((c) => c.id === id);
+  if (!card) return;
+  get().setEffects(
+    id,
+    (card.effects ?? []).map((effect, i) => (i === index ? { ...effect, ...patch } : effect)),
+  );
 }
 
 /** A fresh id that collides with nothing currently in the deck. */
@@ -162,11 +193,11 @@ export const useDeckStore = create<DeckStore>()(
         );
       },
 
-      regenerateText: (id) => {
-        const card = get().cards.find((c) => c.id === id);
-        if (!card) return;
-        get().patchCard(id, { text: textFromEffects(card) || card.text });
-      },
+      setEffectCost: (id, index, cost) => patchEffect(get, id, index, { cost }),
+
+      setEffectDice: (id, index, dice) => patchEffect(get, id, index, { dice }),
+
+      setEffectText: (id, index, text) => patchEffect(get, id, index, { text }),
 
       addCard: (kind) => {
         const id = uniqueId(get().cards, `new ${kind}`);

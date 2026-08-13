@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import type { DownAction, GameState, SideRef } from '@engine/types';
-import { renderText, ship as shipEngine } from '@engine';
+import { diceOf, hasVariableDice, printedText, ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ROLE_COLOR } from '@/lib/palette';
 import { cockpitOptions, moduleOptions, shieldOptions } from '@/lib/combatView';
@@ -58,7 +58,7 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
   const shields = shieldOptions(state, config, side);
   const cockpit = cockpitOptions(state, config, side, choice);
   const active = modules.filter((m) => m.part.partType === 'active-module');
-  const hasVariableDice = active.some((m) => m.part.dice?.count === 'variable');
+  const buysDice = active.some((m) => hasVariableDice(m.part));
   const hasManual = active.some((m) => m.manual);
 
   if (side.kind === 'enemy') {
@@ -165,7 +165,7 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
           <button
             key={m.slot}
             disabled={!!m.error}
-            title={m.error ?? renderText(m.part)}
+            title={m.error ?? printedText(m.part)}
             onClick={() => fire(m.action)}
             className={[
               'flex min-w-[132px] cursor-pointer flex-col items-start gap-0.5 border px-2 py-1.5 text-left',
@@ -178,7 +178,9 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
             <span className="font-mono text-[10px] text-putty-700">
               {m.energyCost > 0 ? `${m.energyCost}⚡` : 'FREE'}
               {m.part.power ? ` · ${m.part.power}⚔` : ''}
-              {m.part.dice ? ` · ${m.part.dice.count === 'variable' ? diceCount : m.part.dice.count}${m.part.dice.die}` : ''}
+              {diceOf(m.part)
+                .map((d) => ` · ${d.count === 'variable' ? diceCount : d.count}${d.die}`)
+                .join('')}
               {m.needsModuleTarget ? ' · MODULE' : ''}
               {m.manual ? ' · MANUAL' : ''}
             </span>
@@ -189,9 +191,9 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
         ))}
       </Row>
 
-      {(hasVariableDice || hasManual) && (
+      {(buysDice || hasManual) && (
         <Row label="SPEND">
-          {hasVariableDice && (
+          {buysDice && (
             <Stepper label="DICE" value={diceCount} onChange={setDiceCount} min={1} max={10} />
           )}
           {hasManual && (

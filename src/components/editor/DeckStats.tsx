@@ -1,5 +1,5 @@
 import type { Card } from '@engine/types';
-import { attackOf, cardWarnings } from '@engine';
+import { attackOf, cardCost, cardWarnings } from '@engine';
 import { RARITY_NAME, rarityColor } from '@/lib/palette';
 
 /**
@@ -20,11 +20,10 @@ export function DeckStats({ cards }: { cards: Card[] }) {
     .reduce((sum, c) => sum + c.amount, 0);
 
   // ⚔️ bought per ⚡ spent — the cleanest cross-card read on a weapon's rate.
-  const guns = cards.filter((c) => c.kind !== 'event' && (c.energyCost ?? 0) > 0 && attackOf(c) > 0);
+  const guns = cards.filter((c) => cardCost(c) > 0 && attackOf(c) > 0);
   const efficiency =
     guns.length > 0
-      ? guns.reduce((sum, c) => sum + attackOf(c) / (c.kind === 'event' ? 1 : c.energyCost!), 0) /
-        guns.length
+      ? guns.reduce((sum, c) => sum + attackOf(c) / cardCost(c), 0) / guns.length
       : 0;
 
   const flagged = cards.filter((c) => cardWarnings(c).length > 0).length;

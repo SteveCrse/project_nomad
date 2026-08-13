@@ -8,6 +8,7 @@ import { partOf } from '../content';
 import type { Deck } from '../deck';
 import { discard, draw } from '../deck';
 import type { Rng } from '../rng';
+import { cardCost } from '../cards';
 import { capacityOf, liveModules } from './module';
 
 export * from './module';
@@ -315,7 +316,7 @@ export function runUpkeep(
         ...m,
         rank:
           m.part.partType === 'active-module' ? 0 : m.part.role === 'SHD' ? 1 : 2,
-        want: m.part.energyCost ?? 1,
+        want: cardCost(m.part) || 1,
       }))
       .sort((a, b) => a.rank - b.rank || b.want - a.want);
 

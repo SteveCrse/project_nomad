@@ -430,9 +430,9 @@ export function actionError(
       if (!player) return 'enemies hold no cards';
       if (!player.hand.includes(action.cardId)) return 'not in hand';
       const card = content.cards[action.cardId];
-      // An item prints its cost like a module does, and pays it out of the
-      // loose ⚡ the seat is holding rather than out of a module pool.
-      const cost = card && card.kind !== 'event' ? (card.energyCost ?? 0) : 0;
+      // An item's effects print their costs like a module's do, and pay out of
+      // the loose ⚡ the seat is holding rather than out of a module pool.
+      const cost = card ? energyCostOf(card, config, action.diceCount) : 0;
       if (cost > availableLooseEnergy(content, battle, side)) return `needs ${cost}⚡`;
       return null;
     }
@@ -539,13 +539,13 @@ interface EffectOutcome {
 
 /** Everything an effect needs that isn't the effect itself. */
 interface EffectContext {
-  /** The card being resolved — its name, and the dice it printed. */
+  /** The card being resolved — its name, for the log. */
   card: Card;
   /** Slot the module sits in. Absent for a card played from hand. */
   slot?: SlotIndex;
   side: SideRef;
   name: string;
-  /** The one roll for this activation, shared by every effect on the card. */
+  /** This effect's own roll, empty when it calls for no dice. */
   roll: DiceRoll;
   target?: SideRef;
   targetSlot?: SlotIndex;
@@ -759,7 +759,6 @@ export function resolveDown(
       const ship = shipOf(next, side)!;
       const slot = ship.slots[action.slot]!;
       const part = partOf(content, slot.partId)!;
-      const diceCount = diceCountOf(part, action.diceCount);
       const energy = energyCostOf(part, config, action.diceCount);
 
       // Pay: the module's own pool first, then loose energy if a
@@ -782,13 +781,12 @@ export function resolveDown(
         lines.push(`  redistributor feeds ${fromSpare}⚡ into ${part.name}.`);
       }
 
-      // One roll for the activation, then every effect the card prints, in
-      // printed order. A card that shoots *and* charges resolves both off the
-      // same dice, and each reads its own numbers off its own parameters.
-      const roll = rollDice(part.dice, diceCount, rng);
-      dice = roll.dice;
-
+      // Every effect the card prints, in printed order, each rolling its own
+      // dice: a card that shoots *and* charges resolves both off one down, and
+      // each reads its own numbers off its own parameters.
       for (const effect of activeEffects(part)) {
+        const roll = rollDice(effect.dice, diceCountOf(effect, action.diceCount), rng);
+        dice = [...dice, ...roll.dice];
         const outcome = resolveEffect(content, next, config, effect, {
           card: part,
           slot: action.slot,
@@ -903,14 +901,12 @@ export function resolveDown(
       lines.push(`${name} plays ${card?.name ?? action.cardId}.`);
       if (!card) break;
 
-      const cost = card.kind !== 'event' ? (card.energyCost ?? 0) : 0;
+      const cost = energyCostOf(card, config, action.diceCount);
       if (cost > 0) next = spendLooseEnergy(content, next, side, cost);
 
-      const spec = card.kind !== 'event' ? card.dice : undefined;
-      const roll = rollDice(spec, diceCountOf({ dice: spec }, action.diceCount), rng);
-      dice = roll.dice;
-
       for (const effect of activeEffects(card)) {
+        const roll = rollDice(effect.dice, diceCountOf(effect, action.diceCount), rng);
+        dice = [...dice, ...roll.dice];
         const outcome = resolveEffect(content, next, config, effect, {
           card,
           side,

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { CardKind } from '@engine/types';
-import { renderText } from '@engine';
+import { printedText } from '@engine';
 import { CardTile } from '@/components/game/CardTile';
 import { CardPanel } from '@/components/editor/CardPanel';
 import { DeckStats } from '@/components/editor/DeckStats';
@@ -56,7 +56,7 @@ export function CardBrowserView() {
       return (
         card.name.toLowerCase().includes(needle) ||
         card.id.toLowerCase().includes(needle) ||
-        renderText(card).toLowerCase().includes(needle) ||
+        printedText(card).toLowerCase().includes(needle) ||
         (card.effects ?? []).some((e) => e.type.includes(needle))
       );
     });

@@ -1,19 +1,26 @@
-import type { Card, CardEffect } from '@engine/types';
+import type { Card, CardEffect, EffectTiming } from '@engine/types';
 import { EFFECTS, effectParam } from '@engine';
 
-/** An effect at a glance: what it is, and the numbers that make it that card. */
+/**
+ * An effect at a glance: what it is, the numbers that make it that card, and
+ * the two modifiers that belong to it — the ⚡ it costs and the dice it rolls.
+ */
 export function effectSummary(effect: CardEffect): string {
   const def = EFFECTS[effect.type];
   if (!def) return effect.type;
-  const numbers = def.params
-    .map((p) => `${effectParam(effect, p.key)}${p.symbol ?? ''}`)
-    .join(' / ');
-  return numbers ? `${def.label} ${numbers}` : def.label;
+  const parts = def.params.map((p) => `${effectParam(effect, p.key)}${p.symbol ?? ''}`);
+  if (effect.cost) parts.unshift(`${effect.cost}⚡`);
+  if (effect.dice) {
+    const count = effect.dice.count === 'variable' ? 'X' : effect.dice.count;
+    parts.push(`${count}${effect.dice.die}`);
+  }
+  return parts.length > 0 ? `${def.label} ${parts.join(' / ')}` : def.label;
 }
 
-const TONE: Record<'active' | 'passive', string> = {
+const TONE: Record<EffectTiming, string> = {
   active: 'border-amber-700 text-amber-700',
   passive: 'border-steel-700 text-steel-700',
+  event: 'border-putty-700 text-putty-700',
 };
 
 /**

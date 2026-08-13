@@ -1,12 +1,13 @@
-import type { CardKind, EffectType, ModuleRole } from './types/card';
+import type { CardKind, EffectTiming, EffectType, ModuleRole } from './types/card';
 
 /**
  * The effect catalogue — every building block a card can be assembled from.
  *
  * This is the contract between three places: the deck editor reads `params`
  * and `template` to offer a card's numbers for tuning, `cards.ts` compiles the
- * chosen values into the flat fields the engine resolves, and combat has a
- * case for each `timing: 'active'` entry.
+ * chosen values into the flat fields the engine resolves *and* prints the
+ * card's rules text from them, and combat has a case for each
+ * `timing: 'active'` entry.
  *
  * Adding an effect means adding it here *and* wiring its case; adding a
  * **card** means neither. That's the split the rest of the tool is built on.
@@ -20,7 +21,7 @@ import type { CardKind, EffectType, ModuleRole } from './types/card';
 export interface EffectParamDef {
   key: string;
   label: string;
-  /** Printed after the number in the editor: ⚡, ⚔️, 🎲. */
+  /** Printed after the number, on the card and in the editor: ⚡, ⚔️, 🎲. */
   symbol?: string;
   default: number;
   min: number;
@@ -32,16 +33,23 @@ export interface EffectParamDef {
 export interface EffectDef {
   type: EffectType;
   label: string;
-  /** Active effects cost a down to fire; passive ones are always on. */
-  timing: 'active' | 'passive';
+  /** Active effects cost a down (and their own ⚡) to fire; passives are always on. */
+  timing: EffectTiming;
   /** One line for the picker: what it does in play. */
   summary: string;
   /** Card kinds this effect may be put on. */
   kinds: CardKind[];
   params: EffectParamDef[];
-  /** Printed-text fragment. `{param}` placeholders fill from the params. */
+  /**
+   * Printed-text fragment.
+   *
+   * `{param}` prints that parameter's number *and its symbol*, scaled by the
+   * effect's dice where they feed the payload. `[bracketed]` segments drop out
+   * when a number inside them is 0, so an unused knob prints nothing rather
+   * than a dead clause.
+   */
   template: string;
-  /** Resolved in code or at the table — the numbers aren't parameters. */
+  /** Resolved in code or at the table — the wording is the card's, not ours. */
   coded?: boolean;
   /** Role this effect suggests when it lands on a blank card. */
   role?: ModuleRole;
@@ -73,7 +81,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Deal ⚔️ to one enemy ship — shields first, then its cockpit pool.',
     kinds: ['part', 'item'],
     params: [param('power', 'Attack', 2, '⚔️')],
-    template: 'Deal {power}⚔️ to an enemy ship.',
+    template: 'Deal {power} to an enemy ship.',
     role: 'WPN',
   },
   'damage-all': {
@@ -83,7 +91,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Deal ⚔️ to every living enemy ship at once.',
     kinds: ['part', 'item'],
     params: [param('power', 'Attack', 2, '⚔️')],
-    template: 'Deal {power}⚔️ to every enemy ship.',
+    template: 'Deal {power} to every enemy ship.',
     role: 'WPN',
   },
   'damage-module': {
@@ -93,7 +101,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Hit one enemy module instead of its shields; overkill knocks it out.',
     kinds: ['part', 'item'],
     params: [param('power', 'Attack', 8, '⚔️')],
-    template: 'Deal {power}⚔️ to one enemy module.',
+    template: 'Deal {power} to one enemy module.',
     role: 'WPN',
   },
   'gain-energy': {
@@ -107,7 +115,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
       param('amount', 'Gain', 5, '⚡'),
       param('loseOnMiss', 'Lose on a miss', 0, '⚡'),
     ],
-    template: 'Gain {amount}⚡️.',
+    template: 'Gain {amount}.[ On a miss, lose {loseOnMiss} instead.]',
     role: 'GEN',
   },
   'restore-shield': {
@@ -117,7 +125,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Put ⚡ back into the cockpit pool — the ship’s last line.',
     kinds: ['part', 'item'],
     params: [param('amount', 'Restore', 4, '⚡')],
-    template: 'Put {amount}⚡️ back into your cockpit shield.',
+    template: 'Put {amount} back into your cockpit shield.',
     role: 'SHD',
   },
   'negate-next-attack': {
@@ -137,7 +145,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'The next enemy that attacks this ship takes ⚔️ straight back.',
     kinds: ['part', 'item'],
     params: [param('amount', 'Damage back', 3, '⚔️')],
-    template: 'The next enemy to attack you takes {amount}⚔️.',
+    template: 'The next enemy to attack you takes {amount}.',
     role: 'WPN',
   },
   manual: {
@@ -170,7 +178,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Fills its own pool at the start of every turn.',
     kinds: ['part'],
     params: [param('amount', 'Per turn', 1, '⚡')],
-    template: 'Generate {amount}⚡️ at the start of your turn.',
+    template: 'Generate {amount} at the start of your turn.',
     role: 'GEN',
   },
   'damage-reduction': {
@@ -180,7 +188,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Flat cut off every attack, paid for with 1⚡ from this module.',
     kinds: ['part'],
     params: [param('amount', 'Cut', 1, '⚔️')],
-    template: 'Whenever an enemy attacks you, reduce the ⚔️ by {amount} and remove 1⚡️ from this module.',
+    template: 'Whenever an enemy attacks you, reduce the ⚔️ by {amount} and remove 1⚡ from this module.',
     role: 'SHD',
   },
   drain: {
@@ -190,7 +198,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Bleeds ⚡ off every module each turn — the downside half of a card.',
     kinds: ['part'],
     params: [param('amount', 'Per turn', 1, '⚡')],
-    template: 'At the end of your turn, drains {amount}⚡️ from all modules.',
+    template: 'At the end of your turn, drains {amount} from all modules.',
   },
   'free-reroute': {
     type: 'free-reroute',
@@ -199,7 +207,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     summary: 'Charge moves across the grid without spending a down.',
     kinds: ['part'],
     params: [],
-    template: '⚡️ can be rerouted without spending a down.',
+    template: '⚡ can be rerouted without spending a down.',
     role: 'RDS',
   },
   'scrap-cap': {
@@ -219,7 +227,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
       'Text the tool prints but doesn’t resolve. Use it for a rule the table applies itself, rather than leaving a card looking wired up when it isn’t.',
     kinds: ['part', 'item', 'event'],
     params: [],
-    template: '',
+    template: 'Resolve this card’s text at the table.',
     coded: true,
   },
 
@@ -227,16 +235,16 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
   'event-damage': {
     type: 'event-damage',
     label: 'Hazard damage',
-    timing: 'passive',
+    timing: 'event',
     summary: 'Every ship in the sector takes ⚔️, through shields as usual.',
     kinds: ['event'],
     params: [param('amount', 'Damage', 4, '⚔️')],
-    template: 'Every ship in this sector takes {amount}⚔️.',
+    template: 'Every ship in this sector takes {amount}.',
   },
   'grant-loot': {
     type: 'grant-loot',
     label: 'Grant loot',
-    timing: 'passive',
+    timing: 'event',
     summary: 'Hands out cards off the Items deck.',
     kinds: ['event'],
     params: [param('count', 'Cards', 1, '', 9)],
@@ -245,7 +253,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
   'spawn-combat': {
     type: 'spawn-combat',
     label: 'Spawn a fight',
-    timing: 'passive',
+    timing: 'event',
     summary: 'The step turns into combat instead of resolving on the spot.',
     kinds: ['event'],
     params: [],
@@ -254,7 +262,7 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
   'place-marker': {
     type: 'place-marker',
     label: 'Place a marker',
-    timing: 'passive',
+    timing: 'event',
     summary: 'Drops a lasting chit on this sector — the card’s `marker` text.',
     kinds: ['event'],
     params: [],
@@ -271,10 +279,13 @@ export const DAMAGE_EFFECTS: EffectType[] = ['damage', 'damage-all', 'damage-mod
 
 export const isDamageEffect = (type: EffectType): boolean => DAMAGE_EFFECTS.includes(type);
 
+/** Only active effects charge a ⚡ cost and take a down. */
+export const isActiveEffect = (type: EffectType): boolean => EFFECTS[type]?.timing === 'active';
+
 /** Effects offerable on a card of this kind, actives first. */
 export function effectsForKind(kind: CardKind): EffectDef[] {
   return EFFECT_LIST.filter((def) => def.kinds.includes(kind)).sort(
-    (a, b) => Number(a.timing === 'passive') - Number(b.timing === 'passive'),
+    (a, b) => Number(a.timing !== 'active') - Number(b.timing !== 'active'),
   );
 }
 

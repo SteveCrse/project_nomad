@@ -1,13 +1,6 @@
 import { useState } from 'react';
-import type { Card, DieKind, EffectType, Specialization } from '@engine/types';
-import {
-  EFFECTS,
-  cardWarnings,
-  effectParam,
-  effectsForKind,
-  renderText,
-  textScope,
-} from '@engine';
+import type { Card, CardEffect, DieKind, EffectType, Specialization } from '@engine/types';
+import { EFFECTS, cardWarnings, effectParam, effectsForKind } from '@engine';
 import { ART_ASSETS, artUrl } from '@/lib/art';
 import { useDeckStore } from '@/store/deckStore';
 import { CardTile } from '@/components/game/CardTile';
@@ -15,9 +8,14 @@ import { ChipButton, Field, IconButton, NumberCell, SelectCell, TextCell } from 
 
 /**
  * Everything about one card that isn't a number in a column: the effects it's
- * assembled from, their parameters, the dice they roll, its art and its
- * wording — with the card face rendered live above it, since the wording is
- * the half of a balance pass you can't read off a spreadsheet.
+ * assembled from, their parameters, their ⚡ costs and their dice — with the
+ * card face rendered live above it, since the wording is the half of a balance
+ * pass you can't read off a spreadsheet.
+ *
+ * There is no printed-text field. A card's rules text is derived from its
+ * effects every time it's drawn, so the face above updates as the numbers do,
+ * and the only text worth typing is the wording of an effect the engine can't
+ * resolve for itself.
  */
 export function CardPanel({ card, onClose }: { card: Card; onClose: () => void }) {
   const patchCard = useDeckStore((s) => s.patchCard);
@@ -53,29 +51,8 @@ export function CardPanel({ card, onClose }: { card: Card; onClose: () => void }
         )}
 
         <Effects card={card} />
-        <Dice card={card} />
 
-        <SectionTitle>Wording</SectionTitle>
-        <Field
-          label="Printed text"
-          hint={`prints as: ${renderText(card)}`}
-        >
-          <textarea
-            value={card.text}
-            onChange={(e) => patchCard(card.id, { text: e.target.value })}
-            rows={3}
-            className="w-full resize-y bg-cream-100 px-1.5 py-1 text-[13px] outline-none"
-          />
-        </Field>
-        <Placeholders card={card} />
-
-        <Field label="Status line" hint="persistent condition printed under the effect">
-          <TextCell
-            value={card.status ?? ''}
-            onChange={(status) => patchCard(card.id, { status })}
-            placeholder="Infested: …"
-          />
-        </Field>
+        <SectionTitle>Card</SectionTitle>
         <Field label="Flavour">
           <TextCell
             value={card.flavor ?? ''}
@@ -139,15 +116,22 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+const TIMING_LABEL = { active: 'ACT', passive: 'PAS', event: 'EVT' } as const;
+const TIMING_HINT = {
+  active: 'costs a down, and whatever ⚡ this effect charges',
+  passive: 'always on while the card is fitted',
+  event: 'resolves when the card is drawn',
+} as const;
+
 // ------------------------------------------------------------------ effects
 
 /**
  * The card's behaviour, assembled.
  *
- * Each row is one effect from the vocabulary with its own numbers; the numbers
- * are the tuning surface, and they're the same ones the printed text quotes.
- * Coded effects show no numbers because they haven't got any — their payload
- * lives in code or at the table.
+ * Each row is one effect from the vocabulary with everything that makes it
+ * this card's version: its numbers, the ⚡ it draws to fire, and the dice it
+ * rolls. Cost and dice are modifiers on the effect, not on the card — a module
+ * that shoots cheap and gambles expensively says so, per line.
  */
 function Effects({ card }: { card: Card }) {
   const [adding, setAdding] = useState(false);
@@ -155,7 +139,8 @@ function Effects({ card }: { card: Card }) {
   const removeEffect = useDeckStore((s) => s.removeEffect);
   const moveEffect = useDeckStore((s) => s.moveEffect);
   const setEffectParam = useDeckStore((s) => s.setEffectParam);
-  const regenerateText = useDeckStore((s) => s.regenerateText);
+  const setEffectCost = useDeckStore((s) => s.setEffectCost);
+  const setEffectText = useDeckStore((s) => s.setEffectText);
 
   const effects = card.effects ?? [];
   const available = effectsForKind(card.kind);
@@ -166,20 +151,23 @@ function Effects({ card }: { card: Card }) {
 
       {effects.length === 0 && (
         <div className="pb-1.5 text-[12px] text-putty-700 italic">
-          Nothing yet — this card does nothing in play.
+          {card.kind === 'part' && card.partType === 'cockpit'
+            ? 'None — a cockpit’s weapon, shield and generator are intrinsic, and print from its own numbers.'
+            : 'Nothing yet — this card does nothing in play, and prints nothing.'}
         </div>
       )}
 
       {effects.map((effect, i) => {
         const def = EFFECTS[effect.type];
+        const timing = def?.timing ?? 'passive';
         return (
           <div key={`${effect.type}-${i}`} className="mb-1.5 border border-putty-500 bg-putty-100">
             <div className="flex items-center gap-1 border-b border-putty-400 bg-putty-200 px-1.5 py-1">
               <span
                 className="font-mono text-[9px] tracking-[0.1em] text-putty-700"
-                title={def?.timing === 'active' ? 'costs a down to fire' : 'always on'}
+                title={TIMING_HINT[timing]}
               >
-                {def?.timing === 'active' ? 'ACT' : 'PAS'}
+                {TIMING_LABEL[timing]}
               </span>
               <span className="flex-1 truncate text-[13px] font-semibold" title={def?.summary}>
                 {def?.label ?? `unknown effect: ${effect.type}`}
@@ -199,38 +187,53 @@ function Effects({ card }: { card: Card }) {
               </IconButton>
             </div>
 
-            {def && def.params.length > 0 && (
-              <div className="px-1.5 py-1">
-                {def.params.map((p) => (
-                  <div key={p.key} className="flex items-center gap-2 py-0.5">
-                    <span className="flex-1 text-[12px]">
-                      {p.label}
-                      <span className="pl-1 font-mono text-[10px] text-putty-700">
-                        {'{'}
-                        {i === 0 ? p.key : `${i + 1}.${p.key}`}
-                        {'}'}
-                      </span>
-                    </span>
-                    <span className="font-mono text-[11px] text-putty-700">{p.symbol}</span>
-                    <div className="w-[64px] border border-putty-400 bg-cream-100">
-                      <NumberCell
-                        value={effectParam(effect, p.key)}
-                        min={p.min}
-                        max={p.max}
-                        title={p.hint}
-                        onChange={(value) => setEffectParam(card.id, i, p.key, value ?? 0)}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="px-1.5 py-1">
+              {def?.params.map((p) => (
+                <Row key={p.key} label={p.label} symbol={p.symbol} narrow>
+                  <NumberCell
+                    value={effectParam(effect, p.key)}
+                    min={p.min}
+                    max={p.max}
+                    title={p.hint}
+                    onChange={(value) => setEffectParam(card.id, i, p.key, value ?? 0)}
+                  />
+                </Row>
+              ))}
 
-            {def?.coded && (
-              <div className="px-1.5 py-1 text-[11px] leading-tight text-putty-700">
-                Resolved in code or at the table — only the wording is editable.
-              </div>
-            )}
+              {timing === 'active' && (
+                <Row
+                  label="Costs"
+                  symbol="⚡"
+                  narrow
+                  hint={effect.dice?.count === 'variable' ? 'per die' : undefined}
+                >
+                  <NumberCell
+                    value={effect.cost ?? 0}
+                    min={0}
+                    max={99}
+                    title="⚡ this effect draws from the card’s own pool when it fires"
+                    onChange={(cost) => setEffectCost(card.id, i, cost ?? 0)}
+                  />
+                </Row>
+              )}
+
+              {def?.coded && (
+                <div className="pt-1">
+                  <div className="pb-0.5 text-[11px] leading-tight text-putty-700">
+                    Resolved in code or at the table — this wording is what the card prints.
+                  </div>
+                  <textarea
+                    value={effect.text ?? ''}
+                    onChange={(e) => setEffectText(card.id, i, e.target.value)}
+                    rows={3}
+                    placeholder="what the table is meant to do"
+                    className="w-full resize-y border border-putty-400 bg-cream-100 px-1.5 py-1 text-[13px] outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <Dice cardId={card.id} index={i} effect={effect} />
           </div>
         );
       })}
@@ -238,12 +241,6 @@ function Effects({ card }: { card: Card }) {
       <div className="flex flex-wrap gap-1.5 pt-0.5">
         <ChipButton onClick={() => setAdding(!adding)} active={adding}>
           + ADD EFFECT
-        </ChipButton>
-        <ChipButton
-          onClick={() => regenerateText(card.id)}
-          title="redraft the printed text from these effects"
-        >
-          ↻ REDRAFT TEXT
         </ChipButton>
       </div>
 
@@ -261,7 +258,7 @@ function Effects({ card }: { card: Card }) {
             >
               <div className="flex items-baseline gap-1.5">
                 <span className="font-mono text-[9px] tracking-[0.1em] text-putty-700">
-                  {def.timing === 'active' ? 'ACT' : 'PAS'}
+                  {TIMING_LABEL[def.timing]}
                 </span>
                 <span className="text-[13px] font-semibold">{def.label}</span>
               </div>
@@ -278,99 +275,101 @@ function Effects({ card }: { card: Card }) {
 
 const DICE: DieKind[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
 
-/** Dice belong to the card, not to one effect: one roll feeds them all. */
-function Dice({ card }: { card: Card }) {
-  const patchCard = useDeckStore((s) => s.patchCard);
-  if (card.kind === 'event') return null;
-  const dice = card.dice;
+/**
+ * Dice belong to the effect that rolls them.
+ *
+ * They're a modifier on one effect's payload, no different from the ⚡ it
+ * costs: a card that shoots flat and gambles on a second line rolls only for
+ * the line that gambles.
+ */
+function Dice({
+  cardId,
+  index,
+  effect,
+}: {
+  cardId: string;
+  index: number;
+  effect: CardEffect;
+}) {
+  const setEffectDice = useDeckStore((s) => s.setEffectDice);
+  const dice = effect.dice;
+  const set = (patch: Partial<NonNullable<CardEffect['dice']>>) => {
+    if (!dice) return;
+    setEffectDice(cardId, index, { ...dice, ...patch });
+  };
 
-  return (
-    <div className="pb-2">
-      <SectionTitle>Dice</SectionTitle>
-      {!dice ? (
-        <ChipButton
-          onClick={() =>
-            patchCard(card.id, { dice: { count: 1, die: 'd6' } })
-          }
-        >
+  if (!dice) {
+    return (
+      <div className="border-t border-putty-400 px-1.5 py-1">
+        <ChipButton onClick={() => setEffectDice(cardId, index, { count: 1, die: 'd6' })}>
           + ROLL DICE
         </ChipButton>
-      ) : (
-        <div className="border border-putty-500 bg-putty-100 px-1.5 py-1">
-          <Row label="How many">
-            <SelectCell
-              value={dice.count === 'variable' ? 'variable' : 'fixed'}
-              options={[
-                { value: 'fixed', label: 'FIXED' },
-                { value: 'variable', label: 'X — PLAYER BUYS' },
-              ]}
-              onChange={(mode) =>
-                patchCard(card.id, {
-                  dice: { ...dice, count: mode === 'variable' ? 'variable' : 1 },
-                })
-              }
-            />
-          </Row>
-          {dice.count !== 'variable' && (
-            <Row label="Dice">
-              <NumberCell
-                value={dice.count}
-                min={1}
-                max={20}
-                onChange={(count) => patchCard(card.id, { dice: { ...dice, count: count ?? 1 } })}
-              />
-            </Row>
-          )}
-          <Row label="Die">
-            <SelectCell
-              value={dice.die}
-              options={DICE.map((die) => ({ value: die, label: die.toUpperCase() }))}
-              onChange={(die) => patchCard(card.id, { dice: { ...dice, die } })}
-            />
-          </Row>
-          <Row label="Hits on ≤" hint="{hitUnder}">
-            <NumberCell
-              value={dice.hitUnder ?? null}
-              nullable
-              min={0}
-              max={20}
-              onChange={(hitUnder) =>
-                patchCard(card.id, { dice: { ...dice, hitUnder: hitUnder ?? undefined } })
-              }
-            />
-          </Row>
-          <Row label="Hits on ≥" hint="{hitOver}">
-            <NumberCell
-              value={dice.hitOver ?? null}
-              nullable
-              min={0}
-              max={20}
-              onChange={(hitOver) =>
-                patchCard(card.id, { dice: { ...dice, hitOver: hitOver ?? undefined } })
-              }
-            />
-          </Row>
-          <Row label="Per hit" hint="{perHit}">
-            <NumberCell
-              value={dice.perHit ?? null}
-              nullable
-              onChange={(perHit) =>
-                patchCard(card.id, { dice: { ...dice, perHit: perHit ?? undefined } })
-              }
-            />
-          </Row>
-          <div className="pt-1 text-[11px] leading-tight text-putty-700">
-            {dice.hitUnder === undefined && dice.hitOver === undefined
-              ? 'No hit rule: the dice are summed onto the payload.'
-              : 'With a hit rule the roll can miss — a gain-⚡ effect gambles its loss instead.'}
-          </div>
-          <div className="pt-1">
-            <ChipButton onClick={() => patchCard(card.id, { dice: undefined })}>
-              ✕ NO DICE
-            </ChipButton>
-          </div>
-        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-putty-400 bg-putty-200/60 px-1.5 py-1">
+      <Row label="How many">
+        <SelectCell
+          value={dice.count === 'variable' ? 'variable' : 'fixed'}
+          options={[
+            { value: 'fixed', label: 'FIXED' },
+            { value: 'variable', label: 'X — PLAYER BUYS' },
+          ]}
+          onChange={(mode) => set({ count: mode === 'variable' ? 'variable' : 1 })}
+        />
+      </Row>
+      {dice.count !== 'variable' && (
+        <Row label="Dice" narrow>
+          <NumberCell
+            value={dice.count}
+            min={1}
+            max={20}
+            onChange={(count) => set({ count: count ?? 1 })}
+          />
+        </Row>
       )}
+      <Row label="Die">
+        <SelectCell
+          value={dice.die}
+          options={DICE.map((die) => ({ value: die, label: die.toUpperCase() }))}
+          onChange={(die) => set({ die: die as DieKind })}
+        />
+      </Row>
+      <Row label="Hits on ≤" narrow>
+        <NumberCell
+          value={dice.hitUnder ?? null}
+          nullable
+          min={0}
+          max={20}
+          onChange={(hitUnder) => set({ hitUnder: hitUnder ?? undefined })}
+        />
+      </Row>
+      <Row label="Hits on ≥" narrow>
+        <NumberCell
+          value={dice.hitOver ?? null}
+          nullable
+          min={0}
+          max={20}
+          onChange={(hitOver) => set({ hitOver: hitOver ?? undefined })}
+        />
+      </Row>
+      <Row label="Per hit" narrow>
+        <NumberCell
+          value={dice.perHit ?? null}
+          nullable
+          onChange={(perHit) => set({ perHit: perHit ?? undefined })}
+        />
+      </Row>
+      <div className="pt-1 text-[11px] leading-tight text-putty-700">
+        {dice.hitUnder === undefined && dice.hitOver === undefined
+          ? 'No hit rule: the dice are summed onto this effect’s payload.'
+          : 'With a hit rule the roll can miss — a gain-⚡ effect gambles its loss instead.'}
+      </div>
+      <div className="pt-1">
+        <ChipButton onClick={() => setEffectDice(cardId, index, undefined)}>✕ NO DICE</ChipButton>
+      </div>
     </div>
   );
 }
@@ -378,10 +377,14 @@ function Dice({ card }: { card: Card }) {
 function Row({
   label,
   hint,
+  symbol,
+  narrow,
   children,
 }: {
   label: string;
   hint?: string;
+  symbol?: string;
+  narrow?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -390,32 +393,12 @@ function Row({
         {label}
         {hint && <span className="pl-1 font-mono text-[10px] text-putty-700">{hint}</span>}
       </span>
-      <div className="w-[132px] border border-putty-400 bg-cream-100">{children}</div>
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------- wording
-
-/** The numbers this card's text may quote, click to insert. */
-function Placeholders({ card }: { card: Card }) {
-  const patchCard = useDeckStore((s) => s.patchCard);
-  const scope = textScope(card);
-  return (
-    <div className="flex flex-wrap gap-1 pb-2">
-      {Object.entries(scope)
-        .filter(([key]) => !key.includes('.'))
-        .map(([key, value]) => (
-          <button
-            key={key}
-            type="button"
-            title={`insert {${key}} — currently ${value}`}
-            onClick={() => patchCard(card.id, { text: `${card.text}{${key}}` })}
-            className="cursor-pointer border border-putty-400 px-1 font-mono text-[10px] text-putty-700 hover:border-n-900 hover:text-n-900"
-          >
-            {`{${key}}`} {value}
-          </button>
-        ))}
+      {symbol && <span className="font-mono text-[11px] text-putty-700">{symbol}</span>}
+      <div
+        className={`${narrow ? 'w-[64px]' : 'w-[132px]'} border border-putty-400 bg-cream-100`}
+      >
+        {children}
+      </div>
     </div>
   );
 }

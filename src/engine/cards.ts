@@ -2,26 +2,31 @@ import type {
   Card,
   CardEffect,
   CardKind,
+  DiceSpec,
+  EffectTiming,
   EffectType,
   EventCard,
   ItemCard,
   PartCard,
 } from './types/card';
-import { EFFECTS, defaultParams, isDamageEffect } from './effects';
+import { EFFECTS, defaultParams, isActiveEffect, isDamageEffect } from './effects';
+import type { EffectDef, EffectParamDef } from './effects';
 import type { CardId } from './types/ids';
 
 /**
- * Turning an authored card into a card the engine can resolve.
+ * Turning an authored card into a card the engine can resolve — and into the
+ * text printed on its face.
  *
- * A card is authored as a list of `effects` with their numbers. `compileCard`
- * folds that list down into the flat fields combat and upkeep already read
- * (`power`, `generates`, `absorbs`, an event's `damage`…), which is the whole
- * trick behind editing content at runtime: retune a number in the deck editor,
- * recompile, and the next activation resolves the new value. Nothing in the
- * engine looks at a card id.
+ * A card is authored as a list of `effects`, each carrying its own numbers,
+ * its own ⚡ cost and its own dice. `compileCard` folds that list down into the
+ * flat fields combat and upkeep already read (`power`, `generates`, `absorbs`,
+ * an event's `damage`…), which is the whole trick behind editing content at
+ * runtime: retune a number in the deck editor, recompile, and the next
+ * activation resolves the new value. Nothing in the engine looks at a card id.
  *
- * `renderText` closes the loop on the printed side, filling `{placeholders}`
- * from those same numbers so a card's text can't drift from its behaviour.
+ * `printedLines` closes the loop on the printed side. There is no authored
+ * rules text to drift out of date: what a card says is *derived* from what it
+ * does, every time it is drawn.
  */
 
 // ------------------------------------------------------------------ reading
@@ -35,8 +40,8 @@ export function effectParam(effect: CardEffect, key: string): number {
 
 export const effectsOf = (card: Card): CardEffect[] => card.effects ?? [];
 
-const timingOf = (effect: CardEffect): 'active' | 'passive' | undefined =>
-  EFFECTS[effect.type]?.timing;
+export const timingOf = (effect: CardEffect): EffectTiming =>
+  EFFECTS[effect.type]?.timing ?? 'passive';
 
 /**
  * The effects an activation resolves, in printed order.
@@ -70,6 +75,42 @@ export const makeEffect = (type: EffectType): CardEffect => ({
   type,
   params: defaultParams(type),
 });
+
+// --------------------------------------------------------------------- cost
+
+/**
+ * ⚡ one firing of a single effect draws from the card's own pool.
+ *
+ * Cost belongs to the effect, not to the card: a module that shoots for 1⚡ and
+ * patches its shield for 3 prints both, and an activation pays for what it
+ * actually resolves. With variable dice the printed number is the cost *per
+ * die*, so buying more dice is what makes the shot expensive.
+ */
+export function effectCost(effect: CardEffect, diceCount = 1): number {
+  if (!isActiveEffect(effect.type)) return 0;
+  const base = Math.max(0, effect.cost ?? 0);
+  const perDie = effect.dice?.count === 'variable' ? Math.max(1, diceCount) : 1;
+  return base * perDie;
+}
+
+/** ⚡ one whole activation draws, before `config.energyCostMult`. */
+export const cardCost = (card: Card, diceCount = 1): number =>
+  activeEffects(card).reduce((sum, e) => sum + effectCost(e, diceCount), 0);
+
+/** ⚡ each bought die costs, for cards that let the player buy dice. */
+export const costPerDie = (card: Card): number =>
+  activeEffects(card)
+    .filter((e) => e.dice?.count === 'variable')
+    .reduce((sum, e) => sum + Math.max(0, e.cost ?? 0), 0);
+
+export const hasVariableDice = (card: Card): boolean =>
+  activeEffects(card).some((e) => e.dice?.count === 'variable');
+
+/** The dice an activation rolls — one spec per effect that calls for them. */
+export const diceOf = (card: Card): DiceSpec[] =>
+  activeEffects(card)
+    .map((e) => e.dice)
+    .filter((d): d is DiceSpec => !!d);
 
 // ---------------------------------------------------------------- compiling
 
@@ -130,100 +171,130 @@ export const hydrateDeck = (cards: Card[]): Card[] => cards.map(compileCard);
 
 // ------------------------------------------------------------ printed text
 
-const PLACEHOLDER = /\{(\w+(?:\.\w+)?)\}/g;
+/** One printed rule, and the chip that says when it happens. */
+export interface PrintedLine {
+  timing: EffectTiming;
+  text: string;
+}
+
+const OPTIONAL = /\[([^\]]*)\]/g;
+const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**
- * The numbers a card's text may quote.
+ * A parameter as printed: its number, its symbol, and whatever the effect's
+ * dice add to it.
  *
- * Card stats first, then each effect's params — `{amount}` is the first
- * effect that declares one, `{2.amount}` the second effect's. An unknown
- * placeholder is left standing so a typo is visible on the card instead of
- * printing a hole.
+ * Dice are a modifier on the effect's payload, so they're printed where the
+ * payload is: `10⚔️ per hit` rather than a separate sentence the reader has to
+ * join up. Only the effect's *first* parameter is the payload — the rest
+ * (`loseOnMiss`) are flat numbers the roll never scales.
  */
-export function textScope(card: Card): Record<string, string | number> {
-  const scope: Record<string, string | number> = { copies: card.amount };
+function paramExpr(effect: CardEffect, def: EffectDef, p: EffectParamDef): string {
+  const value = effectParam(effect, p.key);
+  const symbol = p.symbol ?? '';
+  const dice = effect.dice;
+  if (!dice || def.params[0]?.key !== p.key) return `${value}${symbol}`;
 
-  if (card.kind !== 'event') {
-    if (card.energyCost !== null && card.energyCost !== undefined) scope.cost = card.energyCost;
-    if (card.dice) {
-      scope.dice = card.dice.count === 'variable' ? 'X' : card.dice.count;
-      scope.die = card.dice.die;
-      if (card.dice.perHit !== undefined) scope.perHit = card.dice.perHit;
-      if (card.dice.hitUnder !== undefined) scope.hitUnder = card.dice.hitUnder;
-      if (card.dice.hitOver !== undefined) scope.hitOver = card.dice.hitOver;
-    }
+  if (dice.hitUnder !== undefined || dice.hitOver !== undefined) {
+    // A hit rule with no per-hit payout gates the effect instead of scaling
+    // it: the dice decide whether it lands, the number is what it lands for.
+    if (dice.perHit === undefined) return `${value}${symbol}`;
+    const perHit = `${dice.perHit}${symbol} per hit`;
+    return value > 0 ? `${value}${symbol} + ${perHit}` : perHit;
   }
-  if (card.kind === 'part') {
-    if (card.energyCapacity !== null && card.energyCapacity !== undefined) {
-      scope.pool = card.energyCapacity;
-    }
-    if (card.slots !== undefined) scope.slots = card.slots;
-    if (card.genPerDown !== undefined) scope.gen = card.genPerDown;
-  }
-  scope.power = attackOf(card);
+  return value > 0 ? `${value}${symbol} + the roll` : `the roll in ${symbol || 'points'}`;
+}
 
-  effectsOf(card).forEach((effect, i) => {
-    for (const p of EFFECTS[effect.type]?.params ?? []) {
-      const value = effectParam(effect, p.key);
-      scope[`${i + 1}.${p.key}`] = value;
-      if (!(p.key in scope)) scope[p.key] = value;
-    }
+/** What to roll, and what counts as a hit. */
+function diceClause(dice: DiceSpec): string {
+  const count = dice.count === 'variable' ? 'X' : String(dice.count);
+  const roll = `Roll ${count}${dice.die}`;
+  const hits: string[] = [];
+  if (dice.hitUnder !== undefined) hits.push(`${dice.hitUnder} or less`);
+  if (dice.hitOver !== undefined) hits.push(`${dice.hitOver} or more`);
+  return hits.length === 0 ? `${roll} and add the total.` : `${roll} — a roll of ${hits.join(' or ')} hits.`;
+}
+
+function fillTemplate(def: EffectDef, effect: CardEffect): string {
+  // `[bracketed]` segments drop when a number inside them is 0, so a knob left
+  // at zero prints nothing instead of a dead clause.
+  const body = def.template.replace(OPTIONAL, (_whole, segment: string) => {
+    const keys = [...segment.matchAll(PLACEHOLDER)].map((m) => m[1]!);
+    const live = keys.length === 0 || keys.every((key) => effectParam(effect, key) > 0);
+    return live ? segment : '';
   });
 
-  return scope;
+  return body
+    .replace(PLACEHOLDER, (whole, key: string) => {
+      const p = def.params.find((x) => x.key === key);
+      return p ? paramExpr(effect, def, p) : whole;
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-/** Fill a card's `{placeholders}` from its own numbers. */
-export function renderText(card: Card, text?: string): string {
-  const source = text ?? card.text ?? '';
-  if (!source.includes('{')) return source;
-  const scope = textScope(card);
-  return source.replace(PLACEHOLDER, (whole, key: string) =>
-    key in scope ? String(scope[key]) : whole,
-  );
-}
+/** One effect as printed: what it costs, what it rolls, what it does. */
+export function effectLine(effect: CardEffect): string {
+  const def = EFFECTS[effect.type];
+  if (!def) return `Unknown effect: ${effect.type}.`;
 
-/** Placeholders still unresolved — an authoring typo, surfaced as a warning. */
-export function unknownPlaceholders(card: Card): string[] {
-  const scope = textScope(card);
-  const found = new Set<string>();
-  for (const text of [card.text, card.status, card.flavor]) {
-    for (const match of (text ?? '').matchAll(PLACEHOLDER)) {
-      const key = match[1]!;
-      if (!(key in scope)) found.add(key);
-    }
+  const clauses: string[] = [];
+  const cost = effectCost(effect);
+  if (cost > 0) {
+    clauses.push(effect.dice?.count === 'variable' ? `Spend ${cost}⚡ per 🎲.` : `Spend ${cost}⚡.`);
   }
-  return [...found];
+  if (effect.dice) clauses.push(diceClause(effect.dice));
+
+  const body = def.coded ? (effect.text ?? '').trim() : fillTemplate(def, effect);
+  if (body) clauses.push(body);
+  return clauses.join(' ');
 }
 
 /**
- * Draft printed text from the card's effects.
+ * A cockpit's three intrinsic lines.
  *
- * Deliberately a *template*, not a rendered string: the placeholders stay in
- * so the text keeps tracking the numbers after the next edit. Cards worth
- * printing get their wording written by hand — this is the starting point.
+ * It carries no effects — the weapon, the shield and the generator are what
+ * *being* a cockpit means — so they're printed off its own numbers instead.
  */
-export function textFromEffects(card: Card): string {
-  // Two effects can declare the same param name (a drain and a generator both
-  // print `amount`), and a bare `{amount}` resolves to the first of them — so
-  // anything after the first claim on a name gets its indexed form.
-  const claimed = new Set<string>();
-  const lines = effectsOf(card)
-    .map((effect, i) => {
-      const def = EFFECTS[effect.type];
-      if (!def?.template) return '';
-      return def.template.replace(PLACEHOLDER, (whole, key: string) => {
-        if (!def.params.some((p) => p.key === key)) return whole;
-        const indexed = claimed.has(key);
-        claimed.add(key);
-        return indexed ? `{${i + 1}.${key}}` : `{${key}}`;
-      });
-    })
-    .filter(Boolean);
-
-  const cost = card.kind !== 'event' && card.energyCost ? 'Spend {cost}⚡️. ' : '';
-  return cost + lines.join(' ');
+function cockpitLines(card: PartCard): PrintedLine[] {
+  const lines: PrintedLine[] = [];
+  const power = card.power ?? 0;
+  const gen = card.genPerDown ?? 0;
+  if (power > 0) {
+    lines.push({ timing: 'active', text: `Deal ${power}⚔️ to an enemy ship. No ⚡ — the down is the cost.` });
+  }
+  if (gen > 0) {
+    lines.push({ timing: 'active', text: `Put ${gen}⚡ back into this cockpit’s shield.` });
+  }
+  if ((card.energyCapacity ?? 0) > 0) {
+    lines.push({ timing: 'passive', text: 'Absorbs incoming ⚔️ while charged — the ship’s last line.' });
+  }
+  return lines;
 }
+
+/**
+ * Everything a card prints, in order, each tagged with when it happens.
+ *
+ * Derived from the effect list every time, so the face of a card and its
+ * behaviour cannot disagree: retune a number and the text retunes with it.
+ */
+export function printedLines(card: Card): PrintedLine[] {
+  const lines: PrintedLine[] =
+    card.kind === 'part' && card.partType === 'cockpit' ? cockpitLines(card) : [];
+  for (const effect of effectsOf(card)) {
+    const text = effectLine(effect);
+    // Nothing on an event card is fitted to a ship: the whole card resolves
+    // the moment it's drawn, a `reminder` on it included.
+    if (text) lines.push({ timing: card.kind === 'event' ? 'event' : timingOf(effect), text });
+  }
+  return lines;
+}
+
+/** The printed rules as one string, for tooltips, search and the log. */
+export const printedText = (card: Card): string =>
+  printedLines(card)
+    .map((line) => line.text)
+    .join(' ');
 
 // -------------------------------------------------------------- authoring QA
 
@@ -241,15 +312,30 @@ export function cardWarnings(card: Card): string[] {
   if (card.amount < 1) out.push('no copies in the deck');
   if (!card.name.trim()) out.push('unnamed');
 
-  const unknown = unknownPlaceholders(card);
-  if (unknown.length > 0) out.push(`unknown placeholder ${unknown.map((k) => `{${k}}`).join(', ')}`);
+  for (const effect of effects) {
+    const def = EFFECTS[effect.type];
+    if (!def) {
+      out.push(`unknown effect “${effect.type}”`);
+      continue;
+    }
+    if (def.coded && !(effect.text ?? '').trim()) {
+      out.push(`${def.label.toLowerCase()} with no printed text — the card says nothing`);
+    }
+    if (def.timing !== 'active' && (effect.cost ?? 0) > 0) {
+      out.push(`${def.label} charges ⚡ but is never activated`);
+    }
+    const gated = effect.dice?.hitUnder !== undefined || effect.dice?.hitOver !== undefined;
+    if (effectParam(effect, 'loseOnMiss') > 0 && !gated) {
+      out.push('loses ⚡ on a miss but rolls nothing that can miss');
+    }
+  }
 
-  const actives = effects.filter((e) => EFFECTS[e.type]?.timing === 'active');
+  const actives = effects.filter((e) => timingOf(e) === 'active');
   const attack = effects.find((e) => isDamageEffect(e.type));
 
   if (card.kind === 'part') {
     const pool = card.energyCapacity ?? 0;
-    const cost = card.energyCost ?? 0;
+    const cost = cardCost(card);
     if (card.partType === 'active-module') {
       if (cost > pool && !card.freeReroute) {
         out.push(`costs ${cost}⚡ out of a ${pool}⚡ pool — can never fire on its own charge`);
@@ -268,7 +354,7 @@ export function cardWarnings(card: Card): string[] {
     if (hasEffect(card, 'absorb') && pool <= 0) out.push('absorbs ⚔️ but holds no ⚡');
   }
 
-  if (attack && effectParam(attack, 'power') <= 0 && card.kind !== 'event' && !card.dice) {
+  if (attack && effectParam(attack, 'power') <= 0 && !attack.dice) {
     out.push('attack deals 0⚔️');
   }
   if (card.kind === 'event' && effects.length === 0) out.push('event resolves to nothing');
@@ -278,13 +364,11 @@ export function cardWarnings(card: Card): string[] {
 
 // ------------------------------------------------------------ new cards
 
-const BLANK_TEXT = 'New card — add an effect.';
-
 /** A blank card of the given kind, ready to be filled in by the editor. */
 export function blankCard(kind: CardKind, id: CardId, name = 'New Card'): Card {
-  const base = { id, name, rarity: 1 as const, amount: 1, text: BLANK_TEXT, effects: [] };
+  const base = { id, name, rarity: 1 as const, amount: 1, effects: [] };
   if (kind === 'item') {
-    return { ...base, kind: 'item', role: 'OTH', energyCost: null, consumable: true };
+    return { ...base, kind: 'item', role: 'OTH', consumable: true };
   }
   if (kind === 'event') {
     return { ...base, kind: 'event', subtype: 'Empty Space · Player Event' };
@@ -295,6 +379,52 @@ export function blankCard(kind: CardKind, id: CardId, name = 'New Card'): Card {
     partType: 'active-module',
     role: 'OTH',
     energyCapacity: 2,
-    energyCost: 1,
   };
+}
+
+// ------------------------------------------------------------- migration
+
+/**
+ * Bring a card saved under the old shape forward.
+ *
+ * Cards edited in the browser are persisted, so a designer's playtest overlay
+ * outlives the schema. A card-level `energyCost`/`dice` becomes a modifier on
+ * the first active effect — which is what they always were in practice — and
+ * hand-written rules text survives on whichever coded effect used to carry it.
+ * Anything else printed by hand is dropped: text is derived now.
+ */
+export function migrateCard(raw: Card): Card {
+  const legacy = raw as Card & {
+    energyCost?: number | null;
+    dice?: DiceSpec;
+    text?: string;
+    status?: string;
+  };
+  if (
+    legacy.energyCost === undefined &&
+    legacy.dice === undefined &&
+    legacy.text === undefined &&
+    legacy.status === undefined
+  ) {
+    return raw;
+  }
+
+  const { energyCost, dice, text, status, ...rest } = legacy;
+  const card = rest as Card;
+  const effects = effectsOf(card).map((e) => ({ ...e }));
+
+  const first = effects.findIndex((e) => isActiveEffect(e.type));
+  if (first >= 0) {
+    if (typeof energyCost === 'number' && effects[first]!.cost === undefined) {
+      effects[first]!.cost = energyCost;
+    }
+    if (dice && effects[first]!.dice === undefined) effects[first]!.dice = dice;
+  }
+
+  const printed = [text, status].filter((s): s is string => !!s && s.trim().length > 0).join(' ');
+  for (const effect of effects) {
+    if (EFFECTS[effect.type]?.coded && !effect.text && printed) effect.text = printed;
+  }
+
+  return { ...card, effects };
 }

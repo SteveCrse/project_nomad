@@ -20,7 +20,15 @@ export type Specialization = 'tank' | 'dps' | 'luck' | 'support';
 /** 1 common → 5 legendary. Gated in play by config.maxRarityNow. */
 export type Rarity = 1 | 2 | 3 | 4 | 5;
 
-/** Dice a module's action may call for. */
+/**
+ * When an effect happens.
+ *   active  — a down (and whatever ⚡ the effect costs) fires it
+ *   passive — always on while the card is fitted
+ *   event   — resolves when the card is drawn on a step
+ */
+export type EffectTiming = 'active' | 'passive' | 'event';
+
+/** Dice an effect's activation may call for. */
 export type DieKind = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20';
 
 export interface DiceSpec {
@@ -31,7 +39,7 @@ export interface DiceSpec {
   hitUnder?: number;
   /** Rolls at or above this count as hits. */
   hitOver?: number;
-  /** Damage (or energy) per hit. With no hit rule the dice are summed instead. */
+  /** Payload per hit. With no hit rule the dice are summed onto the payload. */
   perHit?: number;
 }
 
@@ -49,7 +57,7 @@ export interface DiceSpec {
  * silently-wrong one.
  */
 export type EffectType =
-  // ---- active: spend a down (and the card's ⚡ cost) to fire ----
+  // ---- active: spend a down (and the effect's own ⚡ cost) to fire ----
   | 'damage'
   | 'damage-all'
   | 'damage-module'
@@ -73,7 +81,12 @@ export type EffectType =
   | 'place-marker';
 
 /**
- * One effect on a card, with its numbers.
+ * One effect on a card, with everything that makes it *this* card's version.
+ *
+ * There is no card-level cost and no card-level dice: an effect carries its
+ * own. Both are modifiers on the same footing — ⚡ drawn to fire it, dice
+ * rolled to resolve it — so a card that shoots for 1⚡ and rolls for a
+ * separate payout says exactly that, per effect.
  *
  * Params are the ⚡/⚔️/🎲 values a card prints: tuning a card means changing
  * a number here, never writing a new effect. Keys the card omits fall back to
@@ -82,6 +95,21 @@ export type EffectType =
 export interface CardEffect {
   type: EffectType;
   params?: Record<string, number>;
+  /**
+   * ⚡ this effect draws from the card's own pool when it fires. Active
+   * effects only — a passive is on for free or not at all. With variable dice
+   * this is the cost *per die* ("spend X⚡ to cast X🎲").
+   */
+  cost?: number;
+  /** Dice this effect's resolution calls for, if any. */
+  dice?: DiceSpec;
+  /**
+   * Printed wording for effects resolved in code or at the table (`manual`,
+   * `reminder`). The rest of the vocabulary prints from its registry template
+   * and its own numbers, so its text can't drift; these two have no numbers to
+   * print, which is exactly why they carry their sentence here.
+   */
+  text?: string;
 }
 
 interface CardBase {
@@ -89,26 +117,16 @@ interface CardBase {
   name: string;
   kind: CardKind;
   rarity: Rarity;
-  /** Copies of this card in the deck. */
+  /** Copies of this card in the deck. Deck data — never printed on the card. */
   amount: number;
-  /**
-   * Rules text as printed on the card.
-   *
-   * `{placeholders}` are filled from the card's own numbers by
-   * `renderText` — `{cost}`, `{power}`, an effect's `{amount}` — so retuning a
-   * card's ⚡ or ⚔️ reprints its text instead of silently contradicting it.
-   */
-  text: string;
   /** Italic, non-mechanical line. */
   flavor?: string;
-  /** Persistent condition printed under the effect (e.g. "Infested: ..."). */
-  status?: string;
   /** Filename in Project N.O.M.A.D._pngs/fronts, or any image URL. */
   art?: string;
   /**
    * What the card does, assembled from the effect vocabulary. The engine's
-   * flat fields below are *derived* from this by `compileCard` — this list is
-   * what a card is authored and edited as.
+   * flat fields below are *derived* from this by `compileCard`, and so is the
+   * card's printed rules text — this list is the whole authored card.
    */
   effects?: CardEffect[];
 }
@@ -121,21 +139,19 @@ export interface PartCard extends CardBase {
   role: ModuleRole;
   specialization?: Specialization;
   /**
-   * Size of this module's own energy pool. null when it holds no energy.
+   * Max ⚡ this module's own pool holds. null when it holds none.
    *
    * On a **cockpit** this is the ship's basic shield: the ⚡ it can hold, the
    * last charge standing between an attack and a wreck.
    */
   energyCapacity: number | null;
-  /** Dice this module's action calls for, if any. */
-  dice?: DiceSpec;
   /** Cockpits only: module slot count this cockpit grants. */
   slots?: number;
   /**
    * Damage this module deals per activation, before dice/config modifiers.
    *
-   * On a **cockpit** this is the basic attack — one down, no ⚡ cost. Every
-   * ship can always shoot, however badly.
+   * On a **cockpit** this is the basic attack — one down, no ⚡. Every ship can
+   * always shoot, however badly.
    */
   power?: number;
   /**
@@ -153,12 +169,6 @@ export interface PartCard extends CardBase {
    * so a card only carries this when its own text says otherwise.
    */
   oncePerSet?: boolean;
-
-  /**
-   * Energy drawn from this module's own pool per activation. With variable
-   * dice this is the cost *per die* ("spend X⚡ to cast X🎲").
-   */
-  energyCost?: number;
 
   // ---- derived from `effects` by `compileCard`; don't author by hand ----
   // The engine reads these directly, so they stay flat and cheap. Editing a
@@ -182,9 +192,6 @@ export interface PartCard extends CardBase {
 export interface ItemCard extends CardBase {
   kind: 'item';
   role: ModuleRole;
-  /** Energy spent to use the item. */
-  energyCost: number | null;
-  dice?: DiceSpec;
   /** Single-use items leave play after resolving. */
   consumable: boolean;
   /** Derived from a damage effect by `compileCard`. */

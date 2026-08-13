@@ -1,6 +1,6 @@
 import type { Battle, DownAction, EnergyTransfer, SideRef } from '../types/combat';
 import type { GameConfig } from '../types/config';
-import type { PartCard } from '../types/card';
+import type { DiceSpec, PartCard } from '../types/card';
 import type { Ship } from '../types/ship';
 import type { Content } from '../content';
 import type { Rng } from '../rng';
@@ -16,11 +16,10 @@ import {
   cockpitCapacity,
   cockpitCharge,
   cockpitPower,
-  diceCountOf,
   isAbsorber,
   liveModules,
 } from '../ship';
-import { activeEffects, attackOf } from '../cards';
+import { activeEffects, attackOf, cardCost, costPerDie, effectParam } from '../cards';
 import { isDamageEffect } from '../effects';
 
 /** Does this module put ⚔️ on something when it fires? */
@@ -56,12 +55,15 @@ export function chooseEnemyAction(
   const guns = liveModules(content, ship)
     .filter((m) => shoots(m.part))
     .map((m) => {
-      const dice = diceCountOf(m.part, maxAffordableDice(m.slot.energy, m.part.energyCost ?? 1));
+      // Dice are bought per effect now, so what the pool can afford is read off
+      // the card's total per-die price rather than one printed cost.
+      const perDie = costPerDie(m.part);
+      const dice = perDie > 0 ? maxAffordableDice(m.slot.energy, perDie) : 1;
       const action: DownAction = {
         type: 'activate-module',
         slot: m.slot.index,
         ...(target ? { target } : {}),
-        ...(m.part.dice?.count === 'variable' ? { diceCount: dice } : {}),
+        ...(perDie > 0 ? { diceCount: dice } : {}),
       };
       const expected = expectedDamage(m.part, dice);
       return { action, expected };
@@ -131,7 +133,7 @@ export function chooseEnemyAction(
 function planReroute(content: Content, ship: Ship): EnergyTransfer[] {
   const modules = liveModules(content, ship);
   const dryGuns = modules
-    .filter((m) => shoots(m.part) && m.slot.energy < (m.part.energyCost ?? 0))
+    .filter((m) => shoots(m.part) && m.slot.energy < cardCost(m.part))
     .sort((a, b) => attackOf(b.part) - attackOf(a.part));
 
   const drained = new Set<number>();
@@ -158,13 +160,20 @@ function maxAffordableDice(energy: number, perDie: number): number {
 
 /** Rough expected value, only ever compared against other modules' guesses. */
 function expectedDamage(part: PartCard, diceCount: number): number {
-  const base = attackOf(part);
-  if (!part.dice) return base;
-  const sides = Number(part.dice.die.slice(1));
-  const { hitUnder, hitOver, perHit } = part.dice;
-  if (hitUnder === undefined && hitOver === undefined) return base + diceCount * ((sides + 1) / 2);
+  return activeEffects(part)
+    .filter((e) => isDamageEffect(e.type))
+    .reduce((sum, e) => sum + effectParam(e, 'power') + expectedRoll(e.dice, diceCount), 0);
+}
+
+/** What an effect's dice are worth on average, on top of its printed number. */
+function expectedRoll(dice: DiceSpec | undefined, requested: number): number {
+  if (!dice) return 0;
+  const count = dice.count === 'variable' ? Math.max(1, requested) : dice.count;
+  const sides = Number(dice.die.slice(1));
+  const { hitUnder, hitOver, perHit } = dice;
+  if (hitUnder === undefined && hitOver === undefined) return count * ((sides + 1) / 2);
   const chance =
     (hitUnder !== undefined ? hitUnder / sides : 0) +
     (hitOver !== undefined ? (sides - hitOver + 1) / sides : 0);
-  return base + diceCount * chance * (perHit ?? 1);
+  return count * chance * (perHit ?? 1);
 }
