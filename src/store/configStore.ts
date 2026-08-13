@@ -61,10 +61,15 @@ export const useConfigStore = create<ConfigStore>()(
       // Only the config is worth keeping; the setters are rebuilt on load.
       partialize: (s) => ({ config: s.config }),
       // New tunables added after a session was saved should take their default
-      // rather than come back undefined.
+      // rather than come back undefined — and tunables that have since been
+      // retired are dropped, so a stale save can't resurrect a knob the rules
+      // no longer have.
       merge: (persisted, current) => {
         const saved = (persisted as { config?: Partial<GameConfig> } | undefined)?.config ?? {};
-        return { ...current, config: { ...DEFAULT_CONFIG, ...saved } };
+        const known = Object.fromEntries(
+          Object.entries(saved).filter(([key]) => key in DEFAULT_CONFIG),
+        ) as Partial<GameConfig>;
+        return { ...current, config: { ...DEFAULT_CONFIG, ...known } };
       },
     },
   ),

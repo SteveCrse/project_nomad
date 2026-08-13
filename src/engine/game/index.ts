@@ -166,8 +166,6 @@ function buildPlayer(
     accent: seat.accent,
     shipId: ship.id,
     ship,
-    ap: config.maxAp,
-    apMax: config.maxAp,
     downsUsed: 0,
     damageThisDownSet: 0,
     energy: 0,

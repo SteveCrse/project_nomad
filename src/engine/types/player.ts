@@ -10,10 +10,6 @@ export interface PlayerState {
   shipId: ShipId;
   ship: Ship;
 
-  /** Action points available this turn, and the per-turn ceiling. */
-  ap: number;
-  apMax: number;
-
   /**
    * Downs spent in the current set. The player converts (and resets this)
    * by dealing damage >= the opposing threshold within one set.

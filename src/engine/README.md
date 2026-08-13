@@ -62,7 +62,7 @@ instead of a corrupted state. The store never mutates game state itself.
 - A module fires as often as its own pool can pay for — one down per shot. A
   card printed `oncePerSet` is capped at one, and `offensiveOncePerSet` puts
   every gun back under that cap for comparison. What actually rations a volley
-  is charge and AP, not a per-set flag.
+  is charge and downs, not a per-set flag.
 - Energy: `config.energyPerTurn` is spread across the grid at upkeep (actives
   first), generator modules top up their own pools, and a ship carrying a
   redistributor can reroute without spending a down and feed a module from
@@ -88,8 +88,8 @@ geometry every adjacency rule reads:
 Cards carry structured fields (`energyCost`, `power`, `dice`, `effect`,
 `generates`, `damageReduction`, …) that the engine resolves. The effect
 vocabulary is deliberately small; anything outside it is
-`effect: { kind: 'manual' }`, which still spends the down, the AP and the
-energy but leaves the payload to the table. A knowingly-manual card beats a
+`effect: { kind: 'manual' }`, which still spends the down and the energy but
+leaves the payload to the table. A knowingly-manual card beats a
 silently-wrong one.
 
 ## Conventions

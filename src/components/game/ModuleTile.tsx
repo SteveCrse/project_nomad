@@ -1,7 +1,6 @@
 import type { CardId } from '@engine/types';
 import { getPart } from '@data';
 import { ROLE_COLOR } from '@/lib/palette';
-import { useConfig } from '@/store/configStore';
 
 type Variant = 'compact' | 'large' | 'scrap';
 
@@ -79,7 +78,6 @@ export function ModuleTile({
   onDrop,
   hint,
 }: ModuleTileProps) {
-  const config = useConfig();
   const part = getPart(slot.partId);
   const shell = `box-border flex flex-col justify-between ${HEIGHT[variant]} ${PAD[variant]}`;
   const ring = selected
@@ -144,7 +142,7 @@ export function ModuleTile({
         <div className="flex items-center justify-between gap-1">
           <span className="font-mono text-[9px] tracking-[0.1em] text-n-700">ANCHOR</span>
           <span className="font-mono text-[10px] text-putty-700">
-            AP {part.apPerTurn ?? config.maxAp}
+            {part.slots ?? 0} SLOTS
           </span>
         </div>
       </div>

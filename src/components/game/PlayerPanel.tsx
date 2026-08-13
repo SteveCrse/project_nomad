@@ -21,7 +21,7 @@ interface PlayerPanelProps {
 }
 
 /**
- * One seat's readout: hull, downs, AP, scrap, and the ship's module grid.
+ * One seat's readout: hull, downs, ⚡, scrap, and the ship's module grid.
  * In combat it also carries the set's damage-vs-threshold tally — the number
  * that decides whether the seat converts or hands the turn over.
  */
@@ -70,9 +70,6 @@ export function PlayerPanel({
               <span className="text-n-900">
                 {player.ship.hp}/{player.ship.hpMax}
               </span>
-            </span>
-            <span className="text-putty-700">
-              AP {player.ap}/{config.maxAp}
             </span>
             <span className="text-putty-700">⚡ {player.energy}</span>
             <span className="text-putty-700">SCRAP {player.scrapDeck.length}</span>

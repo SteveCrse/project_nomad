@@ -39,8 +39,8 @@ export interface DiceSpec {
  * What activating an active module does, in terms the engine can resolve.
  *
  * Deliberately small: anything outside this vocabulary is `manual`, which
- * still spends the down, the AP and the energy but leaves the payload to the
- * table. Better a knowingly-manual card than a silently-wrong one.
+ * still spends the down and the energy but leaves the payload to the table.
+ * Better a knowingly-manual card than a silently-wrong one.
  */
 export type ModuleEffect =
   /** Deal `power` (plus any dice) to the target. */
@@ -78,16 +78,12 @@ export interface PartCard extends CardBase {
   partType: 'cockpit' | 'active-module' | 'passive-module';
   role: ModuleRole;
   specialization?: Specialization;
-  /** Action-point cost to activate. null for passives. */
-  apCost: number | null;
   /** Size of this module's own energy pool. null when it holds no energy. */
   energyCapacity: number | null;
   /** Dice this module's action calls for, if any. */
   dice?: DiceSpec;
   /** Cockpits only: module slot count this cockpit grants. */
   slots?: number;
-  /** Cockpits only: AP per turn this cockpit grants, when it deviates from config. */
-  apPerTurn?: number;
   /** Damage this module deals per activation, before dice/config modifiers. */
   power?: number;
   /** Cards that raise the scrap deck cap declare it here. */
@@ -125,7 +121,6 @@ export interface PartCard extends CardBase {
 export interface ItemCard extends CardBase {
   kind: 'item';
   role: ModuleRole;
-  apCost: number | null;
   /** Energy spent to use the item. */
   energyCost: number | null;
   dice?: DiceSpec;

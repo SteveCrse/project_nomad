@@ -22,13 +22,11 @@ export function CardTile({ card }: { card: Card }) {
         ? 'Item'
         : card.subtype;
 
-  const ap = card.kind === 'event' ? '—' : dash(card.apCost);
-  const energy =
-    card.kind === 'part'
-      ? dash(card.energyCapacity)
-      : card.kind === 'item'
-        ? dash(card.energyCost)
-        : '—';
+  // Both halves of a module's economy: what an activation draws, and how much
+  // charge the module can hold. Passives print a dash for cost — they never
+  // spend a down to fire.
+  const cost = card.kind === 'event' ? '—' : dash(card.energyCost);
+  const pool = card.kind === 'part' ? dash(card.energyCapacity) : '—';
 
   return (
     <div className="box-border flex h-[302px] w-[214px] flex-col overflow-hidden border-2 border-n-900 bg-cream-100 shadow-card">
@@ -58,8 +56,8 @@ export function CardTile({ card }: { card: Card }) {
         </div>
 
         <div className="flex gap-1.5">
-          <CostBox label="AP" value={ap} valueColor="var(--crt-white)" />
-          <CostBox label="⚡" value={energy} valueColor="var(--crt-green-500)" />
+          <CostBox label="COST ⚡" value={cost} valueColor="var(--crt-green-500)" />
+          <CostBox label="POOL ⚡" value={pool} valueColor="var(--crt-white)" />
         </div>
 
         <div className="text-[14px] leading-[1.3] text-pretty text-n-800">{card.text}</div>

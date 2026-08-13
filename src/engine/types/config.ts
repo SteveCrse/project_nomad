@@ -9,10 +9,12 @@ export interface GameConfig {
   // ---- party ----
   /** Seats at the table, 1-4. */
   playerCount: number;
-  /** Downs each side gets per turn before the turn passes. Rules default: 4. */
+  /**
+   * Downs each side gets per turn before the turn passes. Rules default: 4.
+   * With energy, this is what rations a turn: one down per activation, and a
+   * module fires as often as its own pool can pay for.
+   */
   downCount: number;
-  /** Action points per player per turn. */
-  maxAp: number;
   /** Starting hull HP per player ship. */
   hullHp: number;
   /** Module grid shape. Capacity is normally set by the cockpit; this is the ceiling. */
@@ -109,7 +111,6 @@ export interface GameConfig {
 export const DEFAULT_CONFIG: GameConfig = {
   playerCount: 4,
   downCount: 4,
-  maxAp: 2,
   hullHp: 60,
   gridCols: 5,
   gridRows: 2,

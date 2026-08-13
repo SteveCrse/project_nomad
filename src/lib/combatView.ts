@@ -30,7 +30,6 @@ export interface ModuleOption {
   /** null when the module can be fired right now. */
   error: string | null;
   energyCost: number;
-  apCost: number;
   /** Fired already in this set of downs. */
   spent: boolean;
   offensive: boolean;
@@ -87,7 +86,6 @@ export function moduleOptions(
         action,
         error,
         energyCost: shipEngine.energyCostOf(part, config, choice.diceCount),
-        apCost: part.apCost ?? 0,
         spent: slot.usedThisDownSet,
         offensive: shipEngine.isOffensive(part),
         needsModuleTarget,

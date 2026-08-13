@@ -107,8 +107,8 @@ Findings, not bugs — they're decisions for the rules doc:
   fired once per fresh set: the most a side could deal in a set was the sum of
   its weapons' power, so a single 4⚔ gun could never reach a threshold of 12.
   Settled by letting a module fire as often as its pool can pay for — charge
-  and AP ration a volley now, not a per-set flag. `once_per_set` puts the old
-  rule back for comparison.
+  and downs ration a volley now, not a per-set flag. `once_per_set` puts the
+  old rule back for comparison.
 - **Printed energy costs outrun generation.** Generators make 1–2⚡ a turn into
   their own pools; weapons cost 3–4⚡ a shot and rerouting used to cost a down.
   Fights stalled with both sides unable to fire. Two changes make it run:

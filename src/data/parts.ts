@@ -11,8 +11,8 @@ import type { PartCard } from '@engine/types';
  * The structured fields (`energyCost`, `generates`, `effect`, …) are the
  * machine-readable half of the printed text — the engine resolves those and
  * never looks at a card id. Anything the vocabulary can't express is
- * `effect: { kind: 'manual' }`: the tool still spends the down, the AP and the
- * energy, and the table adjudicates the payload.
+ * `effect: { kind: 'manual' }`: the tool still spends the down and the energy,
+ * and the table adjudicates the payload.
  */
 export const PARTS: PartCard[] = [
   // ---- cockpits: anchor a ship, define slot capacity ----
@@ -24,11 +24,9 @@ export const PARTS: PartCard[] = [
     role: 'OTH',
     rarity: 1,
     amount: 6,
-    apCost: null,
     energyCapacity: null,
     slots: 10,
-    apPerTurn: 2,
-    text: 'Ship anchor. Grants 10 module slots and 2 AP per turn.',
+    text: 'Ship anchor. Grants 10 module slots.',
   },
   {
     id: 'cockpit-scavenger',
@@ -38,11 +36,9 @@ export const PARTS: PartCard[] = [
     role: 'OTH',
     rarity: 1,
     amount: 4,
-    apCost: null,
     energyCapacity: null,
     slots: 6,
-    apPerTurn: 1,
-    text: 'Ship anchor. Grants 6 module slots and 1 AP per turn.',
+    text: 'Ship anchor. Grants 6 module slots.',
   },
 
   // ---- rarity 1 ----
@@ -54,7 +50,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 1,
     amount: 3,
-    apCost: null,
     energyCapacity: 1,
     energyCost: 1,
     power: 2,
@@ -69,7 +64,6 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 1,
     amount: 3,
-    apCost: null,
     energyCapacity: 5,
     absorbs: true,
     text: 'Absorbs incoming ⚔️ while charged.',
@@ -82,7 +76,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 1,
     amount: 3,
-    apCost: 0,
     energyCapacity: 0,
     // Sacrificing a card for a variable payload isn't in the effect vocabulary.
     effect: { kind: 'manual' },
@@ -98,7 +91,6 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 2,
     amount: 3,
-    apCost: null,
     energyCapacity: 2,
     generates: 1,
     text: 'Generate 1⚡️ at the start of your turn.',
@@ -111,7 +103,6 @@ export const PARTS: PartCard[] = [
     role: 'RDS',
     rarity: 2,
     amount: 3,
-    apCost: null,
     energyCapacity: 2,
     freeReroute: true,
     text: 'Whenever a module gains ⚡️ when it is full, you may reroute it immediately.',
@@ -126,7 +117,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 3,
     amount: 1,
-    apCost: 1,
     energyCapacity: 5,
     energyCost: 1, // per die: spend X⚡ → cast X🎲
     dice: { count: 'variable', die: 'd6', hitUnder: 1, perHit: 10 },
@@ -141,7 +131,6 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 3,
     amount: 1,
-    apCost: null,
     energyCapacity: 2,
     damageReduction: 1,
     absorbs: false,
@@ -157,7 +146,6 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 4,
     amount: 1,
-    apCost: 1,
     energyCapacity: 10,
     dice: { count: 1, die: 'd6', hitOver: 2 },
     effect: { kind: 'gain-energy', amount: 10, loseOnMiss: 10 },
@@ -173,7 +161,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 4,
     amount: 1,
-    apCost: 1,
     // Printed capacity is 1⚡, which can never pay this card's own 2⚡ cost.
     // Raised to 4 so the card is testable — flag it against the printed text.
     energyCapacity: 4,
@@ -192,7 +179,6 @@ export const PARTS: PartCard[] = [
     role: 'OTH',
     rarity: 4,
     amount: 1,
-    apCost: null,
     energyCapacity: null,
     text: 'When your ship is destroyed, take the Escape Pod ship from the deck, make it your new ship base.',
   },
@@ -206,7 +192,6 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 5,
     amount: 1,
-    apCost: 1,
     energyCapacity: 20,
     effect: { kind: 'manual' }, // sacrificing a card is a table decision
     text: 'Sacrifice 1 module or item to gain 20⚡️.',
@@ -219,7 +204,6 @@ export const PARTS: PartCard[] = [
     role: 'RDS',
     rarity: 5,
     amount: 1,
-    apCost: null,
     energyCapacity: 0,
     freeReroute: true,
     text: 'Modules can use ⚡️ from other modules without rerouting (except when taking damage).',
@@ -234,7 +218,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 2,
     amount: 2,
-    apCost: 1,
     energyCapacity: 6,
     energyCost: 3,
     power: 4,
@@ -249,7 +232,6 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 2,
     amount: 2,
-    apCost: null,
     energyCapacity: 2,
     generates: 2,
     text: 'Generate 2⚡️ at the start of your turn. (placeholder)',
@@ -262,7 +244,6 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 1,
     amount: 4,
-    apCost: null,
     energyCapacity: 3,
     generates: 1,
     text: 'Generate 1⚡️ at the start of your turn. (placeholder)',
@@ -275,7 +256,6 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 2,
     amount: 2,
-    apCost: null,
     energyCapacity: 1,
     text: 'Modules adjacent to this one do not lose ⚡️ when damaged. (placeholder)',
   },
@@ -287,7 +267,6 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 2,
     amount: 2,
-    apCost: null,
     energyCapacity: 10,
     absorbs: true,
     text: 'Absorbs incoming ⚔️ while charged. (placeholder)',
@@ -300,7 +279,6 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 3,
     amount: 1,
-    apCost: null,
     energyCapacity: 7,
     absorbs: true,
     specialization: 'tank',
@@ -314,7 +292,6 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 2,
     amount: 2,
-    apCost: 1,
     energyCapacity: 4,
     energyCost: 2,
     absorbs: false, // its charge is for the negate, not passive soaking
@@ -329,7 +306,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 3,
     amount: 1,
-    apCost: 1,
     energyCapacity: 4,
     energyCost: 4,
     power: 8,
@@ -346,7 +322,6 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 1,
     amount: 3,
-    apCost: 0,
     energyCapacity: 2,
     energyCost: 2,
     power: 3,
@@ -361,7 +336,6 @@ export const PARTS: PartCard[] = [
     role: 'OTH',
     rarity: 1,
     amount: 3,
-    apCost: null,
     energyCapacity: 1,
     scrapCapBonus: 1,
     text: 'Raises your Scrap Deck cap by 1. (placeholder)',
@@ -374,7 +348,6 @@ export const PARTS: PartCard[] = [
     role: 'OTH',
     rarity: 2,
     amount: 2,
-    apCost: null,
     energyCapacity: 0,
     specialization: 'support',
     text: 'Another player in your sector may spend your ⚡️. (placeholder)',
@@ -387,7 +360,6 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 1,
     amount: 2,
-    apCost: null,
     energyCapacity: 0,
     absorbs: false,
     text: 'The first attack each combat targets the Decoy instead. (placeholder)',

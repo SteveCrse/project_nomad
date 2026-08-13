@@ -273,7 +273,6 @@ function RearrangeBar({ reason }: { reason: string }) {
 }
 
 function BuilderStats({ player }: { player: PlayerState }) {
-  const config = useConfig();
   const filled = player.ship.slots.filter((s) => s.partId).length;
   const stored = player.ship.slots.reduce((sum, s) => sum + s.energy, 0);
   return (
@@ -285,9 +284,6 @@ function BuilderStats({ player }: { player: PlayerState }) {
         SLOTS {filled}/{player.ship.slots.length}
       </span>
       <span>⚡ {stored} STORED</span>
-      <span>
-        AP {player.ap}/{config.maxAp}
-      </span>
     </div>
   );
 }
@@ -543,9 +539,6 @@ function SelectedPanel({
       {selected ? (
         <div className="flex flex-col gap-2 border border-border-strong bg-crt-glass p-2.5">
           <div className="flex flex-wrap gap-3.5 font-mono text-[12px] text-crt-white">
-            <span>
-              AP <span className="text-crt-green-500">{selected.apCost ?? '—'}</span>
-            </span>
             <span>
               COST <span className="text-crt-green-500">{selected.energyCost ?? '—'}⚡</span>
             </span>

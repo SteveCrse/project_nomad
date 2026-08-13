@@ -118,7 +118,6 @@ export function ActionBar({ state, side }: { state: GameState; side: SideRef }) 
             <span className="text-[13px] leading-none font-semibold">{m.part.name}</span>
             <span className="font-mono text-[10px] text-putty-700">
               {m.energyCost > 0 ? `${m.energyCost}⚡` : 'FREE'}
-              {m.apCost > 0 ? ` · ${m.apCost}AP` : ''}
               {m.part.power ? ` · ${m.part.power}⚔` : ''}
               {m.part.dice ? ` · ${m.part.dice.count === 'variable' ? diceCount : m.part.dice.count}${m.part.dice.die}` : ''}
               {m.needsModuleTarget ? ' · MODULE' : ''}

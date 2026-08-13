@@ -44,10 +44,6 @@ export function energyCostOf(part: PartCard, config: GameConfig, diceCount = 1):
   return Math.max(0, Math.round(base * perDie * config.energyCostMult));
 }
 
-export function apCostOf(part: PartCard): number {
-  return part.apCost ?? 0;
-}
-
 /** How many dice this activation rolls. */
 export function diceCountOf(part: PartCard, requested?: number): number {
   if (!part.dice) return 0;

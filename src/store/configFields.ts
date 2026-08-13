@@ -53,7 +53,6 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     fields: [
       { kind: 'number', key: 'playerCount', label: 'player_count', control: 'stepper', min: 1, max: 4, step: 1 },
       { kind: 'number', key: 'downCount', label: 'down_count', control: 'stepper', min: 2, max: 6, step: 1 },
-      { kind: 'number', key: 'maxAp', label: 'max_ap', control: 'stepper', min: 0, max: 6, step: 1 },
       { kind: 'number', key: 'hullHp', label: 'hull_hp', control: 'slider', min: 10, max: 200, step: 5 },
       { kind: 'number', key: 'gridCols', label: 'grid_cols', control: 'stepper', min: 2, max: 8, step: 1 },
       { kind: 'number', key: 'gridRows', label: 'grid_rows', control: 'stepper', min: 1, max: 4, step: 1 },

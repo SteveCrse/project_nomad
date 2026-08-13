@@ -18,7 +18,6 @@ import { partOf } from '../content';
 import type { Rng } from '../rng';
 import type { PartCard } from '../types/card';
 import {
-  apCostOf,
   areAdjacent,
   capacityOf,
   chargeSlot,
@@ -317,8 +316,6 @@ export function actionError(
       if (cappedPerSet(part, config) && slot.usedThisDownSet) {
         return 'already fired this set of downs';
       }
-      const ap = apCostOf(part);
-      if (player && ap > player.ap) return `needs ${ap} AP`;
       const cost = energyCostOf(part, config, action.diceCount);
       if (cost > slot.energy + spareEnergyFor(content, battle, side)) {
         return `needs ${cost}⚡ in the module`;
@@ -505,10 +502,10 @@ export function resolveDown(
       const effect = effectOf(part);
       const diceCount = diceCountOf(part, action.diceCount);
       const energy = energyCostOf(part, config, action.diceCount);
-      const ap = apCostOf(part);
 
       // Pay: the module's own pool first, then loose energy if a
-      // redistributor can feed it. AP comes off the player.
+      // redistributor can feed it. The down itself is the other half of the
+      // cost, and it's spent by the caller either way.
       const fromPool = Math.min(slot.energy, energy);
       const fromSpare = energy - fromPool;
       const slots = ship.slots.slice();
@@ -518,13 +515,12 @@ export function resolveDown(
         usedThisDownSet: slot.usedThisDownSet || cappedPerSet(part, config),
       };
       next = withShip(next, side, { ...ship, slots });
-      if (side.kind === 'player') {
+      if (side.kind === 'player' && fromSpare > 0) {
         const player = playerOf(next, side.id)!;
         next = withPlayer(next, side.id, {
-          ...(ap > 0 ? { ap: Math.max(0, player.ap - ap) } : {}),
-          ...(fromSpare > 0 ? { energy: Math.max(0, player.energy - fromSpare) } : {}),
+          energy: Math.max(0, player.energy - fromSpare),
         });
-        if (fromSpare > 0) lines.push(`  redistributor feeds ${fromSpare}⚡ into ${part.name}.`);
+        lines.push(`  redistributor feeds ${fromSpare}⚡ into ${part.name}.`);
       }
 
       switch (effect.kind) {
@@ -846,7 +842,7 @@ export function isSideAlive(battle: Battle, side: SideRef): boolean {
 
 /**
  * Start of a side's turn: upkeep (generators tick, Infested modules bleed),
- * AP refills, offensive modules come off cooldown, a fresh set opens.
+ * offensive modules come off cooldown, a fresh set of downs opens.
  */
 export function beginTurn(content: Content, battle: Battle, config: GameConfig): Battle {
   const side = currentSide(battle.combat);
@@ -875,10 +871,6 @@ export function beginTurn(content: Content, battle: Battle, config: GameConfig):
       }
     }
     next = { ...next, combat };
-  }
-
-  if (side.kind === 'player') {
-    next = withPlayer(next, side.id, { ap: config.maxAp, apMax: config.maxAp });
   }
 
   const fresh = startDownSet(
@@ -926,15 +918,13 @@ export function startCombat(
     wrecks: [],
   };
 
-  // Everyone starts a fight with a clean grid and full AP.
+  // Everyone starts a fight with a clean grid and a fresh set of downs.
   const party0: Battle['party'] = {
     ...party,
     players: party.players.map((p) =>
       participants.includes(p.id)
         ? {
             ...p,
-            ap: config.maxAp,
-            apMax: config.maxAp,
             downsUsed: 0,
             damageThisDownSet: 0,
             ship: {
