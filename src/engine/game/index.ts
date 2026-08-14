@@ -104,6 +104,13 @@ export function newRun(
     buildPlayer(content, seat, drafting ? [] : seat.partIds),
   );
 
+  // The draft pool is dealt in one go — `draws` per seat, face up — so the
+  // table can read the whole spread before anyone commits to a build.
+  const deal = drafting
+    ? deck.draw(decks.parts, draws * players.length, rng)
+    : { deck: decks.parts, drawn: [] as CardId[] };
+  decks.parts = deal.deck;
+
   const party: PartyState = { players, activePlayerIndex: 0 };
   const mission = board.generateMission(seed, sector, config, rng, Object.values(content.enemies));
   mission.positions = Object.fromEntries(players.map((p) => [p.id, mission.startNodeId]));
@@ -119,12 +126,7 @@ export function newRun(
     maxRarityNow: config.maxRarityNow,
     prompt: null,
     setup: drafting
-      ? {
-          drawsLeft: Object.fromEntries(players.map((p) => [p.id, draws])),
-          anchored: [],
-          lastDrawn: null,
-          lastDrawnBy: null,
-        }
+      ? { pool: deal.drawn, picksTaken: 0, anchored: [], lastPicked: null, lastPickedBy: null }
       : null,
     log: [],
     logCounter: 0,
@@ -144,7 +146,8 @@ export function newRun(
   return drafting
     ? log(
         opened,
-        `Setup: ${players.length} seat(s) draft ${draws} part(s) each off the Parts deck, one card at a time.`,
+        `Setup: ${deal.drawn.length} part(s) dealt face up (${draws} per seat). ` +
+          `${players.length} seat(s) take turns picking until the table is empty or the party rolls out.`,
         'system',
       )
     : opened;
@@ -202,67 +205,92 @@ function withPlayer(
 /**
  * The seat on the clock.
  *
- * Draws go round the table rather than seat by seat, because the Parts deck is
- * shared: whoever still owes the most draws goes next, ties broken by seat
- * order. Null once every seat has spent its draws.
+ * The pool is shared and every card in it is face up, so picks go strictly
+ * round the table: seat order, one card each, wrapping until the spread is
+ * gone. Null once the table is empty and there's nothing left to pick.
  */
 export function nextDrafter(state: GameState): PlayerId | null {
   const setup = state.setup;
-  if (!setup) return null;
-
-  let onTheClock: PlayerId | null = null;
-  let mostLeft = 0;
-  for (const player of state.party.players) {
-    const left = setup.drawsLeft[player.id] ?? 0;
-    if (left > mostLeft) {
-      onTheClock = player.id;
-      mostLeft = left;
-    }
-  }
-  return onTheClock;
+  if (!setup || setup.pool.length === 0) return null;
+  const seats = state.party.players;
+  if (seats.length === 0) return null;
+  return seats[setup.picksTaken % seats.length]?.id ?? null;
 }
 
-/** Draws still owed by a seat. */
-export const drawsLeftFor = (state: GameState, playerId: PlayerId): number =>
-  state.setup?.drawsLeft[playerId] ?? 0;
+/** Cards still face up on the table. */
+export const draftPool = (state: GameState): CardId[] => state.setup?.pool ?? [];
 
-/** Pull the next card off the Parts deck, one at a time, for one seat. */
-export function drawStartingPart(
+/**
+ * Take one card off the table.
+ *
+ * Any card in the pool is fair game — that's the whole point of dealing the
+ * spread up front — but only the seat on the clock may take one, so the turn
+ * order still holds.
+ */
+export function draftCard(
   content: Content,
   state: GameState,
-  rng: Rng,
+  cardId: CardId,
   playerId?: PlayerId,
 ): GameState {
   const setup = state.setup;
   if (state.phase !== 'setup' || !setup) return state;
+
   const who = playerId ?? nextDrafter(state);
-  if (!who || (setup.drawsLeft[who] ?? 0) <= 0) return state;
+  if (!who || who !== nextDrafter(state)) return state; // not this seat's pick
+  const onTable = setup.pool.indexOf(cardId);
+  if (onTable < 0) return state;
 
-  const pull = deck.draw(state.decks.parts, 1, rng);
-  const cardId = pull.drawn[0];
-  const spent = { ...setup.drawsLeft, [who]: (setup.drawsLeft[who] ?? 0) - 1 };
-  let next: GameState = { ...state, decks: { ...state.decks, parts: pull.deck } };
-
-  if (!cardId) {
-    // Deck and discard both dry: zero the seat out so the draft can still end.
-    return log(
-      { ...next, setup: { ...setup, drawsLeft: { ...spent, [who]: 0 } } },
-      'The Parts deck is dry — nothing left to draft.',
-      'system',
-    );
-  }
+  const pool = setup.pool.slice();
+  pool.splice(onTable, 1);
 
   const part = partOf(content, cardId);
-  next = withPlayer(next, who, (p) => ({ ...p, carriedParts: [...p.carriedParts, cardId] }));
-  next = { ...next, setup: { ...setup, drawsLeft: spent, lastDrawn: cardId, lastDrawnBy: who } };
-  next = log(next, `${seatLabel(next, who)} draws ${part?.name ?? cardId}.`, 'loot');
+  let next = withPlayer(state, who, (p) => ({ ...p, carriedParts: [...p.carriedParts, cardId] }));
+  next = {
+    ...next,
+    setup: {
+      ...setup,
+      pool,
+      picksTaken: setup.picksTaken + 1,
+      lastPicked: cardId,
+      lastPickedBy: who,
+    },
+  };
+  next = log(
+    next,
+    `${seatLabel(next, who)} drafts ${part?.name ?? cardId} — ${pool.length} left on the table.`,
+    'loot',
+  );
 
-  // A cockpit is what sets slot capacity, so the first one a seat draws takes
+  // A cockpit is what sets slot capacity, so the first one a seat takes takes
   // the hull over immediately — assemble into the grid you're going to fly.
   if (part?.role === 'COCKPIT' && !setup.anchored.includes(who)) {
     next = installCockpit(content, next, who, cardId);
   }
   return next;
+}
+
+/**
+ * Pick for the seat on the clock, for the tool's "draft the rest" button.
+ *
+ * A seat still flying its default hull grabs the roomiest cockpit on the table
+ * — capacity is what everything else is spent against — and otherwise takes
+ * the card that has been sitting there longest.
+ */
+export function autoDraft(content: Content, state: GameState): GameState {
+  const setup = state.setup;
+  const who = nextDrafter(state);
+  if (!setup || !who) return state;
+
+  const wantsCockpit = !setup.anchored.includes(who);
+  const pick = setup.pool.reduce<{ id: CardId; slots: number } | null>((best, id) => {
+    const part = partOf(content, id);
+    if (!wantsCockpit || part?.role !== 'COCKPIT') return best;
+    const slots = part.slots ?? 0;
+    return !best || slots > best.slots ? { id, slots } : best;
+  }, null);
+
+  return draftCard(content, state, pick?.id ?? setup.pool[0]!, who);
 }
 
 /** Re-anchor a seat's ship on a drafted cockpit. */
@@ -426,6 +454,10 @@ export function returnPart(
 /**
  * Close the draft and put the party on the board.
  *
+ * The party may call it at any point, so anything still face up on the table
+ * is shuffled back into the Parts deck — leaving the draft early is a real
+ * choice, not a way to keep the spread around.
+ *
  * Pools go out charged, the same as a ship that rolls out of `newRun`.
  * Whatever didn't get fitted goes into the Scrap Deck up to its cap — that's
  * the pool a rearrangement point spends, so a spare stays reachable — and the
@@ -439,6 +471,7 @@ export function startMission(
 ): GameState {
   if (state.phase !== 'setup') return state;
 
+  const undrafted = state.setup?.pool ?? [];
   const returned: CardId[] = [];
   const players = state.party.players.map((player) => {
     let ship = player.ship;
@@ -462,7 +495,10 @@ export function startMission(
     phase: 'map',
     setup: null,
     party: { ...state.party, players },
-    decks: { ...state.decks, parts: deck.returnToDeck(state.decks.parts, returned, rng) },
+    decks: {
+      ...state.decks,
+      parts: deck.returnToDeck(state.decks.parts, [...undrafted, ...returned], rng),
+    },
     awaitingMove: players[0] ? [players[0].id] : [],
   };
   next = log(
@@ -472,6 +508,13 @@ export function startMission(
       .join(', ')}. Mission starts.`,
     'system',
   );
+  if (undrafted.length > 0) {
+    next = log(
+      next,
+      `The party rolls out with ${undrafted.length} card(s) still on the table — shuffled back into the Parts deck.`,
+      'system',
+    );
+  }
   const hoarded = players.reduce((sum, p) => sum + p.scrapDeck.length, 0);
   if (hoarded > 0 || returned.length > 0) {
     next = log(

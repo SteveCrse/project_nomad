@@ -48,19 +48,22 @@ export interface Loadout {
 /**
  * The pre-mission draft.
  *
- * Every seat pulls parts off the shared Parts deck one card at a time, so the
- * order matters and the tool has to know whose turn it is. Once the draws are
- * spent the seats assemble, and the mission only starts when they say so.
+ * The whole pool comes off the Parts deck in one deal — `startingPartsDraws`
+ * cards per seat, all face up — and then the seats take turns picking any card
+ * still on the table. The draft runs until the pool is empty or the party calls
+ * it, so a seat can read the whole spread before committing to a build.
  */
 export interface SetupState {
-  /** Draws each seat still owes, by seat. */
-  drawsLeft: Record<PlayerId, number>;
+  /** The face-up spread still on the table, in deal order. */
+  pool: CardId[];
+  /** Picks taken so far; the clock is seat order modulo the party. */
+  picksTaken: number;
   /** Seats now flying a cockpit they drafted rather than their default hull. */
   anchored: PlayerId[];
-  /** Last part off the deck, so the table can see what was just revealed. */
-  lastDrawn: CardId | null;
-  /** Who drew it — the tool stays on that seat until the next card is pulled. */
-  lastDrawnBy: PlayerId | null;
+  /** Last card taken off the table, so the tool can call out what just moved. */
+  lastPicked: CardId | null;
+  /** Who took it. */
+  lastPickedBy: PlayerId | null;
 }
 
 export type LogTone = 'info' | 'damage' | 'convert' | 'system' | 'loot';

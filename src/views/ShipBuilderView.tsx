@@ -20,12 +20,13 @@ import { useUiStore } from '@/store/uiStore';
  * relative to a gun is the whole decision.
  *
  * During setup the grid is fed by the draft hold rather than the Scrap Deck:
- * one card comes off the Parts deck at a time, and the mission doesn't start
- * until the table says the ships are done.
+ * the whole pool is dealt face up at run start, the seats take turns picking
+ * off it, and the mission doesn't start until the table says the ships are done.
  */
 
 /** What's currently in hand, whether by drag or by click-to-place. */
 type Held =
+  | { kind: 'pool'; cardId: CardId }
   | { kind: 'hold'; cardId: CardId }
   | { kind: 'scrap'; cardId: CardId }
   | { kind: 'grid'; slot: SlotIndex; cardId: CardId };
@@ -51,25 +52,21 @@ export function ShipBuilderView() {
   const returnPart = useGameStore((s) => s.returnPart);
   const moveModule = useGameStore((s) => s.moveModule);
   const rearrange = useGameStore((s) => s.rearrange);
+  const draftCard = useGameStore((s) => s.draftCard);
 
   const [drag, setDrag] = useState<Held | null>(null);
 
   const drafting = state?.phase === 'setup';
   const onTheClock = state && drafting ? game.nextDrafter(state) : null;
-  const lastDrawn = drafting ? (state?.setup?.lastDrawn ?? null) : null;
-  // The view sits with whoever drew last so the card is seen landing in their
-  // hold; before the first draw there's nobody, so open on the seat up next.
-  const follow = drafting ? (state?.setup?.lastDrawnBy ?? onTheClock) : null;
+  const pool = drafting ? (state?.setup?.pool ?? []) : [];
+  // The view sits with the seat on the clock, so the pool is always picked into
+  // the hold you're looking at; once the table is empty it stays with whoever
+  // took the last card and everyone assembles.
+  const follow = drafting ? (onTheClock ?? state?.setup?.lastPickedBy ?? null) : null;
 
   useEffect(() => {
     if (follow) setBuilderPlayer(follow);
   }, [follow, setBuilderPlayer]);
-
-  // Whatever just came off the deck lands in the inspector — that reveal is
-  // the point of drawing one card at a time.
-  useEffect(() => {
-    if (lastDrawn) selectPart(lastDrawn);
-  }, [lastDrawn, selectPart]);
 
   if (!state) {
     return <div className="p-4 text-[15px] text-putty-700">Start a run to build a ship.</div>;
@@ -87,17 +84,23 @@ export function ShipBuilderView() {
 
   // Clicking a card in a pool arms it the same way dragging it does, so both
   // routes to a position behave identically.
+  const picking = drafting && player.id === onTheClock;
   const clicked: Held | null = !selectedPartId
     ? null
-    : drafting && player.carriedParts.includes(selectedPartId)
-      ? { kind: 'hold', cardId: selectedPartId }
-      : player.scrapDeck.includes(selectedPartId)
-        ? { kind: 'scrap', cardId: selectedPartId }
-        : null;
+    : picking && pool.includes(selectedPartId)
+      ? { kind: 'pool', cardId: selectedPartId }
+      : drafting && player.carriedParts.includes(selectedPartId)
+        ? { kind: 'hold', cardId: selectedPartId }
+        : player.scrapDeck.includes(selectedPartId)
+          ? { kind: 'scrap', cardId: selectedPartId }
+          : null;
   const held = drag ?? clicked;
 
   const canLandOn = (index: SlotIndex): boolean => {
     if (!held || !canEdit) return false;
+    // A card is only ever taken off the table by the seat on the clock, even
+    // when it's dropped straight onto a position.
+    if (held.kind === 'pool' && !picking) return false;
     const slot = player.ship.slots[index];
     if (!slot) return false;
     // Moving something already on the grid — the cockpit included. Landing on
@@ -116,6 +119,7 @@ export function ShipBuilderView() {
   const landOn = (index: SlotIndex) => {
     if (!held || !canLandOn(index)) return;
     if (held.kind === 'grid') moveModule(player.id, held.slot, index);
+    else if (held.kind === 'pool') draftCard(held.cardId, index);
     else if (held.kind === 'hold') assemblePart(player.id, held.cardId, index);
     else rearrange(player.id, held.cardId, index);
     setDrag(null);
@@ -140,6 +144,18 @@ export function ShipBuilderView() {
     <div className="flex min-h-0 flex-1 gap-5" onDragEnd={() => setDrag(null)}>
       <div className="flex min-w-0 flex-1 flex-col">
         {drafting && <DraftBar state={state} onTheClock={onTheClock} />}
+        {drafting && pool.length > 0 && (
+          <DraftPool
+            pool={pool}
+            picking={picking}
+            onPickUp={setDrag}
+            onTake={(cardId) => {
+              draftCard(cardId);
+              setDrag(null);
+              selectPart(null);
+            }}
+          />
+        )}
         {state.prompt?.kind === 'rearrange' && <RearrangeBar reason={state.prompt.reason} />}
 
         <div className="mb-3.5 flex items-baseline gap-3">
@@ -159,7 +175,9 @@ export function ShipBuilderView() {
                 ].join(' ')}
               >
                 {p.label}
-                {drafting ? ` · ${game.drawsLeftFor(state, p.id)}▾` : ''}
+                {drafting
+                  ? ` · ${draftedBy(state, p)}${p.id === onTheClock ? ' ◂ PICKS' : ''}`
+                  : ''}
               </button>
             ))}
           </div>
@@ -195,20 +213,28 @@ export function ShipBuilderView() {
   );
 }
 
+/** Cards this seat has taken off the table, wherever they've ended up. */
+function draftedBy(state: GameState, player: PlayerState): number {
+  const anchored = state.setup?.anchored.includes(player.id) ? 1 : 0;
+  return player.carriedParts.length + shipEngine.moduleCount(player.ship) + anchored;
+}
+
 /**
- * The draft's own control strip: whose draw it is, what's left, and the one
- * button that ends setup.
+ * The draft's own control strip: whose pick it is, what's still on the table,
+ * and the one button that ends setup.
+ *
+ * That button is live from the first pick onwards — the party can call the
+ * draft whenever it likes and leave the rest of the spread on the table.
  */
 function DraftBar({ state, onTheClock }: { state: GameState; onTheClock: PlayerId | null }) {
-  const drawStartingPart = useGameStore((s) => s.drawStartingPart);
-  const drawAllStartingParts = useGameStore((s) => s.drawAllStartingParts);
+  const draftAll = useGameStore((s) => s.draftAll);
   const startMission = useGameStore((s) => s.startMission);
   const config = useConfig();
 
   const seat = state.party.players.find((p) => p.id === onTheClock);
-  const left = onTheClock ? game.drawsLeftFor(state, onTheClock) : 0;
-  const drawn = getPart(state.setup?.lastDrawn ?? null);
-  const drawer = state.party.players.find((p) => p.id === state.setup?.lastDrawnBy);
+  const left = state.setup?.pool.length ?? 0;
+  const picked = getPart(state.setup?.lastPicked ?? null);
+  const picker = state.party.players.find((p) => p.id === state.setup?.lastPickedBy);
 
   return (
     <div className="mb-3.5 flex flex-wrap items-center gap-3 border-2 border-border-strong bg-crt-glass px-3 py-2.5">
@@ -219,30 +245,32 @@ function DraftBar({ state, onTheClock }: { state: GameState; onTheClock: PlayerI
       {seat ? (
         <>
           <span className="text-[15px] text-crt-white">
-            {drawn && drawer ? (
+            {picked && picker ? (
               <>
-                <span className="font-display font-bold">{drawer.label}</span> drew {drawn.name}.{' '}
+                <span className="font-display font-bold">{picker.label}</span> took {picked.name}.{' '}
               </>
             ) : (
-              <>Parts deck is shuffled. {config.startingPartsDraws} draws each.{' '}</>
+              <>
+                {left} part(s) dealt face up — {config.startingPartsDraws} per seat.{' '}
+              </>
             )}
             <span className="text-putty-400">
-              {seat.label} is up — {left} left.
+              {seat.label} picks — {left} still on the table.
             </span>
           </span>
           <div className="ml-auto flex gap-2">
-            <Button size="sm" onClick={() => drawStartingPart()}>
-              Draw for {seat.label}
+            <Button size="sm" variant="secondary" onClick={draftAll}>
+              Draft the rest
             </Button>
-            <Button size="sm" variant="secondary" onClick={drawAllStartingParts}>
-              Draw the rest
+            <Button size="sm" onClick={startMission} title="Leave the rest of the spread behind">
+              Start the mission
             </Button>
           </div>
         </>
       ) : (
         <>
           <span className="text-[15px] text-crt-white">
-            Draws are spent. Drag the hold onto the grid — parts attach next to what's already
+            The table is empty. Drag the hold onto the grid — parts attach next to what's already
             fitted — then roll out.
           </span>
           <div className="ml-auto">
@@ -252,6 +280,70 @@ function DraftBar({ state, onTheClock }: { state: GameState; onTheClock: PlayerI
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The spread: every card dealt at run start, face up, until it's taken.
+ *
+ * Any of them is a legal pick for the seat on the clock — the whole point of
+ * dealing up front is that a seat can read the table before committing. Click
+ * to inspect and take, or drag a card straight onto a grid position.
+ */
+function DraftPool({
+  pool,
+  picking,
+  onPickUp,
+  onTake,
+}: {
+  pool: CardId[];
+  picking: boolean;
+  onPickUp: (held: Held) => void;
+  onTake: (cardId: CardId) => void;
+}) {
+  const selectedPartId = useUiStore((s) => s.selectedPartId);
+  const selectPart = useUiStore((s) => s.selectPart);
+  const selected = selectedPartId && pool.includes(selectedPartId) ? selectedPartId : null;
+
+  return (
+    <div className="mb-3.5 flex flex-none flex-col gap-2 border-2 border-border-strong bg-surface-panel p-3 shadow-raised">
+      <div className="flex items-baseline gap-3">
+        <div className="font-display text-[13px] font-bold">ON THE TABLE</div>
+        <div className="font-mono text-[12px] text-putty-700">{pool.length}</div>
+        <div className="text-[14px] text-putty-700">
+          {picking
+            ? 'Take any card — click one to read it, or drag it straight onto the grid.'
+            : 'Waiting on the seat that holds the pick.'}
+        </div>
+        {selected && picking && (
+          <div className="ml-auto">
+            <Button size="sm" onClick={() => onTake(selected)}>
+              Take {getPart(selected)?.name ?? selected}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {pool.map((cardId, i) => (
+          // The tile fills its box, so the strip sets the card size itself.
+          <div key={`${cardId}-${i}`} className="h-[128px] w-[96px] flex-none">
+            <ModuleTile
+              slot={{ partId: cardId }}
+              variant="scrap"
+              selected={cardId === selectedPartId}
+              draggable={picking}
+              onDragStart={(e) => {
+                if (!picking) return;
+                startDrag(e);
+                onPickUp({ kind: 'pool', cardId });
+              }}
+              onClick={() => selectPart(cardId === selectedPartId ? null : cardId)}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -24,10 +24,13 @@ interface GameStore {
   newRun: (seed?: number) => void;
 
   // ---- setup draft ----
-  /** Pull one part off the Parts deck for the seat on the clock. */
-  drawStartingPart: (player?: PlayerId) => void;
-  /** Draw for whoever is on the clock until every seat has spent its draws. */
-  drawAllStartingParts: () => void;
+  /**
+   * Take a face-up card off the table for the seat on the clock, optionally
+   * fitting it straight into a grid position (drag from the pool onto the ship).
+   */
+  draftCard: (cardId: CardId, slot?: SlotIndex) => void;
+  /** Pick for whoever is on the clock until the table is empty. */
+  draftAll: () => void;
   installCockpit: (player: PlayerId, cardId: CardId) => void;
   /** Slot a drafted part; a negative slot takes the first free one. */
   assemblePart: (player: PlayerId, cardId: CardId, slot: SlotIndex) => void;
@@ -81,17 +84,25 @@ export const useGameStore = create<GameStore>((set, get) => {
       });
     },
 
-    drawStartingPart: (player) =>
-      step((s) => game.drawStartingPart(CONTENT, s, get().rng, player)),
+    draftCard: (cardId, slot) =>
+      step((s) => {
+        const who = game.nextDrafter(s);
+        if (!who) return s;
+        const after = game.draftCard(CONTENT, s, cardId, who);
+        // Dropped straight onto a position: take it, then fit it in one move.
+        // A cockpit anchors itself on the way in, so there's nothing left to fit.
+        if (after === s || slot === undefined) return after;
+        return game.assemblePart(CONTENT, after, who, cardId, slot);
+      }),
 
-    drawAllStartingParts: () =>
+    draftAll: () =>
       step((s) => {
         let next = s;
         // One seat, one card, round the table — the same order a table would
-        // do it in, just without a click per card.
+        // pick in, just without a click per card.
         while (game.nextDrafter(next)) {
-          const after = game.drawStartingPart(CONTENT, next, get().rng);
-          if (after === next) break; // deck dry or refused; don't spin
+          const after = game.autoDraft(CONTENT, next);
+          if (after === next) break; // refused; don't spin
           next = after;
         }
         return next;

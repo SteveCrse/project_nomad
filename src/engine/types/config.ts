@@ -16,9 +16,9 @@ export interface GameConfig {
    */
   downCount: number;
   /**
-   * Parts each seat drafts from the Parts deck at the start of a run, drawn
-   * one card at a time and assembled before the mission begins. 0 skips the
-   * draft and rolls the pre-set loadouts out instead.
+   * Parts per seat in the run-start draft pool: the whole spread is dealt off
+   * the Parts deck at once and the seats take turns picking any card in it.
+   * 0 skips the draft and rolls the pre-set loadouts out instead.
    */
   startingPartsDraws: number;
 

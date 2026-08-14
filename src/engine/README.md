@@ -31,17 +31,20 @@ without dragging a renderer along.
 every step is a pure `(state, …) → state` call:
 
 ```
-newRun → drawStartingPart* → assemblePart* → startMission
+newRun → draftCard* → assemblePart* → startMission
        → moveTo ─┬─ combat  → takeDown* → endTurn → enemyStep* → resolveLoot
                  ├─ event   → resolveEvent
                  ├─ loot    → claimReward
                  └─ checkpoint → applyRearrange* → closePrompt
 ```
 
-The run opens in `setup`: each seat draws `config.startingPartsDraws` parts off
-the shared Parts deck one card at a time (`game.nextDrafter` says whose draw it
-is, round the table), fits them, and `startMission` puts the party on the board.
-The first cockpit a seat draws re-anchors its ship, since capacity is the
+The run opens in `setup` with a draft: `config.startingPartsDraws × seats` parts
+come off the shared Parts deck in one deal and sit face up (`game.draftPool`).
+The seats then take turns taking any card on the table (`game.nextDrafter` says
+whose pick it is, round the table; `game.draftCard` takes one), fit what they
+took, and `startMission` puts the party on the board — it can be called at any
+point, and whatever is still face up is shuffled back into the Parts deck.
+The first cockpit a seat takes re-anchors its ship, since capacity is the
 cockpit's — and so are the basic attack, shield and generator — and parts left
 over ride along in the Scrap Deck so a rearrangement point can still spend them. `startingPartsDraws: 0` skips the draft and rolls
 the authored loadouts in `data/ships.ts` out instead.

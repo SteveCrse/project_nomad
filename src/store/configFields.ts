@@ -61,7 +61,7 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
         min: 0,
         max: 12,
         step: 1,
-        hint: 'parts each seat drafts at run start · 0 = pre-set loadouts',
+        hint: 'parts per seat in the run-start draft pool · 0 = pre-set loadouts',
       },
     ],
   },
