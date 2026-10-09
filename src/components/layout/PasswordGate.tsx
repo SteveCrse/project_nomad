@@ -6,12 +6,13 @@ import { Button } from '@/components/ds';
  * site (or scrapes Netlify subdomains) doesn't walk straight in. It is not
  * real security: the check runs in the browser and the bundle is public.
  *
- * Only the SHA-256 of the password ships, set at build time through
- * `VITE_ACCESS_HASH`. A correct entry is remembered as a cookie holding that
- * hash, so a changed password locks everyone out again. With no hash set,
+ * The password comes from the `ACCESS_PASSWORD` env var at build time, and
+ * `vite.config.ts` bakes in only its SHA-256. A correct entry is remembered
+ * as a cookie holding that hash, so a changed password locks everyone out again. With no hash set,
  * dev builds skip the gate and production builds stay locked.
  */
-const HASH = (import.meta.env.VITE_ACCESS_HASH as string | undefined)?.trim().toLowerCase();
+declare const __ACCESS_HASH__: string;
+const HASH = __ACCESS_HASH__;
 const COOKIE = 'nomad_access';
 const MAX_AGE = 60 * 60 * 24 * 365;
 
@@ -45,7 +46,7 @@ export function PasswordGate({ children }: { children: ReactNode }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!HASH) return;
-    const hash = await sha256(value);
+    const hash = await sha256(value.trim());
     if (hash !== HASH) {
       setError(true);
       return;
