@@ -83,7 +83,6 @@ function DiceTray({ staged, state }: { staged: Staged; state: GameState }) {
   const side = rolls[0]?.side;
   const who = side ? whoRolls(staged.state, side) : { name: '—', color: 'var(--n-900)' };
   const card = staged.events.find((e): e is Extract<RunEvent, { kind: 'action-card' }> => e.kind === 'action-card' && e.played);
-  const skipped = staged.events.filter((e): e is Extract<RunEvent, { kind: 'action-card' }> => e.kind === 'action-card' && !e.played);
   const enemy = side?.kind === 'enemy';
 
   return (
@@ -114,15 +113,6 @@ function DiceTray({ staged, state }: { staged: Staged; state: GameState }) {
               </div>
             )}
           </div>
-          {skipped.length > 0 && (
-            <div className="flex flex-col gap-0.5 font-mono text-[11px] text-putty-700">
-              {skipped.map((s) => (
-                <div key={s.id}>
-                  ✕ {getCard(s.cardId)?.name ?? s.cardId} — can’t ({s.reason}) · discarded
-                </div>
-              ))}
-            </div>
-          )}
 
           {rolls.map((roll, i) => (
             <RollRow key={roll.id} roll={roll} thrown={staged.thrown} landed={landed > i} onThrow={throwDice} />

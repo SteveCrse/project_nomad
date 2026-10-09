@@ -22,11 +22,13 @@ export type EnemyPlanner = (
 ) => { action: DownAction } | { reason: string };
 
 /**
- * One enemy down, off the current down's action deck.
+ * One step of an enemy down: the face-up card of the current down's deck.
  *
- * Resolve the face-up card; if the enemy can't carry it out, it goes to the
- * bottom of the deck and the next is revealed, until one resolves. A played
- * card is discarded. Either way the deck ends with a fresh card face up.
+ * If the enemy can carry it out, it resolves, is discarded, and the down is
+ * spent. If it can't, it goes to the bottom of the deck, the next is turned
+ * face up, and the enemy stays on this down — the next step tries that card,
+ * so every card turned is seen at the table. Once each card has been turned
+ * without one resolving, the down is lost.
  * A 1st down sends the enemy back to Down 1; Down 4 without one hands the
  * turn to the seat after the one that failed.
  */
@@ -44,7 +46,6 @@ export function enemyDown(
   let next = battle;
   let deck = next.combat.actionDecks[index];
   let firstDown = false;
-  let spent = false;
 
   const setDeck = (b: Battle, d: typeof deck): Battle =>
     d
@@ -58,16 +59,17 @@ export function enemyDown(
     // Each card can be turned at most once per down; past that the deck has
     // nothing the enemy can do, and the down is lost.
     const size = actionDeckSize(deck);
-    for (let attempt = 0; attempt < size; attempt++) {
-      const card = deck.faceUp ? content.cards[deck.faceUp] : undefined;
-      if (!card || card.kind !== 'action') {
-        deck = cycleActionCard(deck, rng);
-        continue;
-      }
-      const planned = plan(content, next, config, card);
-      const refused = 'reason' in planned ? planned.reason : actionError(content, next, config, side, planned.action);
-      if (refused || 'reason' in planned) {
-        deck = buryActionCard(deck, rng);
+    const turned = (next.combat.turned ?? 0) + 1;
+    const card = deck.faceUp ? content.cards[deck.faceUp] : undefined;
+    const planned = card?.kind === 'action' ? plan(content, next, config, card) : null;
+    const refused = !planned
+      ? 'not an action card'
+      : 'reason' in planned
+        ? planned.reason
+        : actionError(content, next, config, side, planned.action);
+    if (!card || refused || !planned || 'reason' in planned) {
+      deck = buryActionCard(deck, rng);
+      if (card) {
         next = emit(note(next, `Down ${index + 1}: ${card.name} — can’t (${refused}). To the bottom of the deck.`), {
           kind: 'action-card',
           down: index,
@@ -75,20 +77,26 @@ export function enemyDown(
           played: false,
           reason: refused ?? '',
         });
-        continue;
       }
+      next = setDeck(next, deck);
+      // Still cards to try: stay on this down for the next step.
+      if (turned < size) return { ...next, combat: { ...next.combat, turned } };
+      next = note(next, `Down ${index + 1}: nothing in the deck can be carried out — the down is lost.`);
+    } else {
       deck = cycleActionCard(deck, rng);
-      next = emit(note(next, `Down ${index + 1}: ${card.name}.`), { kind: 'action-card', down: index, cardId: card.id, played: true });
+      next = emit(note(setDeck(next, deck), `Down ${index + 1}: ${card.name}.`), {
+        kind: 'action-card',
+        down: index,
+        cardId: card.id,
+        played: true,
+      });
       const resolved = resolveDown(content, next, config, side, planned.action, rng);
       next = resolved.battle;
       firstDown = resolved.result.firstDown;
-      spent = true;
-      break;
     }
-    if (!spent) next = note(next, `Down ${index + 1}: nothing in the deck can be carried out — the down is lost.`);
-    next = setDeck(next, deck);
   }
 
+  next = { ...next, combat: { ...next.combat, turned: 0 } };
   if (next.combat.outcome) return next;
   if (firstDown) {
     next = emit(next, { kind: 'first-down', side, label: `1st down — ${next.combat.enemy.name}` });

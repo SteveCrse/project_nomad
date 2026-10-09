@@ -211,7 +211,7 @@ function play(event: RunEvent, add: Add) {
         tone: 'enemy',
         text: event.played
           ? `DOWN ${event.down + 1} · ${name.toUpperCase()}`
-          : `DOWN ${event.down + 1} · ${name} — can’t (${event.reason}) · discarded`,
+          : `DOWN ${event.down + 1} · ${name} — can’t (${event.reason}) · to the bottom`,
       });
       return;
     }

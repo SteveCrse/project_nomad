@@ -23,8 +23,9 @@ type ModeKind = CombatMode['kind'];
  * for its target on the enemy. A turn never ends by itself: when it's over
  * (a 1st down, the last down) the bar says so and waits for End Turn.
  *
- * On the enemy's turn it steps the enemy through its action decks, one down
- * per click, so every card and every roll can be read.
+ * On the enemy's turn it steps the enemy through its action decks, one card
+ * per click — a card it can't carry out included — so every card and every
+ * roll can be read.
  */
 export function ActionBar({ state, side, controls }: { state: GameState; side: SideRef; controls: CombatControls }) {
   const config = useConfig();
@@ -93,11 +94,13 @@ export function ActionBar({ state, side, controls }: { state: GameState; side: S
   if (enemyTurn) {
     const card = getCard(fight.actionDecks[fight.down]?.faceUp);
     const action = card?.kind === 'action' ? card.action : null;
+    const turned = fight.turned ?? 0;
     return (
       <Shell key={`enemy-${fight.down}`} tone="danger">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="font-display text-[14px] font-bold text-toggle-red-700">
             {name.toUpperCase()}’S TURN · DOWN {fight.down + 1}/{config.downCount}
+            {turned > 0 && ` · CARD ${turned + 1}`}
           </div>
           <div className="text-[14px] leading-tight text-putty-800">
             {action ? (
@@ -111,7 +114,7 @@ export function ActionBar({ state, side, controls }: { state: GameState; side: S
           </div>
         </div>
         <Button className={busy ? '' : 'attention'} variant="danger" disabled={busy} onClick={enemyStep} title="Enter">
-          Play down {fight.down + 1} ▶
+          {turned > 0 ? 'Try next card' : `Play down ${fight.down + 1}`} ▶
         </Button>
       </Shell>
     );

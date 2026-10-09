@@ -94,10 +94,13 @@ also its price in tokens) against `powerRating`.
   destroyed or the downs run out (`turnOver`), and the turn waits there:
   `endPlayerTurn` hands it to the next seat after a 1st down, to the enemy
   otherwise.
-  `combat.enemyDown` plays the face-up card of the current down's deck — the
-  planner in `ai/` turns it into an action, or says why it can't, in which case
-  it goes to the bottom of that deck and the next card is turned — goes back to Down 1 on a 1st down,
-  and after the last down hands the turn to the seat after the one that failed.
+  `combat.enemyDown` is one step: it plays the face-up card of the current down's
+  deck — the planner in `ai/` turns it into an action, or says why it can't, in
+  which case it goes to the bottom of that deck, the next card is turned, and the
+  enemy stays on that down for the next step (`combat.turned` counts them; once
+  every card has been turned the down is lost). A played card spends the down,
+  goes back to Down 1 on a 1st down, and after the last down hands the turn to
+  the seat after the one that failed.
 
 ## Table events
 

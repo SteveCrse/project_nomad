@@ -158,6 +158,12 @@ export interface CombatState {
    * action decks it's on (0 = Down 1).
    */
   down: number;
+  /**
+   * Enemy only: cards it has turned and couldn't carry out on the current
+   * down. Each is one step at the table; once every card has been turned the
+   * down is lost.
+   */
+  turned?: number;
   /** 1st downs earned this turn — the enemy can chain them. */
   firstDowns: number;
   /** Set once a seat's turn can't continue; cleared when the next turn starts. */
