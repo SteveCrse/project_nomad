@@ -10,12 +10,16 @@ import type { PartCard } from '@engine/types';
  * front of a shield and it covers its column, a weapon never sits in front of
  * the cockpit, only generators and cockpits produce ⚡).
  *
- * Printed wording, attack strengths and abilities are carried over from the
- * v2 cards. Max ⚡ was re-sized for the v3 rules — energy is hit chance *and*
- * HP now, not a fuel tank — following the rules' shape rather than a balance
- * pass: common weapons hold a lot of ⚡ and hit softly, rare ones hold little
- * and hit hard. Shields carry the 1st-down icon. Power cost (tokens / upkeep)
- * comes from rarity, since no card prints one yet.
+ * Balanced on the rules' line: 1⚡ spent is worth attack ÷ 6 damage, and the
+ * deck's copy-weighted average attack (cockpits and weapons) is ≈3.5, so 1⚡ ≈
+ * 0.6 damage. A hit's overflow is lost, so ⚔️ past ~6 buys nothing. Draft cost
+ * is the price: 1 token not spent is 1 starting ⚡, so a module must beat
+ * that. Weapons climb in ⚡ efficiency (⚔️ ÷ 6) with rarity — photon .33,
+ * gauss .67, laser .83, torpedo / railgun 1.0 — while commons hold more ⚡
+ * for reliable shots. Generators beat the cockpit's 2⚡ per generate, which
+ * is what pays for the reroute. Shields carry the 1st-down icon and take
+ * 2 (kinetic) to 4 (subspace) average hits to break. Power cost (tokens /
+ * upkeep) comes from rarity, since no card prints one yet.
  *
  * Expected damage = attack × energy ÷ 6 — the deck sheet prints it per card.
  */
@@ -28,7 +32,7 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 1,
     amount: 5,
-    energyCapacity: 5,
+    energyCapacity: 6,
     effects: [{ type: 'damage', params: { power: 2 } }],
   },
   {
@@ -50,7 +54,7 @@ export const PARTS: PartCard[] = [
     rarity: 1,
     amount: 5,
     energyCapacity: 4,
-    effects: [{ type: 'generate', params: { amount: 2 } }],
+    effects: [{ type: 'generate', params: { amount: 3 } }],
   },
   {
     id: 'garbage-cannon',
@@ -64,7 +68,7 @@ export const PARTS: PartCard[] = [
     effects: [
       {
         type: 'manual',
-        text: "Sacrifice 1 module or item to attack an enemy with ⚔️ equal to the card's Power Rating.",
+        text: 'Sacrifice 1 of your other modules: deal a hit with ⚔️ equal to its max ⚡. It always lands.',
       },
     ],
   },
@@ -113,8 +117,8 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 2,
     amount: 2,
-    energyCapacity: 3,
-    effects: [{ type: 'generate', params: { amount: 3 } }],
+    energyCapacity: 4,
+    effects: [{ type: 'generate', params: { amount: 4 } }],
   },
   {
     id: 'fusion-reactor',
@@ -123,7 +127,7 @@ export const PARTS: PartCard[] = [
     role: 'GEN',
     rarity: 2,
     amount: 2,
-    energyCapacity: 6,
+    energyCapacity: 8,
     effects: [{ type: 'generate', params: { amount: 3 } }],
   },
   {
@@ -143,7 +147,7 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 2,
     amount: 2,
-    energyCapacity: 3,
+    energyCapacity: 4,
     effects: [{ type: 'damage', params: { power: 4 } }],
   },
   {
@@ -181,7 +185,7 @@ export const PARTS: PartCard[] = [
     effects: [
       {
         type: 'reminder',
-        text: 'Modules adjacent to this one do not lose ⚡️ when damaged. (placeholder)',
+        text: 'Hits on modules adjacent to this one remove 1⚡ less (never under 1). (placeholder)',
       },
     ],
   },
@@ -210,7 +214,7 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 3,
     amount: 1,
-    energyCapacity: 2,
+    energyCapacity: 3,
     effects: [{ type: 'damage', params: { power: 5 } }],
   },
   {
@@ -222,7 +226,7 @@ export const PARTS: PartCard[] = [
     amount: 1,
     energyCapacity: 2,
     specialization: 'dps',
-    effects: [{ type: 'damage-module', params: { power: 8 } }],
+    effects: [{ type: 'damage-module', params: { power: 6 } }],
   },
   {
     id: 'shock-absorber',
@@ -231,9 +235,9 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 3,
     amount: 1,
-    energyCapacity: 3,
+    energyCapacity: 4,
     firstDown: true,
-    effects: [{ type: 'damage-reduction', params: { amount: 1 } }],
+    effects: [{ type: 'damage-reduction', params: { amount: 2 } }],
   },
   {
     id: 'subspace-field',
@@ -242,7 +246,7 @@ export const PARTS: PartCard[] = [
     role: 'SHD',
     rarity: 3,
     amount: 1,
-    energyCapacity: 6,
+    energyCapacity: 8,
     firstDown: true,
     specialization: 'tank',
     placement: [{ rule: 'not-in-front-of', role: 'SHD' }],
@@ -275,10 +279,10 @@ export const PARTS: PartCard[] = [
     role: 'WPN',
     rarity: 4,
     amount: 1,
-    energyCapacity: 2,
+    energyCapacity: 4,
     // Two effects on one card: the gun, and the infestation that pays for it.
     effects: [
-      { type: 'damage', params: { power: 5 } },
+      { type: 'damage', params: { power: 6 } },
       { type: 'drain', params: { amount: 1 } },
     ],
   },
@@ -293,7 +297,7 @@ export const PARTS: PartCard[] = [
     effects: [
       {
         type: 'reminder',
-        text: 'When your ship is destroyed, take the Escape Pod ship from the deck and make it your new ship base. If used as a cockpit: 2 slots, 1⚡, 1⚔️.',
+        text: 'When your cockpit is destroyed, the Escape Pod becomes your cockpit: max 1⚡, 1⚔️, generates 1⚡, 2 module slots. (placeholder)',
       },
     ],
   },
@@ -308,7 +312,7 @@ export const PARTS: PartCard[] = [
     amount: 1,
     energyCapacity: 20,
     // Sacrificing a card is a table decision.
-    effects: [{ type: 'manual', text: 'Sacrifice 1 module or item to gain 20⚡️.' }],
+    effects: [{ type: 'manual', text: 'Sacrifice 1 of your other modules or an item: put 20⚡ on this module.' }],
   },
   {
     id: 'igrid',

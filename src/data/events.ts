@@ -20,7 +20,7 @@ export const EVENTS: EventCard[] = [
       { type: 'place-marker' },
       {
         type: 'reminder',
-        text: 'Players on this sector must spend 1 additional ⚡️ to leave it.',
+        text: 'Players must spend 1⚡ from any module to leave this sector.',
       },
       { type: 'grant-loot', params: { count: 1 } },
     ],
@@ -37,7 +37,6 @@ export const EVENTS: EventCard[] = [
         type: 'reminder',
         text: 'INVESTIGATE — ⚀ It’s a trap! Draw 1😈 · ⚁⚂ Nothing valuable · ⚃⚄ Draw 1 common loot · ⚅ Draw 1 rare loot. Or LEAVE IT BE.',
       },
-      { type: 'grant-loot', params: { count: 1 } },
     ],
     flavor: 'You happen upon a derelict husk of what used to be a ship.',
   },
@@ -48,7 +47,7 @@ export const EVENTS: EventCard[] = [
     subtype: 'Hazard · Damage',
     rarity: 1,
     amount: 2,
-    effects: [{ type: 'event-damage', params: { amount: 4 } }],
+    effects: [{ type: 'event-damage', params: { amount: 3 } }],
     flavor: 'It grinds through the wreckage.',
   },
   {

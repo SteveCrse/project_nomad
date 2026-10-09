@@ -13,7 +13,9 @@ import type { PartCard } from '@engine/types';
  *   powerRating    — upkeep capacity, under the energy-budget size rule
  *
  * The rules: cockpits have higher base energy and attack than regular
- * modules. Placeholder numbers — not balanced.
+ * modules. The commons trade evenly (Basic: all-round; Smol boi: +1⚔️ for
+ * less ⚡ and fewer slots; Larry: +2⚡ for a slot); rarer ones are strictly
+ * stronger.
  */
 export const COCKPITS: PartCard[] = [
   {
@@ -40,7 +42,7 @@ export const COCKPITS: PartCard[] = [
     amount: 2,
     energyCapacity: 5,
     power: 4,
-    genPerDown: 1,
+    genPerDown: 2,
     slots: 2,
     powerRating: 3,
     effects: [],
@@ -56,8 +58,8 @@ export const COCKPITS: PartCard[] = [
     energyCapacity: 8,
     power: 3,
     genPerDown: 2,
-    slots: 3,
-    powerRating: 4,
+    slots: 2,
+    powerRating: 3,
     effects: [],
     art: 't_67.webp',
   },
@@ -69,7 +71,7 @@ export const COCKPITS: PartCard[] = [
     rarity: 2,
     amount: 2,
     energyCapacity: 7,
-    power: 3,
+    power: 4,
     genPerDown: 2,
     slots: 5,
     powerRating: 6,

@@ -37,7 +37,7 @@ export const ITEMS: ItemCard[] = [
     rarity: 1,
     amount: 4,
     // Placeholder — gives Loot steps something to pay out.
-    effects: [{ type: 'damage', params: { power: 4 } }],
+    effects: [{ type: 'damage', params: { power: 3 } }],
   },
   {
     id: 'patch-kit',
@@ -46,6 +46,6 @@ export const ITEMS: ItemCard[] = [
     role: 'SHD',
     rarity: 1,
     amount: 3,
-    effects: [{ type: 'restore-shield', params: { amount: 6 } }],
+    effects: [{ type: 'restore-shield', params: { amount: 5 } }],
   },
 ];
