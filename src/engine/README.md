@@ -19,13 +19,13 @@ leave a gap, the doc's *Open Questions* section says how the engine fills it.
 | `effects.ts` | The effect catalogue: what a card can be assembled from                |
 | `cards.ts`   | Compiling a card's effects, the text it prints, the balancing helpers  |
 | `content.ts` | The injected card/boss bundle. The engine never imports `src/data`     |
-| `combat/`    | Downs, the attack roll, hits, 1st downs, the enemy's action decks      |
+| `combat/`    | Downs, the attack roll, hits, 1st downs, the enemy's action decks. `index.ts` is a barrel over `sides` (accessors, state writes), `legality`, `strike`, `resolve` (`resolveDown`), `turns`, `enemy` |
 | `deck/`      | Decks, shuffling, drawing, rarity checkpoints, action decks            |
-| `ship/`      | The grid, layout rules, rerouting, size rules, hits, enemy spawning    |
+| `ship/`      | The grid, layout rules, rerouting, size rules, hits, enemy spawning. Barrel over `build`, `layout`, `size`, `damage`, `spawn`, plus `module`, `reroute` |
 | `loot/`      | Ship takeover, boss salvage, the scrap deck, rebuilding                |
 | `board/`     | Mission generation, movement, party splits                             |
 | `ai/`        | What each enemy action card turns into; the draft auto-pick            |
-| `game/`      | Run orchestration: the draft (`draft.ts`) and everything after it      |
+| `game/`      | Run orchestration: the draft (`draft.ts`) and everything after it — `setup`, `nodes`, `flow` (`continueRun`, fights), `rewards`, `salvage` |
 | `rng.ts`     | Seeded RNG so a playtest run is reproducible                           |
 
 ## How a run runs
