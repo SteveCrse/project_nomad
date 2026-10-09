@@ -13,7 +13,7 @@ type KeysOfType<T, V> = { [K in keyof T]-?: T[K] extends V ? K : never }[keyof T
 export type NumericConfigKey = KeysOfType<GameConfig, number>;
 export type BooleanConfigKey = KeysOfType<GameConfig, boolean>;
 /** The string-union knobs — the rules' open questions with named options. */
-export type SelectConfigKey = 'shipSizeRule' | 'downedPlayer';
+export type SelectConfigKey = 'shipSizeRule' | 'downedPlayer' | 'downedAfterWin';
 
 interface FieldBase {
   /** snake_case, matching the design's debug panel. */
@@ -167,6 +167,23 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
           { value: 'out', label: 'OUT', hint: 'sits out the mission, rebuilds at its end' },
           { value: 'revive', label: 'REVIVE', hint: 'a teammate spends a down: cockpit back with 1⚡' },
         ],
+      },
+      {
+        kind: 'select',
+        key: 'downedAfterWin',
+        label: 'downed_after_win',
+        hint: 'what a downed seat gets back once its fight is won',
+        options: [
+          { value: 'stay', label: 'STAY', hint: 'stays down until something revives it (tbd)' },
+          { value: 'revive', label: 'REVIVE', hint: 'back in with 0⚡ on every module' },
+          { value: 'enemy-ship', label: 'ENEMY SHIP', hint: 'takes the beaten enemy’s ship over' },
+        ],
+      },
+      {
+        kind: 'boolean',
+        key: 'reviveLosesDestroyed',
+        label: 'revive_loses_destroyed',
+        hint: 'downed_after_win REVIVE: modules destroyed in the fight are lost',
       },
     ],
     note: 'Hit chance = ⚡ ÷ 6, and ⚡ is HP. Expected damage = attack × ⚡ ÷ 6.',

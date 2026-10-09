@@ -55,12 +55,13 @@ Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
    that touch — as much as you like, from as many modules as you like, each
    token one step, nothing over its max — click a source then a neighbour per
    token, or drag; confirm and it's one down. Destroying a module with the
-   **1st-down icon** ends your turn and hands it to the next seat; running out
+   **1st-down icon**, or a cockpit, ends your turn and hands it to the next seat; running out
    of downs hands it to the enemy. Either way you press *End turn*.
 5. **Enemy turn** — four action decks, one per down, top card face up so you
    can read its next four moves: attack, generate or reroute. *Play down* steps
-   it one down at a time; its rolls come up on the dice too. A card it can't
-   carry out is discarded and the next turned; a 1st down sends it back to
+   it one down at a time; its rolls come up on the dice too. Each deck holds one
+   attack, generate and reroute, shuffled once; every card turned — played
+   or not — goes to the bottom, so a deck just repeats; a 1st down sends it back to
    Down 1. Its attacks go to the **aggressor**, the seat that attacked last.
 6. **Loot** — destroyed modules are gone. After a kill one seat may abandon its
    ship and take the wreck over, keeping one old module in its scrap deck. The

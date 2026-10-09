@@ -13,7 +13,7 @@ import * as combat from '../combat';
 import * as loot from '../loot';
 import { planEnemyAction } from '../ai';
 import { compactShip, modulesOf, spawnBoss, spawnEnemy } from '../ship';
-import { absorbCombat, battleOf, combatMark, livingPlayers, log, playerIn, seatLabel } from './shared';
+import { absorbCombat, battleOf, combatMark, livingPlayers, log, logAll, playerIn, seatLabel, withPlayer } from './shared';
 import { readyForNextMove, markResolved, currentCombatNode, crossCheckpoint } from './nodes';
 import { salvageTurn } from './salvage';
 
@@ -218,6 +218,7 @@ export function enemyStep(content: Content, state: GameState, config: GameConfig
 /**
  * Once a fight has an outcome: destroyed modules are gone — off every ship in
  * the fight and onto the parts discard — and the run moves on to the loot.
+ * A win also settles any seat that went down, by `downedAfterWin`.
  */
 function settleCombat(content: Content, state: GameState, config: GameConfig, rng: Rng): GameState {
   const fight = state.combat;
@@ -225,15 +226,22 @@ function settleCombat(content: Content, state: GameState, config: GameConfig, rn
   if (!fight || !outcome) return state;
 
   const scrapped: CardId[] = [];
+  const revive = outcome === 'victory' && config.downedAfterWin === 'revive';
+  const revived: PlayerId[] = [];
   let next: GameState = {
     ...state,
     party: {
       ...state.party,
       players: state.party.players.map((p) => {
         if (!fight.participants.includes(p.id)) return p;
-        const { ship, removed } = compactShip(p.ship);
+        // A downed seat revived with its wreck whole keeps its destroyed modules.
+        const keepWreck = revive && p.destroyed && !config.reviveLosesDestroyed;
+        const { ship, removed } = keepWreck ? { ship: p.ship, removed: [] } : compactShip(p.ship);
         scrapped.push(...removed);
-        return { ...p, ship };
+        if (!(revive && p.destroyed)) return { ...p, ship };
+        revived.push(p.id);
+        const slots = ship.slots.map((s) => ({ ...s, destroyed: false, energy: 0 }));
+        return { ...p, destroyed: false, ship: { ...ship, slots, destroyed: false } };
       }),
     },
   };
@@ -254,6 +262,31 @@ function settleCombat(content: Content, state: GameState, config: GameConfig, rn
     // A split party can lose one fight and fly on: the enemy keeps its ship.
     next = log(next, `The fight is lost — ${fight.participants.map((id) => seatLabel(next, id)).join(' + ')} down.`, 'system');
     return continueRun(content, { ...next, prompt: null }, config, rng);
+  }
+
+  for (const id of revived) {
+    next = log(next, `${seatLabel(next, id)} is back in the fight — every module on 0⚡.`, 'system');
+  }
+
+  // Downed-after-win `enemy-ship`: the first seat still down takes the wreck
+  // over, and there's nothing left to loot.
+  const downed = fight.participants.find((id) => playerIn(next, id)?.destroyed);
+  const heir = config.downedAfterWin === 'enemy-ship' && !enemy.isBoss ? playerIn(next, downed) : undefined;
+  if (heir) {
+    const taken = loot.resolveLootChoice(content, heir, enemy, { option: 'take-ship', keepFromOldShip: null }, config);
+    next = withPlayer(next, heir.id, () => taken.player);
+    next = {
+      ...next,
+      decks: {
+        ...next.decks,
+        parts: deck.returnToDeck(next.decks.parts, taken.toParts, rng),
+        cockpits: deck.returnToDeck(next.decks.cockpits, taken.toCockpits, rng),
+      },
+      combat: null,
+      prompt: null,
+    };
+    next = logAll(log(next, `${enemy.name} is down.`, 'system'), taken.log, 'loot');
+    return continueRun(content, next, config, rng);
   }
 
   const claimants = fight.participants.filter((id) => !playerIn(next, id)?.destroyed);

@@ -3,7 +3,7 @@ import type { ActionCard } from '../types/card';
 import type { GameConfig } from '../types/config';
 import type { Content } from '../content';
 import type { Rng } from '../rng';
-import { actionDeckSize, buryActionCard, cycleActionCard } from '../deck';
+import { actionDeckSize, cycleActionCard } from '../deck';
 import { logged, emit } from './sides';
 import { actionError } from './legality';
 import { resolveDown } from './resolve';
@@ -24,8 +24,8 @@ export type EnemyPlanner = (
 /**
  * One step of an enemy down: the face-up card of the current down's deck.
  *
- * If the enemy can carry it out, it resolves, is discarded, and the down is
- * spent. If it can't, it goes to the bottom of the deck, the next is turned
+ * If the enemy can carry it out, it resolves, goes to the bottom of the deck,
+ * and the down is spent. If it can't, it goes to the bottom of the deck, the next is turned
  * face up, and the enemy stays on this down — the next step tries that card,
  * so every card turned is seen at the table. Once each card has been turned
  * without one resolving, the down is lost.
@@ -68,7 +68,7 @@ export function enemyDown(
         ? planned.reason
         : actionError(content, next, config, side, planned.action);
     if (!card || refused || !planned || 'reason' in planned) {
-      deck = buryActionCard(deck, rng);
+      deck = cycleActionCard(deck);
       if (card) {
         next = emit(note(next, `Down ${index + 1}: ${card.name} — can’t (${refused}). To the bottom of the deck.`), {
           kind: 'action-card',
@@ -83,7 +83,7 @@ export function enemyDown(
       if (turned < size) return { ...next, combat: { ...next.combat, turned } };
       next = note(next, `Down ${index + 1}: nothing in the deck can be carried out — the down is lost.`);
     } else {
-      deck = cycleActionCard(deck, rng);
+      deck = cycleActionCard(deck);
       next = emit(note(setDeck(next, deck), `Down ${index + 1}: ${card.name}.`), {
         kind: 'action-card',
         down: index,

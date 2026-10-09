@@ -40,7 +40,7 @@ export interface HitReport {
   lost: number;
   /** The module was already at 0 — this hit destroyed it. */
   destroyed: boolean;
-  /** The destroyed module carried the 1st-down icon. */
+  /** The destroyed module carried the 1st-down icon, or was the cockpit. */
   firstDown: boolean;
   negated: boolean;
   notes: string[];
@@ -79,7 +79,8 @@ export function hitSlot(content: Content, ship: Ship, index: SlotIndex, strength
       ...none,
       ship: { ...withSlot(ship, index, { destroyed: true }), destroyed: ship.destroyed || cockpit },
       destroyed: true,
-      firstDown: !!part.firstDown,
+      // Downing a ship is a 1st down too, icon or not.
+      firstDown: !!part.firstDown || cockpit,
     };
   }
 

@@ -126,53 +126,30 @@ export const deckCount = (deck: Deck): number => deck.drawPile.length;
 
 // ------------------------------------------------------------ action decks
 
+const ENEMY_ACTIONS: ActionCard['action'][] = ['attack', 'generate', 'reroute'];
+
 /**
- * The enemy's action decks: one per down, each holding every action card the
- * content defines (copies and all), shuffled, top card face up.
+ * The enemy's action decks: one per down, each holding exactly one card of
+ * every enemy action (attack, generate, reroute) — the first the content
+ * defines for each, whatever copies the editor sets — shuffled once, top card
+ * face up. A deck never reshuffles after that: it just repeats.
  */
 export function buildActionDecks(actions: ActionCard[], downs: number, rng: Rng): ActionDeck[] {
-  const ids = actions.flatMap((card) => Array.from({ length: card.amount }, () => card.id));
-  return Array.from({ length: Math.max(0, downs) }, () =>
-    flipActionCard({ faceUp: null, drawPile: shuffle(ids, rng), discardPile: [] }, rng),
-  );
-}
-
-/** Turn the next card face up if none is, reshuffling the discards when dry. */
-export function flipActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
-  if (deck.faceUp) return deck;
-  let drawPile = deck.drawPile;
-  let discardPile = deck.discardPile;
-  if (drawPile.length === 0) {
-    if (discardPile.length === 0) return deck;
-    drawPile = shuffle(discardPile, rng);
-    discardPile = [];
-  }
-  const [faceUp, ...rest] = drawPile;
-  return { faceUp: faceUp ?? null, drawPile: rest, discardPile };
-}
-
-/** The face-up card is done — resolved or unresolvable. Discard it and reveal the next. */
-export function cycleActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
-  if (!deck.faceUp) return flipActionCard(deck, rng);
-  return flipActionCard(
-    { faceUp: null, drawPile: deck.drawPile, discardPile: [...deck.discardPile, deck.faceUp] },
-    rng,
-  );
+  const ids = ENEMY_ACTIONS.flatMap((kind) => actions.find((c) => c.action === kind)?.id ?? []);
+  return Array.from({ length: Math.max(0, downs) }, () => {
+    const [faceUp = null, ...drawPile] = shuffle(ids, rng);
+    return { faceUp, drawPile, discardPile: [] };
+  });
 }
 
 /**
- * The enemy can't carry out the face-up card: it goes to the bottom of the
- * deck and the next one is turned. The discards are shuffled back in first
- * when the draw pile is dry, so every card gets a turn before this one again.
+ * The face-up card is done — resolved, or the enemy can't carry it out. Either
+ * way it goes to the bottom of the deck and the next one is turned face up.
  */
-export function buryActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
-  if (!deck.faceUp) return flipActionCard(deck, rng);
-  const empty = deck.drawPile.length === 0;
-  const drawPile = empty ? shuffle(deck.discardPile, rng) : deck.drawPile;
-  return flipActionCard(
-    { faceUp: null, drawPile: [...drawPile, deck.faceUp], discardPile: empty ? [] : deck.discardPile },
-    rng,
-  );
+export function cycleActionCard(deck: ActionDeck): ActionDeck {
+  const queue = deck.faceUp ? [...deck.drawPile, deck.faceUp] : deck.drawPile;
+  const [faceUp = null, ...drawPile] = queue;
+  return { faceUp, drawPile, discardPile: [] };
 }
 
 /** Cards in an action deck, wherever they sit. */

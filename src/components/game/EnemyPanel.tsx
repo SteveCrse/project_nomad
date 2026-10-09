@@ -138,7 +138,12 @@ function ActionDecks({ decks, active, down }: { decks: ActionDeck[]; active: boo
                   </div>
                   <div className="truncate text-[10px] text-putty-700">{card?.name ?? ''}</div>
                   <div className="font-mono text-[8px] text-putty-600">
-                    {deck.drawPile.length} LEFT · {deck.discardPile.length} OUT
+                    {deck.drawPile
+                      .map((id) => {
+                        const next = getCard(id);
+                        return next?.kind === 'action' ? ACTION_LABEL[next.action].slice(0, 3).toUpperCase() : '?';
+                      })
+                      .join(' › ')}
                   </div>
                 </motion.div>
               </AnimatePresence>

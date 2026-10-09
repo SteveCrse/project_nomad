@@ -18,6 +18,17 @@ export type ShipSizeRule = 'draft' | 'slots' | 'budget';
 export type DownedRule = 'out' | 'revive';
 
 /**
+ * What happens to a seat that went down once its fight is won.
+ *
+ *   revive     — back in with 0⚡ on every module
+ *   enemy-ship — takes the beaten enemy's ship over (regular fights; a boss
+ *                ends the mission, and everyone rebuilds there anyway)
+ *   stay       — stays down until something revives it (tbd: an event card,
+ *                a special step); the mission-end rebuild still applies
+ */
+export type DownedAfterWinRule = 'revive' | 'enemy-ship' | 'stay';
+
+/**
  * Every tunable knob for a playtest run. This is the contract between the
  * config sidebar (which writes it) and the engine (which reads it) — nothing
  * in the rules that we expect to tune should be a literal in engine code.
@@ -54,6 +65,10 @@ export interface GameConfig {
   enemySizeCapped: boolean;
   /** Open question: what a seat does after its cockpit is destroyed. */
   downedPlayer: DownedRule;
+  /** What a downed seat gets back when its fight is won. */
+  downedAfterWin: DownedAfterWinRule;
+  /** `downedAfterWin: revive` — modules destroyed in the fight are lost, rather than coming back at 0⚡. */
+  reviveLosesDestroyed: boolean;
 
   // ---- loot ----
   /** Scrap deck cap. Rules: 4; some modules raise it. */
@@ -97,6 +112,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   enemyModulesPerPlayer: 1,
   enemySizeCapped: false,
   downedPlayer: 'out',
+  downedAfterWin: 'stay',
+  reviveLosesDestroyed: true,
 
   scrapCap: 4,
   handSize: 3,

@@ -95,8 +95,8 @@ const generatorFirst = (a: Fitted, b: Fitted): number =>
  * The enemy's reroute: charge out of generators — the cockpit only when no
  * generator can spare any — into the weapons they touch, hardest-hitting
  * first, then into the shields they touch. A source keeps 1⚡ when it can —
- * at 0 the next hit destroys it — but when that leaves nothing to move,
- * a generator gives its last ⚡ too. The cockpit always keeps 1.
+ * at 0 the next hit destroys it — but when that leaves nothing to move, it
+ * gives its last ⚡ too, cockpit included.
  * Every leg is checked against the reroute rules as it's added, so the plan is
  * one the engine will play.
  */
@@ -105,7 +105,7 @@ function feedMoves(content: Content, ship: Ship): RerouteMove[] {
   return careful.length > 0 ? careful : planFeed(content, ship, 0);
 }
 
-function planFeed(content: Content, ship: Ship, generatorKeeps: number): RerouteMove[] {
+function planFeed(content: Content, ship: Ship, keep: number): RerouteMove[] {
   const live = liveSlots(content, ship);
   const targets = [
     ...live
@@ -123,7 +123,6 @@ function planFeed(content: Content, ship: Ship, generatorKeeps: number): Reroute
       if (!connected(ship, from.slot.index, to.slot.index)) continue;
       const run = runReroute(content, ship, moves);
       const now = run.ship.slots;
-      const keep = from.part.role === 'COCKPIT' ? 1 : generatorKeeps;
       const spare = Math.min(run.sendable[from.slot.index] ?? 0, (now[from.slot.index]?.energy ?? 0) - keep);
       const room = roomIn(content, now[to.slot.index]);
       const amount = Math.min(spare, room);

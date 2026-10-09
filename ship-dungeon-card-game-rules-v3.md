@@ -37,7 +37,7 @@ cockpit; the same rules apply to players and enemies.
 - Modules have **placement limits** printed on the card, e.g. no shield in front
   of another shield.
 - Some modules are marked with a **1st-down icon** (e.g. shields): destroying one
-  earns a 1st down.
+  earns a 1st down. Destroying a cockpit — downing a ship — earns one too.
 - Cards facilitate specialisation: tank, high DPS, luck, etc.
 
 ## Player Setup (Draft)
@@ -105,7 +105,8 @@ next player, failure hands it to the enemy.
 2. In each down, energy can power only one module.
 3. Actions: attack, generate energy, reroute energy (charging shields is a
    reroute into a shield), use another module, or play a card.
-4. **1st down:** destroy a module with the 1st-down icon (e.g. a shield).
+4. **1st down:** destroy a module with the 1st-down icon (e.g. a shield), or
+   a cockpit.
 5. 1st down reached → the next player takes their turn.
 6. No 1st down within 4 downs → enemy turn.
 7. A player ends their turn themselves; it never just flips over to the next
@@ -137,8 +138,8 @@ same 1st-down rule as the players.
    move it to the bottom of that deck and reveal the next card, until an
    action can be resolved. Afterwards, flip the next card of that deck face up.
 3. Move on to the next down's deck.
-4. **1st down:** if the enemy destroys a 1st-down target, it starts again at
-   Down 1.
+4. **1st down:** if the enemy destroys a 1st-down target (a cockpit counts),
+   it starts again at Down 1.
 5. After Down 4 without a 1st down, it's the next player's turn.
 6. **Targeting:** attacks go to the **aggressor**, the player who attacked last.
    The enemy hits the cockpit, or whatever stands in front of it and must be
@@ -260,8 +261,8 @@ are the questions the next design session should close.
     best attack × energy ÷ 6, spending all it may. Generate: the producer that
     gains the most. Reroute: out of generators (else the cockpit) into every
     weapon they touch, hardest-hitting first, then into the shields they touch,
-    leaving 1 energy behind — unless that leaves nothing to move, then a
-    generator gives its last token too (the cockpit always keeps 1). The enemy never uses module abilities.
+    leaving 1 energy behind — unless that leaves nothing to move, then the
+    source gives its last token too, the cockpit included. The enemy never uses module abilities.
 11. **Items have no energy to roll against,** so an item's attack hits
     automatically.
 
@@ -290,12 +291,19 @@ are the questions the next design session should close.
 18. **Downed players** sit out the rest of the mission and rebuild at its end
     (`downed_player: out`). `revive` lets a teammate spend a down to restore
     the cockpit with 1 energy. Escape pod and rebuild-next-step are not modelled.
+    Once the fight is won, `downed_after_win` settles a downed seat: *stay*
+    (default) — down until something revives it (tbd: an event card, a special
+    step); *revive* — back with 0 energy on every module
+    (`revive_loses_destroyed`: modules destroyed in the fight are lost,
+    otherwise they come back at 0 too); *enemy ship* — the first downed seat
+    takes the wreck over (regular fights only; the boss ends the mission).
 19. **Rising rarity** gates every deck except the enemy action decks.
     `commons_removed` takes that many commons out of the parts deck at each
     checkpoint.
-20. **Enemy action decks** hold one card of each action — attack, generate,
-    reroute. The deck editor sets the copies. A card the enemy plays is
-    discarded; the discards are shuffled back in when a deck runs dry. A saved custom card for a retired
+20. **Enemy action decks** hold exactly one card of each action — attack,
+    generate, reroute — whatever copies the deck editor sets. Each is shuffled
+    once at the start of a fight; every card turned, played or not, goes to
+    the bottom, so the deck just repeats. A saved custom card for a retired
     action (shield becomes reroute; special is dropped) is migrated.
 
 **Layout grid**
