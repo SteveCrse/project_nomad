@@ -28,6 +28,11 @@ export interface Staged {
   /** Everything the step did, the rolls among it. */
   events: RunEvent[];
   rolls: RollEvent[];
+  /**
+   * The seat's down that rolled, while the dice are still in hand — it can be
+   * changed or taken back until they're thrown. Unset for the enemy's downs.
+   */
+  action?: DownAction;
   /** The dice have been thrown — the overlay is showing the result. */
   thrown: boolean;
 }
@@ -83,6 +88,10 @@ interface GameStore {
   endTurn: () => void;
   /** Play the enemy's next down — staged if it rolls. */
   enemyStep: () => void;
+  /** Dice still in hand: take the down again another way (say, a new spend). */
+  restage: (action: DownAction) => void;
+  /** Dice still in hand: take the down back — nothing happened. */
+  cancelStaged: () => void;
   /** The overlay threw the dice: show the result. */
   throwDice: () => void;
   /** The table has read the roll: fly the shot, then land the step. */
@@ -108,7 +117,7 @@ export const useGameStore = create<GameStore>((set, get) => {
   const busy = () => !!get().staged || !!get().flight;
 
   /** Apply an engine step that can refuse with a reason; stage it if it rolled. */
-  const attempt = (fn: (state: GameState) => { state: GameState; error?: string }): boolean => {
+  const attempt = (fn: (state: GameState) => { state: GameState; error?: string }, action?: DownAction): boolean => {
     const current = get().state;
     if (!current || busy()) return false;
     const result = fn(current);
@@ -118,7 +127,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
     const events = newEvents(current, result.state);
     const rolls = events.filter((e): e is RollEvent => e.kind === 'roll');
-    if (rolls.length > 0) set({ staged: { state: result.state, events, rolls, thrown: false }, error: null });
+    if (rolls.length > 0) set({ staged: { state: result.state, events, rolls, action, thrown: false }, error: null });
     else set({ state: result.state, error: null });
     return true;
   };
@@ -190,11 +199,25 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     moveTo: (player, nodeId) => step((s) => game.moveTo(CONTENT, s, config(), get().rng, player, nodeId)),
 
-    takeDown: (action) => attempt((s) => game.takeDown(CONTENT, s, config(), get().rng, action)),
+    takeDown: (action) => attempt((s) => game.takeDown(CONTENT, s, config(), get().rng, action), action),
 
     endTurn: () => step((s) => game.endTurn(CONTENT, s)),
 
     enemyStep: () => step((s) => game.enemyStep(CONTENT, s, config(), get().rng)),
+
+    // The staged step never touched `state`, so taking it back is just
+    // dropping it. The dice it rolled were never shown.
+    restage: (action) => {
+      const staged = get().staged;
+      if (!staged?.action || staged.thrown) return;
+      set({ staged: null });
+      if (!get().takeDown(action)) set({ staged });
+    },
+
+    cancelStaged: () => {
+      const staged = get().staged;
+      if (staged?.action && !staged.thrown) set({ staged: null, error: null });
+    },
 
     throwDice: () => {
       const staged = get().staged;

@@ -87,14 +87,16 @@ also its price in tokens) against `powerRating`.
   token one step at most, no module ever over its max, the whole list one down
   (into a shield, it's *charging* it); `use-module` fires a module's other
   abilities; `play-card` plays an item, whose attacks land without a roll.
-  `attackSpendsEnergy` makes an attack use up the energy it rolled against.
+  An `attack` spends the ⚡ the seat picks (`spend`, within `spendRange`: the
+  module's `minSpend`/`maxSpend`) and rolls d6 ≤ the spend; it's gone either
+  way. A cockpit may generate at 0⚡.
 - **1st downs.** `combat.playerDown` ends the turn when a 1st-down module is
   destroyed or the downs run out (`turnOver`), and the turn waits there:
   `endPlayerTurn` hands it to the next seat after a 1st down, to the enemy
   otherwise.
   `combat.enemyDown` plays the face-up card of the current down's deck — the
   planner in `ai/` turns it into an action, or says why it can't, in which case
-  it's discarded and the next card turned — goes back to Down 1 on a 1st down,
+  it goes to the bottom of that deck and the next card is turned — goes back to Down 1 on a 1st down,
   and after the last down hands the turn to the seat after the one that failed.
 
 ## Table events

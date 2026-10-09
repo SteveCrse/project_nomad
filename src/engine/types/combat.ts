@@ -35,8 +35,11 @@ export interface RerouteMove {
  * the one enemy to aim at. `targetSlot` is the module on the far side.
  */
 export type DownAction =
-  /** Fire a module with an attack — the cockpit included. Rolls d6 ≤ its ⚡. */
-  | { type: 'attack'; slot: SlotIndex; targetSlot?: SlotIndex; target?: PlayerId }
+  /**
+   * Fire a module with an attack — the cockpit included. Spends `spend`⚡ off
+   * it (blank: the most it may) and rolls d6 ≤ the spend.
+   */
+  | { type: 'attack'; slot: SlotIndex; spend?: number; targetSlot?: SlotIndex; target?: PlayerId }
   /** Run a producer: its output lands on the producer itself. */
   | { type: 'generate'; slot: SlotIndex }
   /** Move ⚡ between connected modules. Into a shield, this is charging it. */

@@ -134,12 +134,6 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
         hint: '⚡ an enemy module, a loadout or a refit starts with · rules: 1',
       },
       {
-        kind: 'boolean',
-        key: 'attackSpendsEnergy',
-        label: 'attack_spends_energy',
-        hint: 'open question — on: an attack uses up the ⚡ it rolled against',
-      },
-      {
         kind: 'number',
         key: 'enemyModulesPerDepth',
         label: 'enemy_per_depth',

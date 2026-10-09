@@ -19,9 +19,11 @@ export const TABS: { id: TabId; label: string }[] = [
  * a module first and, if it aims, a target on the enemy after.
  */
 export type CombatMode =
-  | { kind: 'attack'; slot: SlotIndex | null }
+  /** `spend`: the ⚡ the shot spends — blank, the most the module may. */
+  | { kind: 'attack'; slot: SlotIndex | null; spend?: number }
   | { kind: 'generate' }
-  | { kind: 'reroute'; from: SlotIndex | null; moves: RerouteMove[] }
+  /** `amount`: ⚡ each click or drop moves — blank, as much as fits. */
+  | { kind: 'reroute'; from: SlotIndex | null; moves: RerouteMove[]; amount?: number }
   | { kind: 'use'; slot: SlotIndex | null }
   | { kind: 'item'; cardId: CardId | null };
 
@@ -75,8 +77,11 @@ interface UiStore {
   setCombatMode: (mode: CombatMode | null) => void;
   /** Reroute: pick (or let go of) the module ⚡ comes out of. */
   pickRerouteSource: (slot: SlotIndex | null) => void;
-  /** Reroute: one more token along a leg. */
+  /** Reroute: how much ⚡ the next click or drop moves. */
+  setRerouteAmount: (amount: number) => void;
+  /** Reroute: more ⚡ along a leg. */
   addRerouteLeg: (move: RerouteMove) => void;
+  /** Reroute: take back the last leg. */
   undoRerouteLeg: () => void;
   toggleLog: () => void;
 }
@@ -119,7 +124,9 @@ export const useUiStore = create<UiStore>((set) => ({
   setAutoFollow: (autoFollow) => set({ autoFollow }),
   setCombatMode: (combatMode) => set({ combatMode }),
   pickRerouteSource: (from) =>
-    set((s) => (s.combatMode?.kind === 'reroute' ? { combatMode: { ...s.combatMode, from } } : s)),
+    set((s) => (s.combatMode?.kind === 'reroute' ? { combatMode: { ...s.combatMode, from, amount: undefined } } : s)),
+  setRerouteAmount: (amount) =>
+    set((s) => (s.combatMode?.kind === 'reroute' ? { combatMode: { ...s.combatMode, amount } } : s)),
   addRerouteLeg: (move) =>
     set((s) =>
       s.combatMode?.kind === 'reroute'
@@ -129,10 +136,7 @@ export const useUiStore = create<UiStore>((set) => ({
   undoRerouteLeg: () =>
     set((s) => {
       if (s.combatMode?.kind !== 'reroute') return s;
-      const moves = s.combatMode.moves.slice();
-      const last = moves.pop();
-      if (last && last.amount > 1) moves.push({ ...last, amount: last.amount - 1 });
-      return { combatMode: { ...s.combatMode, moves } };
+      return { combatMode: { ...s.combatMode, moves: s.combatMode.moves.slice(0, -1) } };
     }),
   toggleLog: () => set((s) => ({ logOpen: !s.logOpen })),
 }));

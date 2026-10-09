@@ -12,3 +12,4 @@ export { Tabs } from './Tabs';
 export { StatGauge } from './StatGauge';
 export { DownsTracker } from './DownsTracker';
 export { Toggle } from './Toggle';
+export { Stepper } from './Stepper';

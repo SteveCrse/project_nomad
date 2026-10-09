@@ -59,6 +59,8 @@ export {
   powerCostOf,
   printedLines,
   printedText,
+  spendLine,
+  spendRange,
   timingOf,
 } from './cards';
 export type { PrintedLine, PrintedTiming } from './cards';

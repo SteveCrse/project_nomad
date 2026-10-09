@@ -75,7 +75,8 @@ export const abilityEffects = (card: Card): CardEffect[] =>
  * effects, so one roll decides one hit however the card is assembled.
  */
 export function attackOf(card: Card): number {
-  if (card.kind === 'part' && card.role === 'COCKPIT') return card.power ?? 0;
+  // A cockpit can always fire, whatever its card prints.
+  if (card.kind === 'part' && card.role === 'COCKPIT') return Math.max(1, card.power ?? 0);
   if (card.kind === 'event' || card.kind === 'action') return 0;
   return effectsOf(card)
     .filter((e) => isDamageEffect(e.type))
@@ -85,7 +86,8 @@ export function attackOf(card: Card): number {
 /** What one generate action adds: a cockpit prints it, a generator's effect carries it. */
 export function outputOf(card: Card): number {
   if (card.kind !== 'part') return 0;
-  if (card.role === 'COCKPIT') return card.genPerDown ?? 0;
+  // A cockpit can always generate, whatever its card prints.
+  if (card.role === 'COCKPIT') return Math.max(1, card.genPerDown ?? 0);
   const generate = effectsOf(card).find((e) => e.type === 'generate');
   return generate ? effectParam(generate, 'amount') : 0;
 }
@@ -115,15 +117,39 @@ export const makeEffect = (type: EffectType): CardEffect => ({
 
 // --------------------------------------------------------------------- cost
 
-/** ⚡ one firing of a single effect draws from the module's own pool. */
+/**
+ * ⚡ one firing of a single effect draws from the module's own pool. Attacks
+ * never charge one: the seat picks a shot's spend (see `spendRange`).
+ */
 export function effectCost(effect: CardEffect): number {
-  if (!isActiveEffect(effect.type)) return 0;
+  if (!isActiveEffect(effect.type) || isDamageEffect(effect.type)) return 0;
   return Math.max(0, effect.cost ?? 0);
 }
 
 /** ⚡ a set of effects draws, fired together off one down. */
 export const costOf = (effects: CardEffect[]): number =>
   effects.reduce((sum, e) => sum + effectCost(e), 0);
+
+/**
+ * What one shot may spend off a module holding `energy`: at least its
+ * `minSpend` (1), at most its `maxSpend` and what it holds. `max < min` means
+ * it can't fire.
+ */
+export function spendRange(part: PartCard, energy: number): { min: number; max: number } {
+  const min = Math.max(1, part.minSpend ?? 1);
+  const max = Math.min(Math.max(0, energy), part.maxSpend ?? Infinity);
+  return { min, max };
+}
+
+/** The printed spend limits, or '' when the module has none. */
+export function spendLine(part: PartCard): string {
+  const min = part.minSpend && part.minSpend > 1 ? part.minSpend : null;
+  const max = part.maxSpend ?? null;
+  if (min && max) return min === max ? `Spend exactly ${min}⚡ per shot.` : `Spend ${min}–${max}⚡ per shot.`;
+  if (min) return `Spend at least ${min}⚡ per shot.`;
+  if (max) return `Spend at most ${max}⚡ per shot.`;
+  return '';
+}
 
 /** The dice one effect rolls on top of the attack roll. */
 export const diceOf = (card: Card): DiceSpec[] =>
@@ -304,10 +330,10 @@ export const ACTION_LABEL: Record<EnemyActionType, string> = {
  */
 export const ACTION_TEXT: Record<EnemyActionType, string> = {
   attack:
-    'Attack the aggressor with the module most likely to hurt (⚔️ × ⚡ ÷ 6). It hits the shield in front of the cockpit, else the cockpit.',
+    'Attack the aggressor with the module most likely to hurt (⚔️ × ⚡ ÷ 6), spending all the ⚡ it may. It hits the shield in front of the cockpit, else the cockpit.',
   generate: 'Generate on the producer that gains the most ⚡.',
   reroute:
-    'Move ⚡ out of generators — else the cockpit — into the weapons they touch, hardest-hitting first, then into the shields they touch, leaving 1⚡ behind.',
+    'Move ⚡ out of generators — else the cockpit — into the weapons they touch, hardest-hitting first, then into the shields they touch, leaving 1⚡ behind when it can.',
 };
 
 /**
@@ -318,8 +344,8 @@ export const ACTION_TEXT: Record<EnemyActionType, string> = {
  */
 function cockpitLines(card: PartCard): PrintedLine[] {
   const lines: PrintedLine[] = [];
-  const power = card.power ?? 0;
-  const gen = card.genPerDown ?? 0;
+  const power = attackOf(card);
+  const gen = outputOf(card);
   if (power > 0) lines.push({ timing: 'active', text: `Attack for ${power}⚔️.` });
   if (gen > 0) lines.push({ timing: 'active', text: `Generate ${gen}⚡ on this cockpit.` });
   return lines;
@@ -343,6 +369,8 @@ export function printedLines(card: Card): PrintedLine[] {
     if (text) lines.push({ timing: card.kind === 'event' ? 'event' : timingOf(effect), text });
   }
   if (card.kind === 'part') {
+    const spend = attackOf(card) > 0 ? spendLine(card) : '';
+    if (spend) lines.push({ timing: 'active', text: spend });
     for (const rule of card.placement ?? []) {
       lines.push({ timing: 'layout', text: placementLine(rule, card.role) });
     }
@@ -392,10 +420,13 @@ export function cardWarnings(card: Card): string[] {
     if (max < 1) out.push('holds no ⚡ — every module starts with 1, and 0 is offline');
     const cost = costOf(activeEffects(card));
     if (cost > max) out.push(`an ability costs ${cost}⚡ out of a ${max}⚡ max — it can never fire`);
+    if ((card.minSpend ?? 1) > (card.maxSpend ?? max)) {
+      out.push(`a shot must spend ${card.minSpend}⚡ but may spend only ${Math.min(card.maxSpend ?? max, max)}⚡ — it can never fire`);
+    }
     if (card.role === 'COCKPIT') {
       if (!card.slots) out.push('cockpit with no slots — nothing fits under the slot rule');
       if (!card.powerRating) out.push('cockpit with no power rating — nothing fits under a budget');
-      if (!card.power) out.push('cockpit with no attack');
+      if (!card.power) out.push('cockpit with no attack — it fires for 1⚔️');
     } else {
       if (hasEffect(card, 'generate') && card.role !== 'GEN') {
         out.push('generates ⚡ but isn’t a generator — the rules only let cockpits and generators produce');
@@ -460,6 +491,11 @@ function migrateEffects(effects: CardEffect[]): CardEffect[] {
     // Bought dice went with per-die costs: the attack roll reads energy now.
     const dice = effect.dice as (Omit<DiceSpec, 'count'> & { count: number | string }) | undefined;
     if (dice && typeof dice.count !== 'number') effect = { ...effect, dice: { ...dice, count: 1 } };
+    // An attack costs no fixed ⚡ any more: the seat picks the spend.
+    if (isDamageEffect(effect.type) && effect.cost !== undefined) {
+      const { cost: _cost, ...rest } = effect;
+      effect = rest;
+    }
     out.push(effect);
   }
   return out;

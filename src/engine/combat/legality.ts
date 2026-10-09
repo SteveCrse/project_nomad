@@ -4,7 +4,7 @@ import type { GameConfig } from '../types/config';
 import type { PlayerId, SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
-import { abilityEffects, activeEffects, attackOf, costOf } from '../cards';
+import { abilityEffects, activeEffects, attackOf, costOf, spendRange } from '../cards';
 import { isDamageEffect } from '../effects';
 import { canTarget, defaultTargetSlot, isOnline, isProducer, rerouteError, roomIn } from '../ship';
 import { sameSide, playerOf, shipOf, opposingShip } from './sides';
@@ -67,8 +67,11 @@ export function actionError(
       if (!module) return 'empty slot';
       if (attackOf(module.part) <= 0) return `${module.part.name} has no attack`;
       if (module.error) return module.error;
-      const cost = costOf(damageEffects(module.part));
-      if (cost > ship.slots[action.slot]!.energy) return `needs ${cost}⚡ to fire`;
+      const { min, max } = spendRange(module.part, ship.slots[action.slot]!.energy);
+      if (max < min) return `needs ${min}⚡ to fire`;
+      const spend = action.spend ?? max;
+      if (!Number.isInteger(spend) || spend < min) return `spend at least ${min}⚡`;
+      if (spend > max) return `can spend at most ${max}⚡`;
       return aimError(action.targetSlot, !!module.part.targetsModule, action.target);
     }
 
@@ -76,7 +79,9 @@ export function actionError(
       const module = own(action.slot);
       if (!module) return 'empty slot';
       if (!isProducer(module.part)) return `${module.part.name} doesn’t generate`;
-      if (module.error) return module.error;
+      // A cockpit can always generate — even with no ⚡ on it.
+      const offlineCockpit = module.part.role === 'COCKPIT' && !ship.slots[action.slot]!.destroyed;
+      if (module.error && !offlineCockpit) return module.error;
       if (roomIn(content, ship.slots[action.slot]) <= 0) return `${module.part.name} is full`;
       return null;
     }

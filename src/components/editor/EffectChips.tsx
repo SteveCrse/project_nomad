@@ -1,5 +1,5 @@
 import type { Card, CardEffect, EffectTiming } from '@engine/types';
-import { EFFECTS, effectParam } from '@engine';
+import { EFFECTS, effectCost, effectParam } from '@engine';
 
 /**
  * An effect at a glance: what it is, the numbers that make it that card, and
@@ -9,7 +9,7 @@ export function effectSummary(effect: CardEffect): string {
   const def = EFFECTS[effect.type];
   if (!def) return effect.type;
   const parts = def.params.map((p) => `${effectParam(effect, p.key)}${p.symbol ?? ''}`);
-  if (effect.cost) parts.unshift(`${effect.cost}⚡`);
+  if (effectCost(effect)) parts.unshift(`${effectCost(effect)}⚡`);
   if (effect.dice) {
     parts.push(`${effect.dice.count}${effect.dice.die}`);
   }

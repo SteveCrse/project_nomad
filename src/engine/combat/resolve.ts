@@ -4,7 +4,7 @@ import type { SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
 import type { Rng } from '../rng';
-import { HIT_DIE, abilityEffects, activeEffects, attackOf, costOf, effectParam, outputOf } from '../cards';
+import { HIT_DIE, abilityEffects, activeEffects, attackOf, costOf, effectParam, outputOf, spendRange } from '../cards';
 import { chargeSlot, cockpitIndex, defaultTargetSlot, hasFreeReroute, restoreCockpit, rollDice, runReroute, setEnergy } from '../ship';
 import { playerSide, enemySide, playerOf, shipOf, sideName, opposingShip, logged, emit, withShip, withPlayer, emitDice } from './sides';
 import { damageEffects, actionError } from './legality';
@@ -43,22 +43,19 @@ export function resolveDown(
       break;
 
     /**
-     * The attack roll. A d6 against the energy on the module firing: at or
-     * under it hits. 1⚡ lands 1 time in 6, 3⚡ half the time, 6⚡ always.
+     * The attack roll. The seat spends ⚡ off the module firing and rolls a
+     * d6 against the spend: at or under it hits. 1⚡ lands 1 time in 6, 3⚡
+     * half the time, 6⚡ always. What's spent is gone, hit or miss.
      */
     case 'attack': {
       const slot = ship.slots[action.slot]!;
       const part = partOf(content, slot.partId)!;
       const effects = damageEffects(part);
-      const cost = costOf(effects);
-      let shooter = cost > 0 ? setEnergy(ship, action.slot, slot.energy - cost) : ship;
-      const placed = shooter.slots[action.slot]!.energy;
+      const placed = action.spend ?? spendRange(part, slot.energy).max;
       const roll = rng.roll('d6');
       const hits = roll <= placed;
-      if (config.attackSpendsEnergy) shooter = setEnergy(shooter, action.slot, 0);
-      next = withShip(next, side, shooter);
-      const spentNow = slot.energy - shooter.slots[action.slot]!.energy;
-      if (spentNow > 0) next = emit(next, { kind: 'drain', target: at(action.slot), amount: spentNow });
+      next = withShip(next, side, setEnergy(ship, action.slot, slot.energy - placed));
+      next = emit(next, { kind: 'drain', target: at(action.slot), amount: placed });
       attacked = true;
 
       const far = opposingShip(next, side, action.target)!;
@@ -68,7 +65,7 @@ export function resolveDown(
         : defaultTargetSlot(content, far.ship));
       const aimed = moduleName(content, far.ship, aim);
       const odds = `${Math.min(placed, HIT_DIE)}/${HIT_DIE}`;
-      const spent = config.attackSpendsEnergy && placed > 0 ? ` · ${placed}⚡ spent` : '';
+      const spent = ` · ${placed}⚡ spent`;
       next = emit(next, {
         kind: 'roll',
         side,

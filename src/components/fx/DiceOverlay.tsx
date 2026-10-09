@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { DieKind, GameState, RunEvent, SideRef } from '@engine/types';
-import { DIE_SIDES, HIT_DIE, combat } from '@engine';
-import { getCard } from '@data';
-import { Button } from '@/components/ds';
+import { DIE_SIDES, HIT_DIE, combat, spendRange } from '@engine';
+import { getCard, getPart } from '@data';
+import { Button, Stepper } from '@/components/ds';
 import { useGameStore, type RollEvent, type Staged } from '@/store/gameStore';
+import { useUiStore } from '@/store/uiStore';
 
 /** How long the dice tumble before the first one lands, in ms. */
 const TUMBLE_MS = 700;
@@ -18,23 +19,46 @@ const STAGGER_MS = 380;
  * the game store) and shown here first. The table reads what's being rolled
  * for and what it needs, clicks to throw, watches the dice land, reads the
  * result — "Rolled a 3 — HIT!" — and only then lets it happen.
+ *
+ * Until the dice are thrown a seat's own down is still in hand: an attack's
+ * spend can be changed, and the down taken back (Cancel, Esc, or a click
+ * beside the tray) to do something else.
  */
 export function DiceOverlay() {
   const staged = useGameStore((s) => s.staged);
   const state = useGameStore((s) => s.state);
   return (
     <AnimatePresence>
-      {staged && state && <DiceTray key={staged.rolls[0]?.id ?? 0} staged={staged} />}
+      {staged && state && <DiceTray key={staged.rolls[0]?.id ?? 0} staged={staged} state={state} />}
     </AnimatePresence>
   );
 }
 
-function DiceTray({ staged }: { staged: Staged }) {
+function DiceTray({ staged, state }: { staged: Staged; state: GameState }) {
   const throwDice = useGameStore((s) => s.throwDice);
   const commit = useGameStore((s) => s.commitStaged);
+  const restage = useGameStore((s) => s.restage);
+  const cancelStaged = useGameStore((s) => s.cancelStaged);
+  const setMode = useUiStore((s) => s.setCombatMode);
   const [landed, setLanded] = useState(0);
   const rolls = staged.rolls;
   const done = staged.thrown && landed >= rolls.length;
+  const action = staged.thrown ? undefined : staged.action;
+
+  // An attack's spend, while the dice are still in hand.
+  const attack = action?.type === 'attack' ? action : null;
+  const seat = state.combat?.turn.kind === 'player' ? state.party.players.find((p) => p.id === state.combat!.turn.id) : null;
+  const gunSlot = attack ? seat?.ship.slots[attack.slot] : undefined;
+  const gun = getPart(gunSlot?.partId);
+  const range = gun && gunSlot ? spendRange(gun, gunSlot.energy) : null;
+  const spend = attack && range ? (attack.spend ?? range.max) : null;
+
+  /** Take the down back; an attack goes back to its module, picked, to aim again or drop. */
+  const cancel = () => {
+    if (!action) return;
+    cancelStaged();
+    setMode(action.type === 'attack' ? { kind: 'attack', slot: action.slot, spend: action.spend } : null);
+  };
 
   // Land the dice one after another once they're thrown.
   useEffect(() => {
@@ -46,6 +70,7 @@ function DiceTray({ staged }: { staged: Staged }) {
   // Enter or Space: throw, then carry on.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return cancel();
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       if (!staged.thrown) throwDice();
@@ -53,7 +78,7 @@ function DiceTray({ staged }: { staged: Staged }) {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [staged.thrown, done, throwDice, commit]);
+  });
 
   const side = rolls[0]?.side;
   const who = side ? whoRolls(staged.state, side) : { name: '—', color: 'var(--n-900)' };
@@ -67,6 +92,7 @@ function DiceTray({ staged }: { staged: Staged }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.18 } }}
+      onClick={(e) => e.target === e.currentTarget && cancel()}
     >
       <motion.div
         className="w-full max-w-[560px] border-2 bg-surface-panel shadow-panel"
@@ -102,7 +128,27 @@ function DiceTray({ staged }: { staged: Staged }) {
             <RollRow key={roll.id} roll={roll} thrown={staged.thrown} landed={landed > i} onThrow={throwDice} />
           ))}
 
+          {attack && range && spend !== null && range.max > range.min && (
+            <div className="flex items-center gap-2">
+              <Stepper
+                label="SPEND ⚡"
+                value={spend}
+                onChange={(n) => restage({ ...attack, spend: n })}
+                min={range.min}
+                max={range.max}
+              />
+              <span className="text-[12px] text-putty-700">
+                of {gunSlot?.energy}⚡ on {gun?.name} — what you spend is gone, hit or miss
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-3 pt-1">
+            {action && (
+              <Button variant="ghost" onClick={cancel} title="Esc — take the down back">
+                Cancel
+              </Button>
+            )}
             <span className="font-mono text-[10px] tracking-[0.12em] text-putty-600">ENTER / SPACE</span>
             {!staged.thrown ? (
               <Button className="attention" onClick={throwDice}>

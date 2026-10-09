@@ -26,6 +26,8 @@ cockpit; the same rules apply to players and enemies.
   the cockpit, the back everything below it; the cockpit's own row is its
   sides. For enemies it's flipped: their front faces the players.
 - Cockpits have higher base energy and attack than regular modules.
+- A cockpit can always attack and generate, so a player is never left without
+  an action. A cockpit with no energy on it can still generate.
 - **Weapons** may not be placed in front of the cockpit — only to its sides or
   rear.
 - **Shields** may be placed in front of the cockpit, or in front of weapons or
@@ -74,8 +76,12 @@ Energy is both a module's **hit chance** and its **HP**.
 - Common weapons hold a lot of energy but deal low damage; rare weapons hold
   little energy but deal high damage.
 - Unused energy carries over between rounds.
-- **Attack roll:** roll a d6; the attack hits if the roll is ≤ the energy
-  placed. 1 energy hits 1 in 6, 3 hits half the time, 6 always hits.
+- **Attack roll:** the attacker chooses how many energy tokens to spend from
+  the attacking module, then rolls a d6; the attack hits if the roll is ≤ the
+  tokens spent. 1 energy hits 1 in 6, 3 hits half the time, 6 always hits. The
+  spent tokens are removed from the module, hit or miss.
+- A module may print a minimum and/or maximum spend per attack. Attacks have no
+  other energy cost.
 - **Taking hits:** each hit removes at least 1 energy from the target module,
   depending on the attack strength. At 0 energy, one more hit destroys it.
 
@@ -126,8 +132,8 @@ same 1st-down rule as the players.
    the enemy's next 4 actions.
 2. **Resolving a down:** resolve the face-up card of the current down's deck. If
    the enemy can't carry out the action (e.g. no energy to attack or reroute),
-   discard it and reveal the next card until an action can be resolved.
-   Afterwards, flip the next card of that deck face up.
+   move it to the bottom of that deck and reveal the next card, until an
+   action can be resolved. Afterwards, flip the next card of that deck face up.
 3. Move on to the next down's deck.
 4. **1st down:** if the enemy destroys a 1st-down target, it starts again at
    Down 1.
@@ -208,10 +214,9 @@ are the questions the next design session should close.
 
 **Energy**
 
-1. **Does firing spend energy?** The doc gives an attack no cost, so the tool
-   charges none: a weapon's energy is its hit chance every time it fires, and it
-   only goes down when the module is hit. `attack_spends_energy` reads "the
-   energy placed" literally instead — the attack uses up all of it.
+1. **How much does an attack spend?** Whatever the seat picks: at least the
+   module's minimum (1 if it prints none), at most its maximum and what it
+   holds. A module that can't meet its minimum can't fire.
 2. **How is a reroute played?** As a list of moves, each from a module into
    one it touches, played in order — every move is checked against the two
    caveats as it's played, so order matters: a full module can pass its own
@@ -222,7 +227,8 @@ are the questions the next design session should close.
 3. **What does a hit remove?** Energy equal to its attack strength, never less
    than 1. A hit never spills into the module behind.
 4. **What does 0 energy mean?** Offline, for every module: it can't attack,
-   generate or be used, the cockpit and generators included. It still blocks
+   generate or be used — except that a cockpit can still generate.
+   A cockpit whose card prints no attack or output fires and generates for 1. It still blocks
    (a shield) and can still be recharged by a reroute. One more hit destroys it.
 5. **Starting energy outside the draft.** The draft decides a player's
    starting energy; everything else that comes into play — every enemy module,
@@ -247,10 +253,11 @@ are the questions the next design session should close.
 9. **Aggressor before anyone has attacked:** the seat whose turn handed the
    enemy its turn. Misses count as attacking.
 10. **Enemy choices the action card doesn't make.** Attack: the module with the
-    best attack × energy ÷ 6. Generate: the producer that gains the most.
-    Reroute: out of generators (else the cockpit) into every weapon they touch,
-    hardest-hitting first, then into the shields they touch, always leaving 1
-    energy behind. The enemy never uses module abilities.
+    best attack × energy ÷ 6, spending all it may. Generate: the producer that
+    gains the most. Reroute: out of generators (else the cockpit) into every
+    weapon they touch, hardest-hitting first, then into the shields they touch,
+    leaving 1 energy behind — unless that leaves nothing to move, then a
+    generator gives its last token too (the cockpit always keeps 1). The enemy never uses module abilities.
 11. **Items have no energy to roll against,** so an item's attack hits
     automatically.
 
@@ -283,7 +290,8 @@ are the questions the next design session should close.
     `commons_removed` takes that many commons out of the parts deck at each
     checkpoint.
 20. **Enemy action decks** hold one card of each action — attack, generate,
-    reroute. The deck editor sets the copies. A saved custom card for a retired
+    reroute. The deck editor sets the copies. A card the enemy plays is
+    discarded; the discards are shuffled back in when a deck runs dry. A saved custom card for a retired
     action (shield becomes reroute; special is dropped) is migrated.
 
 **Layout grid**

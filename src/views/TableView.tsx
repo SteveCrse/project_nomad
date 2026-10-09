@@ -91,12 +91,12 @@ function CombatSurface({ state }: { state: GameState }) {
       if (takeDown(action)) setMode(null);
     },
     pickSource,
-    addLeg: (from, to) => addRerouteLeg({ from, to, amount: 1 }),
+    addLeg: (from, to, amount) => addRerouteLeg({ from, to, amount }),
   });
 
   const participants = state.party.players.filter((p) => fight.participants.includes(p.id));
   const onTarget = (slot: number) => {
-    const action = targetAction(mode, manualDamage, slot);
+    const action = targetAction(mode, manualDamage, slot, controls.spend?.value);
     if (action && takeDown(action)) setMode(null);
   };
 

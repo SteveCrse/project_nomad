@@ -64,6 +64,8 @@ const COLUMNS: Column[] = [
   { key: 'amount', label: '×N', width: 46, title: 'copies in the deck', right: true },
   { key: 'max', label: 'MAX⚡', width: 56, right: true, title: 'max energy — hit chance and HP at once' },
   { key: 'atk', label: 'ATK⚔', width: 52, right: true, title: 'attack: ⚡ taken off the target per hit' },
+  { key: 'spendMin', label: 'SPEND≥', width: 60, right: true, title: 'the fewest ⚡ one shot may spend · blank = 1' },
+  { key: 'spendMax', label: 'SPEND≤', width: 60, right: true, title: 'the most ⚡ one shot may spend · blank = all it holds' },
   { key: 'out', label: 'OUT⚡', width: 52, right: true, title: 'what one generate action adds' },
   { key: 'first', label: '1ST', width: 38, title: 'the 1st-down icon — destroying it earns a 1st down' },
   { key: 'cost', label: 'COST◆', width: 56, right: true, title: 'power cost: draft tokens / upkeep · blank = from rarity' },
@@ -207,7 +209,8 @@ function Row({ card, selected, onSelect }: { card: Card; selected: boolean; onSe
 
   const cell = 'border-b border-r border-putty-300 align-middle';
   const art = artUrl(card.art);
-  const ev = part && attackOf(part) > 0 ? expectedDamage(attackOf(part), part.energyCapacity) : null;
+  const canEditSpend = !!part && attackOf(part) > 0;
+  const ev = part && canEditSpend ? expectedDamage(attackOf(part), Math.min(part.energyCapacity, part.maxSpend ?? Infinity)) : null;
 
   return (
     <tr
@@ -317,6 +320,32 @@ function Row({ card, selected, onSelect }: { card: Card; selected: boolean; onSe
               ? setEffectParam(card.id, attackIndex, 'power', value ?? 0)
               : patchCard(card.id, { power: value ?? 0 })
           }
+        />
+      </td>
+
+      <td className={cell}>
+        <NumberCell
+          value={canEditSpend ? (part!.minSpend ?? null) : null}
+          disabled={!canEditSpend}
+          nullable
+          min={1}
+          max={30}
+          placeholder={canEditSpend ? '1' : '—'}
+          title="the fewest ⚡ one shot may spend · blank = 1"
+          onChange={(minSpend) => patchCard(card.id, { minSpend: minSpend ?? undefined })}
+        />
+      </td>
+
+      <td className={cell}>
+        <NumberCell
+          value={canEditSpend ? (part!.maxSpend ?? null) : null}
+          disabled={!canEditSpend}
+          nullable
+          min={1}
+          max={30}
+          placeholder={canEditSpend ? 'all' : '—'}
+          title="the most ⚡ one shot may spend · blank = all it holds"
+          onChange={(maxSpend) => patchCard(card.id, { maxSpend: maxSpend ?? undefined })}
         />
       </td>
 

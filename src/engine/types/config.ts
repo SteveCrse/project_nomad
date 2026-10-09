@@ -46,11 +46,6 @@ export interface GameConfig {
    * part fitted from the scrap deck. Rules: 1.
    */
   startEnergy: number;
-  /**
-   * Open question: does an attack use up the energy it rolled against? Off,
-   * energy is only hit chance and HP, and firing costs nothing.
-   */
-  attackSpendsEnergy: boolean;
   /** Enemy modules per step of mission depth. Rules: depth + players. */
   enemyModulesPerDepth: number;
   /** Enemy modules per player in the fight. */
@@ -98,7 +93,6 @@ export const DEFAULT_CONFIG: GameConfig = {
   shipSizeRule: 'draft',
 
   startEnergy: 1,
-  attackSpendsEnergy: false,
   enemyModulesPerDepth: 1,
   enemyModulesPerPlayer: 1,
   enemySizeCapped: false,

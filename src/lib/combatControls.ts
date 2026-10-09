@@ -1,5 +1,5 @@
 import type { CardEffect, DownAction, GameConfig, GameState, PlayerState, Ship, SlotIndex } from '@engine/types';
-import { abilityEffects, activeEffects, attackOf, combat, hitChance, isDamageEffect, ship as shipEngine } from '@engine';
+import { abilityEffects, activeEffects, attackOf, combat, hitChance, isDamageEffect, ship as shipEngine, spendRange } from '@engine';
 import { CONTENT, getCard, getPart } from '@data';
 import type { PanelControls } from '@/components/game/PlayerPanel';
 import { battleOf, moduleOptions, reroutePlan, type ModuleOptions } from '@/lib/combatView';
@@ -28,6 +28,10 @@ export interface CombatControls {
   plan: ReturnType<typeof reroutePlan> | null;
   /** One line on what to click next. */
   prompt: string;
+  /** Attack: what the shot may spend, and what it's set to. */
+  spend: { min: number; max: number; value: number } | null;
+  /** Reroute: what the picked module can still send, and how much a click moves. */
+  move: { max: number; value: number } | null;
 }
 
 /** Does firing these need a module on the enemy picked? */
@@ -43,14 +47,14 @@ export function combatControls(
     setMode: (mode: CombatMode | null) => void;
     take: (action: DownAction) => void;
     pickSource: (slot: SlotIndex | null) => void;
-    addLeg: (from: SlotIndex, to: SlotIndex) => void;
+    addLeg: (from: SlotIndex, to: SlotIndex, amount: number) => void;
   },
 ): CombatControls {
   const fight = state.combat;
   const battle = battleOf(state);
   const side = fight && !fight.outcome ? fight.turn : null;
   const acting = side?.kind === 'player' ? (state.party.players.find((p) => p.id === side.id) ?? null) : null;
-  const none: CombatControls = { acting, options: [], ship: acting?.ship ?? null, controls: undefined, targets: [], aimed: null, plan: null, prompt: '' };
+  const none: CombatControls = { acting, options: [], ship: acting?.ship ?? null, controls: undefined, targets: [], aimed: null, plan: null, prompt: '', spend: null, move: null };
   if (!fight || !battle || !side || !acting || fight.turnOver) return none;
 
   const enemy = fight.enemy.ship;
@@ -78,14 +82,16 @@ export function combatControls(
       }
       const gun = mode.slot;
       const part = getPart(acting.ship.slots[gun]?.partId);
-      const energy = acting.ship.slots[gun]?.energy ?? 0;
-      const targets = reach((t) => legal({ type: 'attack', slot: gun, targetSlot: t }), !!part?.targetsModule);
+      const range = part ? spendRange(part, acting.ship.slots[gun]?.energy ?? 0) : { min: 1, max: 0 };
+      const spend = Math.min(range.max, Math.max(range.min, mode.spend ?? range.max));
+      const targets = reach((t) => legal({ type: 'attack', slot: gun, spend, targetSlot: t }), !!part?.targetsModule);
       return {
         ...base,
         controls: { armed: guns, open: [], selected: gun, deltas: {}, onSlotClick: (s) => (s === gun ? act.setMode({ kind: 'attack', slot: null }) : pick(s)), drag: null },
         targets,
         aimed: shipEngine.defaultTargetSlot(CONTENT, enemy),
-        prompt: `${name(gun)}: ${energy}⚡ — hits on a d6 of ${Math.min(energy, 6)} or less (${Math.round(hitChance(energy) * 100)}%) for ${part ? attackOf(part) : 0}⚔. Pick its target on the enemy.`,
+        spend: { ...range, value: spend },
+        prompt: `${name(gun)}: spend ${spend}⚡ — hits on a d6 of ${Math.min(spend, 6)} or less (${Math.round(hitChance(spend) * 100)}%) for ${part ? attackOf(part) : 0}⚔. Pick its target on the enemy.`,
       };
     }
 
@@ -123,10 +129,20 @@ export function combatControls(
       }
       const from = mode.from;
       const open = from !== null ? shipEngine.neighbours(ship, from).filter((n) => can(from, n)) : [];
+      const most = from !== null ? (plan.sendable[from] ?? 0) : 0;
+      const move = most > 0 ? { max: most, value: Math.min(most, Math.max(1, mode.amount ?? most)) } : null;
+      // A click or drop moves the picked amount (or, dragged from another
+      // module, all it can) — never more than the far side has room for.
+      const leg = (a: SlotIndex, b: SlotIndex) => {
+        const want = a === from && move ? move.value : (plan.sendable[a] ?? 0);
+        const amount = Math.min(want, plan.sendable[a] ?? 0, plan.room[b] ?? 0);
+        if (amount > 0) act.addLeg(a, b, amount);
+      };
       return {
         ...base,
         ship,
         plan,
+        move,
         controls: {
           armed: from === null ? sources : sources.filter((s) => s !== from),
           open,
@@ -134,15 +150,17 @@ export function combatControls(
           deltas,
           onSlotClick: (slot) => {
             if (from !== null && slot === from) act.pickSource(null);
-            else if (from !== null && open.includes(slot)) act.addLeg(from, slot);
+            else if (from !== null && open.includes(slot)) leg(from, slot);
             else if (sources.includes(slot)) act.pickSource(slot);
           },
-          drag: { source: sendable, accepts: can, onDrop: act.addLeg },
+          drag: { source: sendable, accepts: can, onDrop: leg },
         },
         prompt:
           from === null
             ? 'Pick a module to move ⚡ out of — or drag ⚡ from one module onto one it touches. Each token moves one step.'
-            : `Moving ⚡ out of ${name(from)}: click a lit neighbour once per token (or drag). Click ${name(from)} again to let go.`,
+            : move
+              ? `Moving ${move.value}⚡ out of ${name(from)}: click a lit neighbour (or drag) — as much as it has room for. Click ${name(from)} again to let go.`
+              : `${name(from)} has no ⚡ of its own left to move. Click it again to let go.`,
       };
     }
 
@@ -197,9 +215,11 @@ export function combatControls(
 }
 
 /** What clicking an enemy module does with the action in hand. */
-export function targetAction(mode: CombatMode | null, manualDamage: number, target: SlotIndex) {
+export function targetAction(mode: CombatMode | null, manualDamage: number, target: SlotIndex, spend?: number) {
   const manual = manualDamage > 0 ? { manualDamage } : {};
-  if (mode?.kind === 'attack' && mode.slot !== null) return { type: 'attack' as const, slot: mode.slot, targetSlot: target };
+  if (mode?.kind === 'attack' && mode.slot !== null) {
+    return { type: 'attack' as const, slot: mode.slot, targetSlot: target, ...(spend !== undefined ? { spend } : {}) };
+  }
   if (mode?.kind === 'use' && mode.slot !== null) return { type: 'use-module' as const, slot: mode.slot, targetSlot: target, ...manual };
   if (mode?.kind === 'item' && mode.cardId) return { type: 'play-card' as const, cardId: mode.cardId, targetSlot: target, ...manual };
   return null;

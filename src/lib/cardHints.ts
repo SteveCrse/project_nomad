@@ -123,7 +123,7 @@ export function footerHint(card: Card): CardHint {
   if (card.kind === 'action') {
     return {
       title: 'One per down',
-      body: 'Resolved on the enemy’s down when it’s face up. If the enemy can’t do it, it’s discarded and the next card turned.',
+      body: 'Resolved on the enemy’s down when it’s face up. If the enemy can’t do it, it goes to the bottom of the deck and the next card is turned.',
     };
   }
   return energyHint(card);

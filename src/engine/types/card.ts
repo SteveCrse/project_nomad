@@ -97,8 +97,8 @@ export interface CardEffect {
   params?: Record<string, number>;
   /**
    * ⚡ this effect draws from the module's own pool when it fires. Active
-   * effects only, and rare: the attack roll already reads a weapon's energy,
-   * so a cost is for abilities that burn charge to work (a turret, a mine).
+   * abilities only: an attack never has one — the seat picks how much ⚡ a
+   * shot spends, within the module's `minSpend`/`maxSpend`.
    */
   cost?: number;
   /** Dice this effect's resolution calls for, if any. */
@@ -182,6 +182,12 @@ export interface PartCard extends CardBase {
    * rarer being dearer. Blank derives it from rarity.
    */
   powerCost?: number;
+  /**
+   * Attacks: the fewest and most ⚡ one shot may spend. The seat picks the
+   * spend; the roll hits on a d6 at or under it. Blank: 1, and all it holds.
+   */
+  minSpend?: number;
+  maxSpend?: number;
 
   // ---- derived from `effects` by `compileCard`; don't author by hand ----
   /** What one generate action adds to this module. */

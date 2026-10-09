@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { GameState, SideRef } from '@engine/types';
 import { ACTION_LABEL, ACTION_TEXT, activeEffects, combat, printedText } from '@engine';
-import { Button, DownsTracker } from '@/components/ds';
+import { Button, DownsTracker, Stepper } from '@/components/ds';
 import { ROLE_COLOR } from '@/lib/palette';
 import { handOptions, reviveOptions } from '@/lib/combatView';
 import { aimsAtEnemy, type CombatControls } from '@/lib/combatControls';
@@ -40,6 +40,7 @@ export function ActionBar({ state, side, controls }: { state: GameState; side: S
   const manualDamage = useUiStore((s) => s.manualDamage);
   const setManualDamage = useUiStore((s) => s.setManualDamage);
   const undoLeg = useUiStore((s) => s.undoRerouteLeg);
+  const setRerouteAmount = useUiStore((s) => s.setRerouteAmount);
 
   const holder = `${side.kind}:${side.id}:${fight.round}`;
   useEffect(() => {
@@ -102,7 +103,7 @@ export function ActionBar({ state, side, controls }: { state: GameState; side: S
             {action ? (
               <>
                 Face up: <span className="font-bold">{ACTION_LABEL[action]}</span> — {ACTION_TEXT[action]} If it can’t, the
-                card is discarded and the next one turned. After Down {config.downCount}: {nextSeat?.label ?? '—'}.
+                card goes to the bottom of the deck and the next one is turned. After Down {config.downCount}: {nextSeat?.label ?? '—'}.
               </>
             ) : (
               'This down’s deck is empty.'
@@ -205,6 +206,30 @@ export function ActionBar({ state, side, controls }: { state: GameState; side: S
             {controls.prompt}
           </motion.div>
         </AnimatePresence>
+
+        {mode?.kind === 'attack' && mode.slot !== null && controls.spend && controls.spend.max >= controls.spend.min && (
+          <div className="flex items-center gap-2">
+            <Stepper
+              label="SPEND ⚡"
+              value={controls.spend.value}
+              onChange={(spend) => setMode({ ...mode, spend })}
+              min={controls.spend.min}
+              max={controls.spend.max}
+            />
+            <span className="text-[12px] text-putty-700">
+              {controls.spend.min === controls.spend.max
+                ? `this shot spends ${controls.spend.min}⚡`
+                : `${controls.spend.min}–${controls.spend.max}⚡ — what you spend is gone, hit or miss`}
+            </span>
+          </div>
+        )}
+
+        {mode?.kind === 'reroute' && controls.move && (
+          <div className="flex items-center gap-2">
+            <Stepper label="MOVE ⚡" value={controls.move.value} onChange={setRerouteAmount} min={1} max={controls.move.max} />
+            <span className="text-[12px] text-putty-700">per click — less if the module it goes to is fuller</span>
+          </div>
+        )}
 
         {mode?.kind === 'reroute' && controls.plan && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -322,32 +347,5 @@ function Shell({ tone, children }: { tone: 'accent' | 'danger'; children: React.
     >
       {children}
     </motion.div>
-  );
-}
-
-function Stepper({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-  min: number;
-  max: number;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 border border-putty-600 bg-putty-100 px-2 py-1">
-      <span className="font-mono text-[10px] tracking-[0.08em] text-putty-700">{label}</span>
-      <button className="cursor-pointer px-1 font-mono text-[13px]" onClick={() => onChange(Math.max(min, value - 1))}>
-        −
-      </button>
-      <span className="w-5 text-center font-mono text-[13px]">{value}</span>
-      <button className="cursor-pointer px-1 font-mono text-[13px]" onClick={() => onChange(Math.min(max, value + 1))}>
-        +
-      </button>
-    </div>
   );
 }

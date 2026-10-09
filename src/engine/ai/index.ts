@@ -3,8 +3,7 @@ import type { ActionCard, PartCard } from '../types/card';
 import type { GameConfig } from '../types/config';
 import type { Ship } from '../types/ship';
 import type { Content } from '../content';
-import { attackOf, costOf, expectedDamage, outputOf, powerCostOf } from '../cards';
-import { isDamageEffect } from '../effects';
+import { attackOf, expectedDamage, outputOf, powerCostOf, spendRange } from '../cards';
 import { actionError, aggroTarget, enemySide, playerOf } from '../combat';
 import type { Fitted } from '../ship';
 import {
@@ -44,15 +43,16 @@ export function planEnemyAction(
   switch (card.action) {
     case 'attack': {
       if (!target || !victim) return { reason: 'nobody left to attack' };
-      // The module most likely to hurt: attack × energy ÷ 6, the rules'
-      // balancing line, read as a choice.
+      // The module most likely to hurt, firing with everything it may spend:
+      // attack × spend ÷ 6, the rules' balancing line, read as a choice.
+      const spendOf = (m: Fitted) => spendRange(m.part, m.slot.energy);
       const guns = liveSlots(content, ship)
         .filter((m) => isOnline(m.slot) && attackOf(m.part) > 0)
-        .filter((m) => costOf(attackEffects(m.part)) <= m.slot.energy)
+        .filter((m) => spendOf(m).max >= spendOf(m).min)
         .sort(
           (a, b) =>
-            expectedDamage(attackOf(b.part), b.slot.energy) -
-              expectedDamage(attackOf(a.part), a.slot.energy) ||
+            expectedDamage(attackOf(b.part), spendOf(b).max) -
+              expectedDamage(attackOf(a.part), spendOf(a).max) ||
             attackOf(b.part) - attackOf(a.part),
         );
       if (guns.length === 0) return { reason: 'no energy to attack' };
@@ -60,15 +60,18 @@ export function planEnemyAction(
         // The enemy always goes for the cockpit: a precision weapon has
         // nothing in its way, anything else hits what stands in front of it.
         const aim = gun.part.targetsModule ? cockpitIndex(victim) : defaultTargetSlot(content, victim);
-        const action: DownAction = { type: 'attack', slot: gun.slot.index, target, targetSlot: aim };
+        const spend = spendOf(gun).max;
+        const action: DownAction = { type: 'attack', slot: gun.slot.index, spend, target, targetSlot: aim };
         if (legal(action)) return { action };
       }
       return { reason: 'no gun can reach' };
     }
 
     case 'generate': {
+      // A cockpit can generate with no ⚡ on it; a generator has to be online.
       const producers = liveSlots(content, ship)
-        .filter((m) => isProducer(m.part) && isOnline(m.slot) && roomIn(content, m.slot) > 0)
+        .filter((m) => isProducer(m.part) && (isOnline(m.slot) || m.part.role === 'COCKPIT'))
+        .filter((m) => roomIn(content, m.slot) > 0)
         .sort((a, b) => gain(content, b) - gain(content, a) || generatorFirst(a, b));
       const pick = producers[0];
       if (!pick) return { reason: 'every producer is offline or full' };
@@ -83,10 +86,6 @@ export function planEnemyAction(
   }
 }
 
-/** The damage effects only — what an attack pays for. */
-const attackEffects = (part: PartCard) =>
-  (part.effects ?? []).filter((e) => isDamageEffect(e.type));
-
 const gain = (content: Content, m: Fitted): number =>
   Math.min(outputOf(m.part), roomIn(content, m.slot));
 
@@ -96,12 +95,18 @@ const generatorFirst = (a: Fitted, b: Fitted): number =>
 /**
  * The enemy's reroute: charge out of generators — the cockpit only when no
  * generator can spare any — into the weapons they touch, hardest-hitting
- * first, then into the shields they touch. A source always keeps 1⚡: draining
- * it to 0 would knock it offline and leave it one hit from destroyed. Every
- * leg is checked against the reroute rules as it's added, so the plan is one
- * the engine will play.
+ * first, then into the shields they touch. A source keeps 1⚡ when it can —
+ * draining it to 0 knocks it offline — but when that leaves nothing to move,
+ * a generator gives its last ⚡ too. The cockpit always keeps 1.
+ * Every leg is checked against the reroute rules as it's added, so the plan is
+ * one the engine will play.
  */
 function feedMoves(content: Content, ship: Ship): RerouteMove[] {
+  const careful = planFeed(content, ship, 1);
+  return careful.length > 0 ? careful : planFeed(content, ship, 0);
+}
+
+function planFeed(content: Content, ship: Ship, generatorKeeps: number): RerouteMove[] {
   const live = liveSlots(content, ship);
   const targets = [
     ...live
@@ -119,7 +124,8 @@ function feedMoves(content: Content, ship: Ship): RerouteMove[] {
       if (!connected(ship, from.slot.index, to.slot.index)) continue;
       const run = runReroute(content, ship, moves);
       const now = run.ship.slots;
-      const spare = Math.min(run.sendable[from.slot.index] ?? 0, (now[from.slot.index]?.energy ?? 0) - 1);
+      const keep = from.part.role === 'COCKPIT' ? 1 : generatorKeeps;
+      const spare = Math.min(run.sendable[from.slot.index] ?? 0, (now[from.slot.index]?.energy ?? 0) - keep);
       const room = roomIn(content, now[to.slot.index]);
       const amount = Math.min(spare, room);
       if (amount < 1) continue;

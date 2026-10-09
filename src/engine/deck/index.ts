@@ -160,6 +160,21 @@ export function cycleActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
   );
 }
 
+/**
+ * The enemy can't carry out the face-up card: it goes to the bottom of the
+ * deck and the next one is turned. The discards are shuffled back in first
+ * when the draw pile is dry, so every card gets a turn before this one again.
+ */
+export function buryActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
+  if (!deck.faceUp) return flipActionCard(deck, rng);
+  const empty = deck.drawPile.length === 0;
+  const drawPile = empty ? shuffle(deck.discardPile, rng) : deck.drawPile;
+  return flipActionCard(
+    { faceUp: null, drawPile: [...drawPile, deck.faceUp], discardPile: empty ? [] : deck.discardPile },
+    rng,
+  );
+}
+
 /** Cards in an action deck, wherever they sit. */
 export const actionDeckSize = (deck: ActionDeck): number =>
   deck.drawPile.length + deck.discardPile.length + (deck.faceUp ? 1 : 0);

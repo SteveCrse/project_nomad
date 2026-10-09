@@ -10,7 +10,7 @@ import type {
   PlacementKind,
   Specialization,
 } from '@engine/types';
-import { ACTION_LABEL, ACTION_TEXT, EFFECTS, cardWarnings, effectParam, effectsForKind, placementLine } from '@engine';
+import { ACTION_LABEL, ACTION_TEXT, EFFECTS, cardWarnings, effectParam, effectsForKind, isDamageEffect, placementLine } from '@engine';
 import { ART_ASSETS, artUrl } from '@/lib/art';
 import { useDeckStore } from '@/store/deckStore';
 import { CardTile } from '@/components/game/CardTile';
@@ -214,7 +214,8 @@ function Effects({ card }: { card: Card }) {
                 </Row>
               ))}
 
-              {timing === 'active' && (
+              {/* An attack has no fixed cost: the seat picks the spend, within the card's limits. */}
+              {timing === 'active' && !isDamageEffect(effect.type) && (
                 <Row label="Costs" symbol="⚡" narrow>
                   <NumberCell
                     value={effect.cost ?? 0}
@@ -303,7 +304,7 @@ function EnemyAction({ card }: { card: ActionCard }) {
       <div className="text-[12px] leading-tight text-putty-700">{ACTION_TEXT[card.action]}</div>
       <div className="pt-1.5 text-[12px] leading-tight text-putty-700">
         Every fight builds one deck per enemy down, each holding every action card ×{card.amount}. If the enemy
-        can’t carry the face-up card out, it’s discarded and the next one turned.
+        can’t carry the face-up card out, it goes to the bottom of the deck and the next one is turned.
       </div>
     </div>
   );
