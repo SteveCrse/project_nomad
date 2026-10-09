@@ -1,24 +1,38 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { EnemyId, GameConfig } from '@engine/types';
+import type { GameConfig } from '@engine/types';
 import { DEFAULT_CONFIG } from '@engine/types';
-import { clampField, type BooleanConfigKey, type NumericConfigKey } from './configFields';
+import {
+  CONFIG_SECTIONS,
+  clampField,
+  type BooleanConfigKey,
+  type NumericConfigKey,
+  type SelectConfigKey,
+  type SelectField,
+} from './configFields';
+
+/** The values each open question may take — a save from before an option was retired falls back. */
+const SELECT_OPTIONS = Object.fromEntries(
+  CONFIG_SECTIONS.flatMap((s) => s.fields)
+    .filter((f): f is SelectField => f.kind === 'select')
+    .map((f) => [f.key, f.options.map((o) => o.value)]),
+) as Record<SelectConfigKey, string[]>;
 
 /**
  * The tuning state for a playtest run.
  *
- * Nothing downstream reads this yet — the engine will. It's deliberately just
- * `GameConfig` plus setters so it can be handed to engine functions as-is.
- * Persisted so a session's tuning survives a reload mid-playtest.
+ * Deliberately just `GameConfig` plus setters, so it can be handed to engine
+ * functions as-is. Persisted so a session's tuning survives a reload
+ * mid-playtest.
  */
 interface ConfigStore {
   config: GameConfig;
   setNumber: (key: NumericConfigKey, value: number) => void;
   setBoolean: (key: BooleanConfigKey, value: boolean) => void;
+  /** One of an open question's named options. */
+  setSelect: <K extends SelectConfigKey>(key: K, value: GameConfig[K]) => void;
   /** Stepper +/-, clamped to the field's declared range. */
   bump: (key: NumericConfigKey, delta: number) => void;
-  /** Pass null to clear the override and fall back to the stat block. */
-  setEnemyThreshold: (enemyId: EnemyId, value: number | null) => void;
   reset: () => void;
   /**
    * The config as pasteable JSON.
@@ -44,30 +58,32 @@ export const useConfigStore = create<ConfigStore>()(
       bump: (key, delta) =>
         set((s) => ({ config: { ...s.config, [key]: clampField(key, s.config[key] + delta) } })),
 
-      setEnemyThreshold: (enemyId, value) =>
-        set((s) => {
-          const next = { ...s.config.enemyConvThresholds };
-          if (value === null) delete next[enemyId];
-          else next[enemyId] = value;
-          return { config: { ...s.config, enemyConvThresholds: next } };
-        }),
+      setSelect: (key, value) => set((s) => ({ config: { ...s.config, [key]: value } })),
 
-      reset: () => set({ config: { ...DEFAULT_CONFIG, enemyConvThresholds: {} } }),
+      reset: () => set({ config: { ...DEFAULT_CONFIG } }),
 
       exportJson: () => JSON.stringify(get().config, null, 2),
     }),
     {
-      name: 'nomad.config.v1',
+      // v2: the v3 rules replaced most of the knobs, and the ones that
+      // survived changed defaults (commons-only start, no checkpoint
+      // rebuilds) — a v1 save would pin the old values.
+      name: 'nomad.config.v2',
       // Only the config is worth keeping; the setters are rebuilt on load.
       partialize: (s) => ({ config: s.config }),
       // New tunables added after a session was saved should take their default
       // rather than come back undefined — and tunables that have since been
       // retired are dropped, so a stale save can't resurrect a knob the rules
-      // no longer have.
+      // no longer have. So is a retired option of a knob that's still here
+      // (the power-token size rule became the draft).
       merge: (persisted, current) => {
         const saved = (persisted as { config?: Partial<GameConfig> } | undefined)?.config ?? {};
         const known = Object.fromEntries(
-          Object.entries(saved).filter(([key]) => key in DEFAULT_CONFIG),
+          Object.entries(saved).filter(
+            ([key, value]) =>
+              key in DEFAULT_CONFIG &&
+              (!(key in SELECT_OPTIONS) || SELECT_OPTIONS[key as SelectConfigKey].includes(value as string)),
+          ),
         ) as Partial<GameConfig>;
         return { ...current, config: { ...DEFAULT_CONFIG, ...known } };
       },

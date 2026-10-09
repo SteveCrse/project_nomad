@@ -10,5 +10,5 @@ export type PlayerId = string;
 export type ShipId = string;
 export type NodeId = string;
 
-/** Index into a ship's module grid, row-major. */
+/** Index into `Ship.slots` — a module, wherever on the grid it sits. */
 export type SlotIndex = number;

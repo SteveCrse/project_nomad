@@ -12,6 +12,8 @@ type KeysOfType<T, V> = { [K in keyof T]-?: T[K] extends V ? K : never }[keyof T
 
 export type NumericConfigKey = KeysOfType<GameConfig, number>;
 export type BooleanConfigKey = KeysOfType<GameConfig, boolean>;
+/** The string-union knobs — the rules' open questions with named options. */
+export type SelectConfigKey = 'shipSizeRule' | 'downedPlayer';
 
 interface FieldBase {
   /** snake_case, matching the design's debug panel. */
@@ -36,7 +38,13 @@ export interface BooleanField extends FieldBase {
   key: BooleanConfigKey;
 }
 
-export type ConfigField = NumericField | BooleanField;
+export interface SelectField extends FieldBase {
+  kind: 'select';
+  key: SelectConfigKey;
+  options: { value: string; label: string; hint: string }[];
+}
+
+export type ConfigField = NumericField | BooleanField | SelectField;
 
 export interface ConfigSection {
   id: string;
@@ -49,142 +57,139 @@ export interface ConfigSection {
 export const CONFIG_SECTIONS: ConfigSection[] = [
   {
     id: 'players',
-    title: 'Players',
+    title: 'Players & ships',
     fields: [
       { kind: 'number', key: 'playerCount', label: 'player_count', control: 'stepper', min: 1, max: 4, step: 1 },
-      { kind: 'number', key: 'downCount', label: 'down_count', control: 'stepper', min: 2, max: 6, step: 1 },
       {
         kind: 'number',
-        key: 'startingPartsDraws',
-        label: 'starting_draws',
+        key: 'downCount',
+        label: 'down_count',
+        control: 'stepper',
+        min: 2,
+        max: 6,
+        step: 1,
+        hint: 'downs per turn, both sides — and one enemy action deck per down',
+      },
+      {
+        kind: 'boolean',
+        key: 'draft',
+        label: 'snake_draft',
+        hint: 'off: roll out on the authored loadouts',
+      },
+      {
+        kind: 'number',
+        key: 'draftTokens',
+        label: 'draft_tokens',
         control: 'stepper',
         min: 0,
-        max: 12,
+        max: 30,
         step: 1,
-        hint: 'parts per seat in the run-start draft pool · 0 = pre-set loadouts',
+        hint: 'energy tokens per seat — spent on cards, the rest is starting ⚡',
+      },
+      {
+        kind: 'number',
+        key: 'draftRounds',
+        label: 'draft_rounds',
+        control: 'stepper',
+        min: 1,
+        max: 8,
+        step: 1,
+        hint: 'module rounds after the cockpit round',
+      },
+      {
+        kind: 'number',
+        key: 'draftStartEnergy',
+        label: 'draft_start_energy',
+        control: 'stepper',
+        min: 0,
+        max: 6,
+        step: 1,
+        hint: 'extra ⚡ on every drafted module, before the tokens go on',
+      },
+      {
+        kind: 'select',
+        key: 'shipSizeRule',
+        label: 'ship_size_rule',
+        hint: 'what limits a ship on top of the draft',
+        options: [
+          { value: 'draft', label: 'DRAFT', hint: 'only the draft’s rounds and tokens' },
+          { value: 'slots', label: 'SLOTS', hint: 'the cockpit also lists a max number of modules' },
+          { value: 'budget', label: 'BUDGET', hint: 'module upkeep against the cockpit’s rating' },
+        ],
       },
     ],
   },
   {
     id: 'combat',
-    title: 'Combat',
+    title: 'Energy & combat',
     fields: [
       {
         kind: 'number',
-        key: 'convThreshold',
-        label: 'conv_threshold',
-        control: 'slider',
-        min: 4,
-        max: 24,
-        step: 1,
-        hint: 'default when an enemy has no override',
-      },
-      {
-        kind: 'number',
-        key: 'playerConvThreshold',
-        label: 'player_threshold',
-        control: 'slider',
-        min: 4,
-        max: 24,
-        step: 1,
-        hint: 'what an enemy must deal in one set to convert on a seat',
-      },
-      {
-        kind: 'boolean',
-        key: 'thresholdCountsShielded',
-        label: 'shielded_counts',
-        hint: 'does damage eaten by shields still count toward conversion?',
-      },
-      {
-        kind: 'boolean',
-        key: 'offensiveOncePerSet',
-        label: 'once_per_set',
-        hint: 'cap every gun at one shot per set · off: fire while it has ⚡',
-      },
-      {
-        kind: 'boolean',
-        key: 'allowThresholdUpgrades',
-        label: 'threshold_upgrades',
-        hint: 'rules open question #2',
-      },
-      {
-        kind: 'number',
-        key: 'thresholdUpgradeStep',
-        label: 'threshold_step',
-        control: 'stepper',
-        min: 1,
-        max: 6,
-        step: 1,
-      },
-      {
-        kind: 'number',
-        key: 'thresholdUpgradePowerCost',
-        label: 'threshold_cost',
-        control: 'stepper',
-        min: 0,
-        max: 5,
-        step: 1,
-        hint: '⚔ lost per attack per upgrade',
-      },
-      { kind: 'number', key: 'enemyPartsBase', label: 'enemy_parts_base', control: 'stepper', min: 0, max: 8, step: 1 },
-      {
-        kind: 'number',
-        key: 'partsPerExtraPlayer',
-        label: 'parts_per_player',
+        key: 'startEnergy',
+        label: 'start_energy',
         control: 'stepper',
         min: 0,
         max: 6,
         step: 1,
-        hint: 'extra parts drawn per player beyond the first — the difficulty dial',
+        hint: '⚡ an enemy module, a loadout or a refit starts with · rules: 1',
+      },
+      {
+        kind: 'boolean',
+        key: 'attackSpendsEnergy',
+        label: 'attack_spends_energy',
+        hint: 'open question — on: an attack uses up the ⚡ it rolled against',
+      },
+      {
+        kind: 'number',
+        key: 'enemyModulesPerDepth',
+        label: 'enemy_per_depth',
+        control: 'stepper',
+        min: 0,
+        max: 3,
+        step: 1,
+        hint: 'enemy modules = depth × this + players × the next',
+      },
+      {
+        kind: 'number',
+        key: 'enemyModulesPerPlayer',
+        label: 'enemy_per_player',
+        control: 'stepper',
+        min: 0,
+        max: 3,
+        step: 1,
+      },
+      {
+        kind: 'boolean',
+        key: 'enemySizeCapped',
+        label: 'enemy_size_capped',
+        hint: 'hold enemies to the same size limit as players',
+      },
+      {
+        kind: 'select',
+        key: 'downedPlayer',
+        label: 'downed_player',
+        hint: 'TBD in the rules — what a seat does once its cockpit is gone',
+        options: [
+          { value: 'out', label: 'OUT', hint: 'sits out the mission, rebuilds at its end' },
+          { value: 'revive', label: 'REVIVE', hint: 'a teammate spends a down: cockpit back with 1⚡' },
+        ],
       },
     ],
-    note: 'No HP anywhere: a ship dies when its shields and cockpit pool are dry. Enemy toughness is parts drawn, not a stat.',
+    note: 'Hit chance = ⚡ ÷ 6, and ⚡ is HP. Expected damage = attack × ⚡ ÷ 6.',
   },
   {
-    id: 'economy',
-    title: 'Economy',
+    id: 'loot',
+    title: 'Loot',
     fields: [
       { kind: 'number', key: 'scrapCap', label: 'scrap_cap', control: 'stepper', min: 1, max: 8, step: 1 },
-      {
-        kind: 'number',
-        key: 'energyPerTurn',
-        label: 'energy_per_turn',
-        control: 'slider',
-        min: 0,
-        max: 20,
-        step: 1,
-        hint: 'reactor baseline spread across the grid each turn',
-      },
-      {
-        kind: 'boolean',
-        key: 'weaponsDrawFromReactor',
-        label: 'reactor_feeds_wpn',
-        hint: 'off: weapons only load by rerouting from a neighbour',
-      },
-      {
-        kind: 'number',
-        key: 'energyCostMult',
-        label: 'energy_cost_mult',
-        control: 'slider',
-        min: 0.25,
-        max: 2,
-        step: 0.05,
-        precision: 2,
-      },
-      {
-        kind: 'number',
-        key: 'energyCostReroute',
-        label: 'energy_cost_reroute',
-        control: 'stepper',
-        min: 0,
-        max: 5,
-        step: 1,
-        hint: '⚡ lost per link in a reroute pass',
-      },
-      { kind: 'number', key: 'energyCostChargeShield', label: 'energy_cost_shield', control: 'stepper', min: 0, max: 5, step: 1 },
       { kind: 'number', key: 'handSize', label: 'hand_size', control: 'stepper', min: 0, max: 10, step: 1 },
       { kind: 'number', key: 'lootPerNode', label: 'loot_per_node', control: 'stepper', min: 0, max: 5, step: 1 },
-      { kind: 'number', key: 'carriedPartsCap', label: 'carried_parts_cap', control: 'stepper', min: 0, max: 10, step: 1 },
+      {
+        kind: 'boolean',
+        key: 'lootOneModule',
+        label: 'loot_one_module',
+        hint: 'from the ideas list — a kill may pay one module instead of the ship',
+      },
     ],
   },
   {
@@ -198,10 +203,29 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
         kind: 'boolean',
         key: 'checkpointsAreRearrangePoints',
         label: 'checkpoint_rearrange',
-        hint: 'proposed in the rules doc — confirm cadence',
+        hint: 'not in the rules — rebuild at checkpoints too',
       },
-      { kind: 'number', key: 'maxRarityNow', label: 'max_rarity_now', control: 'stepper', min: 1, max: 5, step: 1, hint: 'starting ceiling; checkpoints raise the live one' },
+      {
+        kind: 'number',
+        key: 'maxRarityNow',
+        label: 'start_rarity',
+        control: 'stepper',
+        min: 1,
+        max: 5,
+        step: 1,
+        hint: 'rules: the parts deck starts with commons',
+      },
       { kind: 'number', key: 'rarityPerCheckpoint', label: 'rarity_per_check', control: 'stepper', min: 0, max: 3, step: 1 },
+      {
+        kind: 'number',
+        key: 'commonsRemovedPerCheckpoint',
+        label: 'commons_removed',
+        control: 'stepper',
+        min: 0,
+        max: 10,
+        step: 1,
+        hint: 'commons taken out of the parts deck per checkpoint',
+      },
     ],
   },
 ];

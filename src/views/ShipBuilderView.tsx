@@ -1,487 +1,631 @@
-import { useEffect, useState } from 'react';
-import type { CardId, GameState, PlayerId, PlayerState, SlotIndex } from '@engine/types';
-import { cardCost, game, printedLines, ship as shipEngine } from '@engine';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import type { Cell, CardId, GameConfig, GameState, PartCard, PlayerId, PlayerState, ShipSlot, SlotIndex } from '@engine/types';
+import { game, powerCostOf, printedLines, ship as shipEngine } from '@engine';
 import { Button } from '@/components/ds';
 import { ModuleTile } from '@/components/game/ModuleTile';
+import { ShipGrid } from '@/components/game/ShipGrid';
+import { FirstDownBadge } from '@/components/game/FirstDownBadge';
+import { TIMING_CHIP } from '@/components/game/CardTile';
+import { dragSource, useDragStore, useDropZone, type DragPayload } from '@/components/fx/drag';
 import { ROLE_COLOR, ROLE_LABEL } from '@/lib/palette';
-import { adjacencyFor, scrapCapacityFor } from '@/lib/combatView';
+import { cockpitStats, fxKey, scrapCapacityFor, sizeReadout } from '@/lib/combatView';
+import { departFrom } from '@/lib/fly';
 import { CONTENT, getPart } from '@data';
 import { useConfig } from '@/store/configStore';
 import { useGame, useGameStore } from '@/store/gameStore';
 import { useUiStore } from '@/store/uiStore';
 
 /**
- * Ship Builder: where a ship gets assembled, both at the start of a run and at
- * every rearrangement point after it.
+ * Ship Builder: the draft at the start of a run, and rebuilding at the end of
+ * a mission.
  *
- * The grid is laid out by hand — drag a part off the hold onto a position,
- * drag modules around to reorder them — because adjacency pays. A chain feeds
- * itself, and ⚡ only ever moves between neighbours, so where a generator sits
- * relative to a gun is the whole decision.
+ * A ship is a grid around its cockpit: the rows above it are the front, its
+ * own row its sides, the rows below its back. Weapons never go in front of the
+ * cockpit, nothing goes in front of a shield, every module has to be attached,
+ * and cards print limits of their own — so where a module may go is the
+ * builder's main job. Pick a card up and every cell it may land on lights up.
  *
- * During setup the grid is fed by the draft hold rather than the Scrap Deck:
- * the whole pool is dealt face up at run start, the seats take turns picking
- * off it, and the mission doesn't start until the table says the ships are done.
+ * The draft is paid for in energy tokens. Whatever a seat doesn't spend, it
+ * puts on its modules as starting ⚡ once the draft is over.
  */
-
-/** What's currently in hand, whether by drag or by click-to-place. */
-type Held =
-  | { kind: 'pool'; cardId: CardId }
-  | { kind: 'hold'; cardId: CardId }
-  | { kind: 'scrap'; cardId: CardId }
-  | { kind: 'grid'; slot: SlotIndex; cardId: CardId };
-
-/**
- * What's being dragged lives in React state, not the drag payload — `dragover`
- * can't read `dataTransfer`, and the drop rules have to be answered while the
- * part is still in the air. The payload is set anyway because some browsers
- * won't start a drag without one.
- */
-function startDrag(e: React.DragEvent) {
-  e.dataTransfer.setData('text/plain', '');
-  e.dataTransfer.effectAllowed = 'move';
-}
 
 export function ShipBuilderView() {
   const state = useGame();
+  const config = useConfig();
   const builderPlayerId = useUiStore((s) => s.builderPlayerId);
   const setBuilderPlayer = useUiStore((s) => s.setBuilderPlayer);
   const selectPart = useUiStore((s) => s.selectPart);
   const selectedPartId = useUiStore((s) => s.selectedPartId);
-  const assemblePart = useGameStore((s) => s.assemblePart);
-  const returnPart = useGameStore((s) => s.returnPart);
-  const moveModule = useGameStore((s) => s.moveModule);
-  const rearrange = useGameStore((s) => s.rearrange);
-  const draftCard = useGameStore((s) => s.draftCard);
-
-  const [drag, setDrag] = useState<Held | null>(null);
+  const store = useGameStore();
+  const [selectedSlot, setSelectedSlot] = useState<SlotIndex | null>(null);
 
   const drafting = state?.phase === 'setup';
+  const rebuilding = state?.phase === 'rearrange';
   const onTheClock = state && drafting ? game.nextDrafter(state) : null;
-  const pool = drafting ? (state?.setup?.pool ?? []) : [];
-  // The view sits with the seat on the clock, so the pool is always picked into
-  // the hold you're looking at; once the table is empty it stays with whoever
-  // took the last card and everyone assembles.
+  const table = drafting ? (state?.setup?.table ?? []) : [];
+  // The view sits with the seat on the clock, so the table is always picked
+  // onto the ship you're looking at.
   const follow = drafting ? (onTheClock ?? state?.setup?.lastPickedBy ?? null) : null;
 
+  // When the pick moves on, hold the view a beat on the ship the card just
+  // landed on before following the next seat.
+  const followed = useRef<string | null>(null);
   useEffect(() => {
-    if (follow) setBuilderPlayer(follow);
+    if (!follow) return;
+    const first = followed.current === null;
+    followed.current = follow;
+    if (first) return setBuilderPlayer(follow);
+    const timer = setTimeout(() => setBuilderPlayer(follow), 700);
+    return () => clearTimeout(timer);
   }, [follow, setBuilderPlayer]);
 
   if (!state) {
     return <div className="p-4 text-[15px] text-putty-700">Start a run to build a ship.</div>;
   }
 
-  const player =
-    state.party.players.find((p) => p.id === builderPlayerId) ?? state.party.players[0];
+  const player = state.party.players.find((p) => p.id === builderPlayerId) ?? state.party.players[0];
   if (!player) return null;
 
-  const canEdit =
-    drafting ||
-    state.phase === 'rearrange' ||
-    state.phase === 'map' ||
-    state.phase === 'victory';
-
-  // Clicking a card in a pool arms it the same way dragging it does, so both
-  // routes to a position behave identically.
+  const setup = state.setup;
+  const canEdit = drafting || rebuilding;
   const picking = drafting && player.id === onTheClock;
-  const clicked: Held | null = !selectedPartId
-    ? null
-    : picking && pool.includes(selectedPartId)
-      ? { kind: 'pool', cardId: selectedPartId }
-      : drafting && player.carriedParts.includes(selectedPartId)
-        ? { kind: 'hold', cardId: selectedPartId }
-        : player.scrapDeck.includes(selectedPartId)
-          ? { kind: 'scrap', cardId: selectedPartId }
-          : null;
-  const held = drag ?? clicked;
+  const cockpitRound = drafting && setup?.round === 0 && !setup.complete;
+  const energyPhase = drafting && !!setup?.complete;
+  const ship = player.ship;
+  const cockpitAt = shipEngine.cockpitIndex(ship);
 
-  const canLandOn = (index: SlotIndex): boolean => {
-    if (!held || !canEdit) return false;
-    // A card is only ever taken off the table by the seat on the clock, even
-    // when it's dropped straight onto a position.
-    if (held.kind === 'pool' && !picking) return false;
-    const slot = player.ship.slots[index];
-    if (!slot) return false;
-    // Moving something already on the grid — the cockpit included. Landing on
-    // an occupied position swaps; landing on an empty one has to touch the
-    // hull and leave nothing adrift.
-    if (held.kind === 'grid') return shipEngine.canMoveTo(player.ship, held.slot, index);
-    // A part coming off a rack can't take the cockpit's position, and only
-    // fits if the cockpit still has a slot spare.
-    if (slot.partId) return slot.partId !== player.ship.cockpitId;
+  // ---------------------------------------------------------------- rules
+
+  const fitsAt = (cardId: CardId, cell: Cell): boolean => {
+    const part = getPart(cardId);
     return (
-      shipEngine.canAttachAt(player.ship, index) &&
-      shipEngine.hasFreeCapacity(CONTENT, player.ship)
+      !!part &&
+      part.role !== 'COCKPIT' &&
+      shipEngine.hasRoomFor(CONTENT, ship, cardId, config.shipSizeRule) &&
+      shipEngine.canPlaceAt(CONTENT, ship, cardId, cell)
     );
   };
 
-  const landOn = (index: SlotIndex) => {
-    if (!held || !canLandOn(index)) return;
-    if (held.kind === 'grid') moveModule(player.id, held.slot, index);
-    else if (held.kind === 'pool') draftCard(held.cardId, index);
-    else if (held.kind === 'hold') assemblePart(player.id, held.cardId, index);
-    else rearrange(player.id, held.cardId, index);
-    setDrag(null);
+  /** May this land on an empty cell? */
+  const cellAccepts = (p: DragPayload, cell: Cell): boolean => {
+    if (!canEdit || cockpitRound) return false;
+    switch (p.kind) {
+      case 'grid':
+        return shipEngine.canMoveTo(CONTENT, ship, p.slot, cell);
+      case 'table':
+        return picking && !game.pickError(CONTENT, config, state, player.id, p.cardId) && fitsAt(p.cardId, cell);
+      case 'hold':
+        return drafting && player.carriedParts.includes(p.cardId) && fitsAt(p.cardId, cell);
+      case 'scrap':
+        return rebuilding && player.scrapDeck.includes(p.cardId) && fitsAt(p.cardId, cell);
+      default:
+        return false;
+    }
+  };
+
+  const cellDrop = (p: DragPayload, cell: Cell) => {
+    if (p.kind === 'grid') store.moveModule(player.id, p.slot, cell);
+    else if (p.kind === 'table') store.draftCard(p.cardId, cell);
+    else if (p.kind === 'hold') store.assemblePart(player.id, p.cardId, cell);
+    else if (p.kind === 'scrap') store.fitFromScrap(player.id, p.cardId, cell);
+    selectPart(null);
+    setSelectedSlot(null);
+  };
+
+  /** May this land on a module that's already there? Swaps, tokens, a new cockpit. */
+  const slotAccepts = (p: DragPayload, slot: ShipSlot): boolean => {
+    if (!canEdit || cockpitRound) return false;
+    if (p.kind === 'grid') return shipEngine.canMoveTo(CONTENT, ship, p.slot, slot);
+    if (p.kind === 'token') return energyPhase && !game.energyError(CONTENT, config, state, player.id, slot.index, 1);
+    if (p.kind === 'scrap') return rebuilding && slot.index === cockpitAt && getPart(p.cardId)?.role === 'COCKPIT';
+    return false;
+  };
+
+  const slotDrop = (p: DragPayload, slot: ShipSlot) => {
+    if (p.kind === 'grid') store.moveModule(player.id, p.slot, slot);
+    else if (p.kind === 'token') store.placeEnergy(player.id, slot.index, 1);
+    else if (p.kind === 'scrap') store.fitFromScrap(player.id, p.cardId, null);
+    setSelectedSlot(null);
+  };
+
+  // Clicking a card arms it the way picking it up does: the cells it may go
+  // to light up, and clicking one puts it there.
+  const armed: DragPayload | null = !selectedPartId
+    ? null
+    : picking && table.includes(selectedPartId)
+      ? { kind: 'table', cardId: selectedPartId }
+      : drafting && player.carriedParts.includes(selectedPartId)
+        ? { kind: 'hold', cardId: selectedPartId }
+        : rebuilding && player.scrapDeck.includes(selectedPartId)
+          ? { kind: 'scrap', cardId: selectedPartId }
+          : canEdit && selectedSlot !== null && selectedSlot !== cockpitAt && ship.slots[selectedSlot]?.partId === selectedPartId
+            ? { kind: 'grid', slot: selectedSlot, cardId: selectedPartId }
+            : null;
+
+  const onTake = (cardId: CardId) => {
+    departFrom(`card:${cardId}`, document.querySelector(`[data-table-card="${cardId}"]`)?.getBoundingClientRect());
+    store.draftCard(cardId);
     selectPart(null);
   };
 
-  /** Dropping a fitted module back onto the hold pulls it off the ship. */
-  const landInHold = () => {
-    if (drag?.kind === 'grid' && drafting) returnPart(player.id, drag.slot);
-    setDrag(null);
-  };
-
-  const onSlotClick = (index: SlotIndex, partId: CardId | null) => {
-    if (held && canLandOn(index)) {
-      landOn(index);
-      return;
-    }
-    selectPart(partId);
-  };
-
   return (
-    <div className="flex min-h-0 flex-1 gap-5" onDragEnd={() => setDrag(null)}>
-      <div className="flex min-w-0 flex-1 flex-col">
-        {drafting && <DraftBar state={state} onTheClock={onTheClock} />}
-        {drafting && pool.length > 0 && (
-          <DraftPool
-            pool={pool}
-            picking={picking}
-            onPickUp={setDrag}
-            onTake={(cardId) => {
-              draftCard(cardId);
-              setDrag(null);
-              selectPart(null);
-            }}
-          />
-        )}
-        {state.prompt?.kind === 'rearrange' && <RearrangeBar reason={state.prompt.reason} />}
+    <div className="flex min-h-0 flex-1 gap-5">
+      <div className="flex min-w-0 flex-1 flex-col overflow-auto pr-1">
+        {drafting && <DraftBar state={state} />}
+        <AnimatePresence initial={false}>
+          {drafting && table.length > 0 && (
+            <motion.div
+              key="table"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex-none overflow-hidden"
+            >
+              <DraftTable state={state} table={table} picking={picking} onTake={onTake} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {rebuilding && <RebuildBar state={state} />}
 
-        <div className="mb-3.5 flex items-baseline gap-3">
-          <div className="font-display text-[20px] font-bold">
-            {drafting ? 'ASSEMBLY' : 'SHIP BUILDER'}
-          </div>
+        <div className="mb-3 flex flex-wrap items-baseline gap-3">
+          <div className="font-display text-[20px] font-bold">{drafting ? 'ASSEMBLY' : 'SHIP BUILDER'}</div>
           <div className="flex gap-1.5">
             {state.party.players.map((p) => (
               <button
                 key={p.id}
-                onClick={() => setBuilderPlayer(p.id)}
+                onClick={() => {
+                  setBuilderPlayer(p.id);
+                  setSelectedSlot(null);
+                }}
                 className={[
-                  'cursor-pointer border px-2.5 py-[5px] font-mono text-[11px]',
+                  'relative cursor-pointer border px-2.5 py-[5px] font-mono text-[11px] transition-colors duration-150',
                   p.id === player.id
                     ? 'border-n-900 bg-n-900 text-cream-100'
                     : 'border-putty-500 bg-putty-100 text-putty-700 hover:border-n-900',
                 ].join(' ')}
               >
+                <span className="mr-1.5 inline-block h-2 w-2" style={{ background: p.accent }} />
                 {p.label}
-                {drafting
-                  ? ` · ${draftedBy(state, p)}${p.id === onTheClock ? ' ◂ PICKS' : ''}`
-                  : ''}
+                {p.id === onTheClock ? ' ◂ PICKS' : ''}
+                {drafting && setup?.done.includes(p.id) && !setup.complete ? ' · DONE' : ''}
+                {energyPhase && p.tokens > 0 ? ` · ${p.tokens}⚡` : ''}
               </button>
             ))}
           </div>
-          <BuilderStats player={player} />
+          <BuilderStats player={player} config={config} drafting={drafting} />
         </div>
 
-        <Grid
-          player={player}
-          canEdit={canEdit}
-          held={held}
-          dragging={!!drag}
-          canLandOn={canLandOn}
-          onSlotClick={onSlotClick}
-          onPickUp={setDrag}
-          onLand={landOn}
-        />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={player.id}
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -24 }}
+            transition={{ duration: 0.18 }}
+          >
+            <GridEditor
+              player={player}
+              canEdit={canEdit && !cockpitRound}
+              cockpitRound={cockpitRound}
+              energyPhase={energyPhase}
+              armed={armed}
+              cellAccepts={cellAccepts}
+              cellDrop={cellDrop}
+              slotAccepts={slotAccepts}
+              slotDrop={slotDrop}
+              selectedSlot={selectedSlot}
+              onSelectSlot={(slot) => {
+                const id = ship.slots[slot]?.partId ?? null;
+                const same = slot === selectedSlot;
+                setSelectedSlot(same ? null : slot);
+                selectPart(same ? null : id);
+              }}
+            />
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      <div className="flex w-[300px] flex-none flex-col gap-3.5">
+      <div className="flex w-[300px] flex-none flex-col gap-3.5 overflow-auto">
+        {energyPhase && <EnergyPool player={player} />}
         {drafting ? (
-          <HoldPanel
-            player={player}
-            onPickUp={setDrag}
-            onDropIn={landInHold}
-            accepting={drag?.kind === 'grid'}
+          <CardRack
+            id="hold"
+            title="DRAFT HOLD"
+            count={`${player.carriedParts.length}`}
+            cards={player.carriedParts}
+            empty="Drafted modules that aren’t on the ship yet. Drag one off the ship to pull it back."
+            kind="hold"
+            canDrag={!cockpitRound}
+            zone={{
+              accepts: (p) =>
+                (p.kind === 'table' && picking && !game.pickError(CONTENT, config, state, player.id, p.cardId)) ||
+                (p.kind === 'grid' && p.slot !== cockpitAt),
+              onDrop: (p) => {
+                if (p.kind === 'table') store.draftCard(p.cardId);
+                else if (p.kind === 'grid') store.returnPart(player.id, p.slot);
+                setSelectedSlot(null);
+              },
+            }}
           />
         ) : (
-          <ScrapPanel state={state} player={player} onPickUp={setDrag} />
+          <CardRack
+            id="scrap"
+            title="SCRAP DECK"
+            count={`${player.scrapDeck.length}/${scrapCapacityFor(player, config)}`}
+            cards={player.scrapDeck}
+            empty={
+              rebuilding
+                ? 'Empty. Drag modules here to stow them.'
+                : 'Empty. Modules land here when you abandon a ship, or salvage the boss.'
+            }
+            kind="scrap"
+            canDrag={rebuilding}
+            zone={
+              rebuilding
+                ? {
+                    accepts: (p) => p.kind === 'grid' && p.slot !== cockpitAt,
+                    onDrop: (p) => {
+                      if (p.kind === 'grid') store.stowToScrap(player.id, p.slot);
+                      setSelectedSlot(null);
+                    },
+                  }
+                : null
+            }
+          />
         )}
-        <SelectedPanel state={state} player={player} canEdit={canEdit} />
+        <SelectedPanel state={state} player={player} selectedSlot={selectedSlot} onDone={() => setSelectedSlot(null)} />
       </div>
     </div>
   );
 }
 
-/** Cards this seat has taken off the table, wherever they've ended up. */
-function draftedBy(state: GameState, player: PlayerState): number {
-  const anchored = state.setup?.anchored.includes(player.id) ? 1 : 0;
-  return player.carriedParts.length + shipEngine.moduleCount(player.ship) + anchored;
-}
+// -------------------------------------------------------------------- draft
 
 /**
- * The draft's own control strip: whose pick it is, what's still on the table,
- * and the one button that ends setup.
- *
- * That button is live from the first pick onwards — the party can call the
- * draft whenever it likes and leave the rest of the spread on the table.
+ * The draft's control strip: which round, the snake order with the seat on
+ * the clock, what every seat has left to spend, and the buttons that end it.
  */
-function DraftBar({ state, onTheClock }: { state: GameState; onTheClock: PlayerId | null }) {
-  const draftAll = useGameStore((s) => s.draftAll);
-  const startMission = useGameStore((s) => s.startMission);
+function DraftBar({ state }: { state: GameState }) {
   const config = useConfig();
-
+  const draftAll = useGameStore((s) => s.draftAll);
+  const passDraft = useGameStore((s) => s.passDraft);
+  const startMission = useGameStore((s) => s.startMission);
+  const setup = state.setup!;
+  const onTheClock = game.nextDrafter(state);
   const seat = state.party.players.find((p) => p.id === onTheClock);
-  const left = state.setup?.pool.length ?? 0;
-  const picked = getPart(state.setup?.lastPicked ?? null);
-  const picker = state.party.players.find((p) => p.id === state.setup?.lastPickedBy);
+  const label = (id: PlayerId) => state.party.players.find((p) => p.id === id)?.label ?? id;
+  const canPass = !!seat && setup.round > 0;
+  const canStart = setup.complete || setup.round > 0;
+  const unplaced = state.party.players.reduce((sum, p) => sum + (setup.complete ? p.tokens : 0), 0);
 
   return (
-    <div className="mb-3.5 flex flex-wrap items-center gap-3 border-2 border-border-strong bg-crt-glass px-3 py-2.5">
+    <div className="mb-3 flex flex-none flex-wrap items-center gap-3 border-2 border-border-strong bg-crt-glass px-3 py-2.5">
       <span className="font-mono text-[10px] tracking-console text-crt-green-500">
-        SETUP · {seat ? 'DRAFT' : 'ASSEMBLE'}
+        SETUP ·{' '}
+        {setup.complete
+          ? 'PLACE ENERGY'
+          : setup.round === 0
+            ? 'COCKPIT ROUND'
+            : `MODULE ROUND ${setup.round}/${config.draftRounds}`}
       </span>
 
-      {seat ? (
-        <>
-          <span className="text-[15px] text-crt-white">
-            {picked && picker ? (
-              <>
-                <span className="font-display font-bold">{picker.label}</span> took {picked.name}.{' '}
-              </>
-            ) : (
-              <>
-                {left} part(s) dealt face up — {config.startingPartsDraws} per seat.{' '}
-              </>
-            )}
-            <span className="text-putty-400">
-              {seat.label} picks — {left} still on the table.
-            </span>
-          </span>
-          <div className="ml-auto flex gap-2">
-            <Button size="sm" variant="secondary" onClick={draftAll}>
-              Draft the rest
-            </Button>
-            <Button size="sm" onClick={startMission} title="Leave the rest of the spread behind">
-              Start the mission
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <span className="text-[15px] text-crt-white">
-            The table is empty. Drag the hold onto the grid — parts attach next to what's already
-            fitted — then roll out.
-          </span>
-          <div className="ml-auto">
-            <Button size="sm" onClick={startMission}>
-              Start the mission
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * The spread: every card dealt at run start, face up, until it's taken.
- *
- * Any of them is a legal pick for the seat on the clock — the whole point of
- * dealing up front is that a seat can read the table before committing. Click
- * to inspect and take, or drag a card straight onto a grid position.
- */
-function DraftPool({
-  pool,
-  picking,
-  onPickUp,
-  onTake,
-}: {
-  pool: CardId[];
-  picking: boolean;
-  onPickUp: (held: Held) => void;
-  onTake: (cardId: CardId) => void;
-}) {
-  const selectedPartId = useUiStore((s) => s.selectedPartId);
-  const selectPart = useUiStore((s) => s.selectPart);
-  const selected = selectedPartId && pool.includes(selectedPartId) ? selectedPartId : null;
-
-  return (
-    <div className="mb-3.5 flex flex-none flex-col gap-2 border-2 border-border-strong bg-surface-panel p-3 shadow-raised">
-      <div className="flex items-baseline gap-3">
-        <div className="font-display text-[13px] font-bold">ON THE TABLE</div>
-        <div className="font-mono text-[12px] text-putty-700">{pool.length}</div>
-        <div className="text-[14px] text-putty-700">
-          {picking
-            ? 'Take any card — click one to read it, or drag it straight onto the grid.'
-            : 'Waiting on the seat that holds the pick.'}
+      {!setup.complete && (
+        <div className="flex items-center gap-1 font-mono text-[11px] text-crt-white">
+          <span className="text-putty-400">ORDER {setup.round % 2 === 0 ? '→' : '←'}</span>
+          {setup.order.map((id) => (
+            <motion.span
+              key={id}
+              layout
+              className={[
+                'border px-1.5 py-px transition-colors duration-200',
+                id === onTheClock
+                  ? 'border-crt-green-500 text-crt-green-500'
+                  : setup.picked.includes(id)
+                    ? 'border-putty-600 text-putty-500 line-through'
+                    : 'border-putty-600 text-crt-white',
+              ].join(' ')}
+            >
+              {label(id)}
+              {setup.passed.includes(id) ? ' · PASS' : ''}
+            </motion.span>
+          ))}
         </div>
-        {selected && picking && (
-          <div className="ml-auto">
-            <Button size="sm" onClick={() => onTake(selected)}>
-              Take {getPart(selected)?.name ?? selected}
-            </Button>
-          </div>
-        )}
-      </div>
+      )}
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {pool.map((cardId, i) => (
-          // The tile fills its box, so the strip sets the card size itself.
-          <div key={`${cardId}-${i}`} className="h-[128px] w-[96px] flex-none">
-            <ModuleTile
-              slot={{ partId: cardId }}
-              variant="scrap"
-              selected={cardId === selectedPartId}
-              draggable={picking}
-              onDragStart={(e) => {
-                if (!picking) return;
-                startDrag(e);
-                onPickUp({ kind: 'pool', cardId });
-              }}
-              onClick={() => selectPart(cardId === selectedPartId ? null : cardId)}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Standing in for the prompt while the grid is being laid out. */
-function RearrangeBar({ reason }: { reason: string }) {
-  const closePrompt = useGameStore((s) => s.closePrompt);
-  return (
-    <div className="mb-3.5 flex flex-wrap items-center gap-3 border-2 border-border-strong bg-crt-glass px-3 py-2.5">
-      <span className="font-mono text-[10px] tracking-console text-crt-green-500">
-        REARRANGEMENT POINT
-      </span>
       <span className="text-[15px] text-crt-white">
-        Slot hoarded modules and move what's already fitted. Modules swapped out go back into the
-        Scrap Deck.
+        {setup.complete
+          ? 'Draft over. Drag modules to rearrange, and put your leftover tokens on them as starting ⚡ — drag a token onto a module, or use + / −.'
+          : seat
+            ? setup.round === 0
+              ? `${seat.label} takes a cockpit.`
+              : `${seat.label} buys a module or passes — ${seat.tokens} token(s) left. Every token not spent is starting ⚡.`
+            : 'Dealing…'}
       </span>
-      <div className="ml-auto">
-        <Button size="sm" onClick={closePrompt}>
-          {reason === 'mission-end' ? 'End mission' : 'Push on'}
+
+      <div className="ml-auto flex gap-2">
+        {canPass && (
+          <Button size="sm" variant="secondary" onClick={passDraft} title="Skip this round and keep the tokens for starting energy">
+            Pass
+          </Button>
+        )}
+        {!setup.complete && (
+          <Button size="sm" variant="secondary" onClick={draftAll}>
+            Draft the rest
+          </Button>
+        )}
+        <Button
+          size="sm"
+          className={setup.complete && unplaced === 0 ? 'attention' : ''}
+          onClick={startMission}
+          disabled={!canStart}
+          title={
+            !canStart
+              ? 'Everyone needs a cockpit first'
+              : unplaced > 0
+                ? `${unplaced} token(s) still unplaced — they’re lost if you start now`
+                : 'Anything still on the table goes back to its deck'
+          }
+        >
+          Start the mission{unplaced > 0 ? ` · ${unplaced}⚡ unplaced` : ''}
         </Button>
       </div>
     </div>
   );
 }
 
-function BuilderStats({ player }: { player: PlayerState }) {
-  const fitted = shipEngine.moduleCount(player.ship);
-  const capacity = shipEngine.moduleCapacity(CONTENT, player.ship);
-  const stored = player.ship.slots.reduce((sum, s) => sum + s.energy, 0);
-  const cockpitCharge = shipEngine.cockpitCharge(CONTENT, player.ship);
-  const cockpitCap = shipEngine.cockpitCapacity(CONTENT, player.ship);
+/**
+ * The face-up spread: seats still drafting + 1 cards, dealt onto the table.
+ * Anything the seat on the clock can't afford is dimmed, with the reason on
+ * hover.
+ */
+function DraftTable({
+  state,
+  table,
+  picking,
+  onTake,
+}: {
+  state: GameState;
+  table: CardId[];
+  picking: boolean;
+  onTake: (cardId: CardId) => void;
+}) {
+  const config = useConfig();
+  const selectedPartId = useUiStore((s) => s.selectedPartId);
+  const selectPart = useUiStore((s) => s.selectPart);
+  const onTheClock = game.nextDrafter(state);
+  const seat = state.party.players.find((p) => p.id === onTheClock);
+  const selected = selectedPartId && table.includes(selectedPartId) ? selectedPartId : null;
+  const why = (cardId: CardId) =>
+    onTheClock ? game.pickError(CONTENT, config, state, onTheClock, cardId) : 'nobody is picking';
+  const selectedError = selected ? why(selected) : null;
+  const round = state.setup?.round ?? 0;
+  // Copies of a card are told apart by how many of it lie further along: the
+  // engine takes the first copy, so this keeps every other card's key steady.
+  const after = (i: number) => table.slice(i + 1).filter((id) => id === table[i]).length;
+
   return (
-    <div className="ml-auto flex gap-2.5 font-mono text-[12px] text-putty-700">
-      <span title="The cockpit's own shield — the last charge before the ship is wrecked">
-        COCKPIT {cockpitCharge}/{cockpitCap}⚡ · {shipEngine.cockpitPower(CONTENT, player.ship)}⚔
-      </span>
-      <span title="Every charged absorber, cockpit included">
-        SHIELDS {shipEngine.shieldPool(CONTENT, player.ship)}
-      </span>
-      <span title="Modules fitted against the cockpit's slot count — the cockpit itself doesn't take one">
-        SLOTS {fitted}/{capacity}
-      </span>
-      <span>⚡ {stored} STORED</span>
+    <div className="mb-3 flex flex-col gap-2 border-2 border-border-strong bg-surface-panel p-3 shadow-raised">
+      <div className="flex flex-wrap items-baseline gap-3">
+        <div className="font-display text-[13px] font-bold">ON THE TABLE</div>
+        <div className="font-mono text-[12px] text-putty-700">{table.length}</div>
+        <div className="text-[14px] text-putty-700">
+          {round === 0
+            ? 'Take a cockpit — it sets your attack, your energy and how big your ship can get. Cockpits are free.'
+            : 'Buy a module with energy tokens — drag it onto a cell of your ship, or click it and Take it.'}
+        </div>
+        {seat && round > 0 && <TokenRow count={seat.tokens} />}
+        {selected && picking && (
+          <div className="ml-auto">
+            <Button size="sm" disabled={!!selectedError} title={selectedError ?? undefined} onClick={() => onTake(selected)}>
+              Take {getPart(selected)?.name ?? selected}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pt-1 pb-2">
+        <AnimatePresence mode="popLayout">
+          {table.map((cardId, i) => {
+            const n = after(i);
+            const error = why(cardId);
+            const part = getPart(cardId);
+            const payload: DragPayload | null = picking && !error ? { kind: 'table', cardId } : null;
+            return (
+              <motion.div
+                key={`${round}:${cardId}:${n}`}
+                layout
+                initial={{ opacity: 0, y: -40, rotate: -10, scale: 0.85 }}
+                animate={{ opacity: 1, y: 0, rotate: 0, scale: 1, transition: { type: 'spring', stiffness: 300, damping: 24, delay: i * 0.07 } }}
+                exit={{ opacity: 0, scale: 0.7, y: 20, transition: { duration: 0.2 } }}
+                className="flex w-[104px] flex-none flex-col gap-1"
+              >
+                <div className="h-[140px]" data-table-card={cardId}>
+                  <ModuleTile
+                    slot={{ partId: cardId }}
+                    variant="scrap"
+                    selected={cardId === selectedPartId}
+                    hint={picking && error ? 'blocked' : null}
+                    title={error ?? undefined}
+                    {...dragSource(payload, () => <ModuleTile slot={{ partId: cardId }} variant="scrap" />)}
+                    onClick={() => selectPart(cardId === selectedPartId ? null : cardId)}
+                  />
+                </div>
+                {part && <CostLine part={part} config={config} />}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
 
-function Grid({
+/** A row of energy tokens — what a seat has left to spend. */
+function TokenRow({ count }: { count: number }) {
+  return (
+    <div className="flex items-center gap-1" title={`${count} energy token(s) left`}>
+      <AnimatePresence initial={false}>
+        {Array.from({ length: count }, (_, i) => (
+          <motion.span
+            key={i}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0, y: -10 }}
+            className="block h-3 w-3 rounded-full border border-crt-green-700 bg-crt-green-500"
+          />
+        ))}
+      </AnimatePresence>
+      <span className="ml-1 font-mono text-[11px] text-putty-700">{count}⚡</span>
+    </div>
+  );
+}
+
+/** What a card costs: tokens for a module; a cockpit is free, and prints its limit. */
+function CostLine({ part, config }: { part: PartCard; config: GameConfig }) {
+  const text =
+    part.role === 'COCKPIT'
+      ? config.shipSizeRule === 'slots'
+        ? `FREE · ${part.slots ?? 0} SLOTS`
+        : config.shipSizeRule === 'budget'
+          ? `FREE · ◆${part.powerRating ?? 0} BUDGET`
+          : 'FREE'
+      : `COSTS ${powerCostOf(part)} TOKEN${powerCostOf(part) === 1 ? '' : 'S'}`;
+  return <div className="text-center font-mono text-[10px] text-putty-700">{text}</div>;
+}
+
+/** Standing in for the prompt while the ship is rebuilt. */
+function RebuildBar({ state }: { state: GameState }) {
+  const closePrompt = useGameStore((s) => s.closePrompt);
+  const error = useGameStore((s) => s.error);
+  const missionEnd = state.prompt?.kind === 'rearrange' && state.prompt.reason === 'mission-end';
+  return (
+    <div className="mb-3 flex flex-none flex-wrap items-center gap-3 border-2 border-border-strong bg-crt-glass px-3 py-2.5">
+      <span className="font-mono text-[10px] tracking-console text-crt-green-500">
+        {missionEnd ? 'MISSION END · REBUILD' : 'REARRANGEMENT POINT'}
+      </span>
+      <span className="text-[15px] text-crt-white">
+        Build from what you fly and your scrap deck: drag modules on and off the grid, move them around, or drop a
+        cockpit from the scrap deck onto yours to install it.
+      </span>
+      {error && <span className="font-mono text-[11px] text-toggle-red-300">{error}</span>}
+      <div className="ml-auto">
+        <Button size="sm" onClick={closePrompt}>
+          {missionEnd ? 'End mission' : 'Push on'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------- grid
+
+function BuilderStats({ player, config, drafting }: { player: PlayerState; config: GameConfig; drafting: boolean }) {
+  const size = sizeReadout(player.ship, config);
+  const cockpit = cockpitStats(player.ship);
+  const part = cockpit.part;
+  return (
+    <div className="ml-auto flex flex-wrap gap-2.5 font-mono text-[12px] text-putty-700">
+      <span title="The cockpit is the ship: attack, generate output, ⚡">
+        COCKPIT {part?.power ?? 0}⚔ · +{part?.genPerDown ?? 0}⚡ · {cockpit.energy}/{cockpit.max}⚡
+      </span>
+      <span title="Ship size under the rule in play" className={size.over ? 'text-toggle-red-500' : undefined}>
+        {size.text}
+      </span>
+      {drafting && <span>TOKENS {player.tokens}</span>}
+    </div>
+  );
+}
+
+/**
+ * The ship's grid, editable. Around it is a ring of open cells — every cell a
+ * module could be attached to. Pick a card up (or click it) and the ones it
+ * may legally land on light up; drop a module on another and they swap.
+ */
+function GridEditor({
   player,
   canEdit,
-  held,
-  dragging,
-  canLandOn,
-  onSlotClick,
-  onPickUp,
-  onLand,
+  cockpitRound,
+  energyPhase,
+  armed,
+  cellAccepts,
+  cellDrop,
+  slotAccepts,
+  slotDrop,
+  selectedSlot,
+  onSelectSlot,
 }: {
   player: PlayerState;
   canEdit: boolean;
-  held: Held | null;
-  dragging: boolean;
-  canLandOn: (index: SlotIndex) => boolean;
-  onSlotClick: (index: SlotIndex, partId: CardId | null) => void;
-  onPickUp: (held: Held) => void;
-  onLand: (index: SlotIndex) => void;
+  cockpitRound: boolean;
+  energyPhase: boolean;
+  armed: DragPayload | null;
+  cellAccepts: (p: DragPayload, cell: Cell) => boolean;
+  cellDrop: (p: DragPayload, cell: Cell) => void;
+  slotAccepts: (p: DragPayload, slot: ShipSlot) => boolean;
+  slotDrop: (p: DragPayload, slot: ShipSlot) => void;
+  selectedSlot: SlotIndex | null;
+  onSelectSlot: (slot: SlotIndex) => void;
 }) {
-  const selectedPartId = useUiStore((s) => s.selectedPartId);
-  const bonuses = adjacencyFor(player);
-  const full = !shipEngine.hasFreeCapacity(CONTENT, player.ship);
+  const ship = player.ship;
+  const errors = shipEngine.layoutErrors(CONTENT, ship);
+  const side = { kind: 'player' as const, id: player.id };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3.5 border-2 border-border-strong bg-surface-panel p-[18px] shadow-raised">
-      {/*
-       * The grid is the ship's own shape: every part fitted, plus one open
-       * position on each of its free sides and nothing beyond that. Cells
-       * outside that ring stay in the array (the geometry is index
-       * arithmetic) but print as empty space, so what's on screen is the hull
-       * and where it can grow.
-       */}
-      <div className="min-h-0 flex-1 overflow-auto">
-      <div
-        className="grid w-fit gap-2"
-        style={{
-          gridTemplateColumns: `repeat(${player.ship.gridCols}, 96px)`,
-          gridAutoRows: '134px',
-        }}
-      >
-        {player.ship.slots.map((slot) => {
-          const open = shipEngine.canAttachAt(player.ship, slot.index);
-          if (!slot.partId && !open) return <div key={slot.index} aria-hidden />;
-
-          const isCockpit = slot.partId === player.ship.cockpitId;
-          const ok = canLandOn(slot.index);
-          return (
-            <ModuleTile
-              key={slot.index}
-              slot={slot}
-              variant="large"
-              selected={!!slot.partId && slot.partId === selectedPartId && !held}
-              hint={held ? (ok ? 'ok' : dragging ? 'blocked' : null) : null}
-              title={
-                held && !ok
-                  ? isCockpit && held.kind !== 'grid'
-                    ? 'The cockpit holds this position — drag the cockpit itself to move it'
-                    : full && !slot.partId
-                      ? "Every one of the cockpit's slots is filled — swap onto a module instead"
-                      : 'Parts attach next to what is already fitted, and the ship stays in one piece'
-                  : undefined
-              }
-              draggable={canEdit && !!slot.partId}
-              onDragStart={(e) => {
-                if (!slot.partId) return;
-                startDrag(e);
-                onPickUp({ kind: 'grid', slot: slot.index, cardId: slot.partId });
-              }}
-              onDragOver={(e) => {
-                if (ok) e.preventDefault();
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                onLand(slot.index);
-              }}
-              onClick={() => onSlotClick(slot.index, slot.partId)}
+    <div className="flex flex-col gap-3 border-2 border-border-strong bg-surface-panel p-[18px] shadow-raised">
+      {cockpitRound ? (
+        <div className="py-8 text-center text-[15px] text-putty-700">
+          Cockpit round — every seat takes a cockpit first. The ship is built around it.
+        </div>
+      ) : (
+        <div className="flex justify-center overflow-auto py-2">
+          <div className="flex flex-col items-center gap-1">
+            <div className="font-mono text-[9px] tracking-[0.24em] text-putty-600">▲ FRONT · TOWARDS THE ENEMY</div>
+            <ShipGrid
+              ship={ship}
+              facing="up"
+              size="lg"
+              renderSlot={(slot) => (
+                <GridModule
+                  player={player}
+                  slot={slot}
+                  canEdit={canEdit}
+                  energyPhase={energyPhase}
+                  selected={selectedSlot === slot.index}
+                  accepts={(p) => slotAccepts(p, slot)}
+                  onDrop={(p) => slotDrop(p, slot)}
+                  onSelect={() => onSelectSlot(slot.index)}
+                  fx={fxKey(side, slot.index)}
+                />
+              )}
+              {...(canEdit
+                ? {
+                    renderEmpty: (cell: Cell) => (
+                      <OpenCell
+                        playerId={player.id}
+                        cell={cell}
+                        armed={armed}
+                        accepts={(p) => cellAccepts(p, cell)}
+                        onDrop={(p) => cellDrop(p, cell)}
+                      />
+                    ),
+                  }
+                : {})}
             />
-          );
-        })}
-      </div>
-      </div>
-
-      <div className="flex items-stretch gap-3">
-        <div className="flex flex-1 flex-col gap-1.5 border border-border-strong bg-crt-glass px-3 py-2.5">
-          <div className="font-mono text-[10px] tracking-console text-crt-green-500">
-            ADJACENCY BONUS · {bonuses.length > 0 ? 'ACTIVE' : 'NONE'}
+            <div className="font-mono text-[9px] tracking-[0.24em] text-putty-600">BACK ▼</div>
           </div>
-          <div className="text-[15px] leading-[1.35] text-crt-white">
-            {bonuses.length > 0
-              ? bonuses.map((b) => b.description).join(' ')
-              : 'No unbroken GEN→RDS→WPN chain on this grid. Put a redistributor between a generator and a weapon.'}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-stretch gap-3">
+        <div className="flex min-w-[260px] flex-1 flex-col gap-1.5 border border-border-strong bg-crt-glass px-3 py-2.5">
+          <div className="font-mono text-[10px] tracking-console text-crt-green-500">
+            LAYOUT · {errors.length === 0 ? 'LEGAL' : `${errors.length} PROBLEM(S)`}
+          </div>
+          <div className="text-[14px] leading-[1.35] text-crt-white">
+            {errors.length > 0
+              ? errors.join(' ')
+              : 'Front is up. Weapons sit beside or behind the cockpit; nothing sits in front of a shield, and a shield covers everything behind it in its column. Every module touches the ship, and ⚡ only reroutes between modules that touch.'}
           </div>
         </div>
 
@@ -501,113 +645,201 @@ function Grid({
   );
 }
 
-/** Parts drafted off the Parts deck and not yet fitted. */
-function HoldPanel({
+/** A module on the grid: something to pick up, to drop onto, and — after the draft — to charge. */
+function GridModule({
   player,
-  onPickUp,
-  onDropIn,
-  accepting,
+  slot,
+  canEdit,
+  energyPhase,
+  selected,
+  accepts,
+  onDrop,
+  onSelect,
+  fx,
 }: {
   player: PlayerState;
-  onPickUp: (held: Held) => void;
-  onDropIn: () => void;
-  accepting: boolean;
+  slot: ShipSlot;
+  canEdit: boolean;
+  energyPhase: boolean;
+  selected: boolean;
+  accepts: (p: DragPayload) => boolean;
+  onDrop: (p: DragPayload) => void;
+  onSelect: () => void;
+  fx: string;
 }) {
-  const selectedPartId = useUiStore((s) => s.selectedPartId);
-  const selectPart = useUiStore((s) => s.selectPart);
+  const placeEnergy = useGameStore((s) => s.placeEnergy);
+  const zone = useDropZone(`slot:${player.id}:${slot.x},${slot.y}`, canEdit ? { accepts, onDrop } : null);
+  const cockpit = slot.partId === player.ship.cockpitId;
+  const payload: DragPayload | null = canEdit && !cockpit ? { kind: 'grid', slot: slot.index, cardId: slot.partId } : null;
 
   return (
-    <div
-      onDragOver={(e) => {
-        if (accepting) e.preventDefault();
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        onDropIn();
-      }}
-      className={`border-2 bg-surface-panel p-3 shadow-raised ${
-        accepting ? 'border-accent-primary' : 'border-border-strong'
-      }`}
-    >
-      <div className="mb-2.5 flex items-baseline justify-between">
-        <div className="font-display text-[13px] font-bold">DRAFT HOLD</div>
-        <div className="font-mono text-[12px] text-putty-700">{player.carriedParts.length}</div>
-      </div>
-
-      {player.carriedParts.length === 0 ? (
-        <div className="text-[14px] text-putty-700">
-          {accepting
-            ? 'Drop a module here to pull it off the ship.'
-            : 'Nothing in the hold. Draw a part, or every part drawn is already fitted.'}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2" style={{ gridAutoRows: '128px' }}>
-          {player.carriedParts.map((cardId, i) => (
-            <ModuleTile
-              key={`${cardId}-${i}`}
-              slot={{ partId: cardId }}
-              variant="scrap"
-              selected={cardId === selectedPartId}
-              draggable
-              onDragStart={(e) => {
-                startDrag(e);
-                onPickUp({ kind: 'hold', cardId });
-              }}
-              onClick={() => selectPart(cardId)}
-            />
-          ))}
-        </div>
-      )}
+    <div {...zone.props} className="h-full w-full">
+      <ModuleTile
+        slot={slot}
+        variant="large"
+        selected={selected && !zone.dragging}
+        hint={zone.over ? 'over' : zone.active ? 'ok' : null}
+        fxKey={fx}
+        flyKey={`card:${slot.partId}`}
+        title={cockpit ? 'The cockpit is the ship — it stays where it is. Install another from the scrap deck at a rebuild.' : undefined}
+        {...dragSource(payload, () => <ModuleTile slot={slot} variant="large" />)}
+        onClick={onSelect}
+      >
+        {energyPhase && (
+          <div className="absolute right-0.5 bottom-4 flex gap-0.5">
+            {(['-', '+'] as const).map((sign) => (
+              <button
+                key={sign}
+                className="h-5 w-5 cursor-pointer border border-n-900 bg-cream-100 font-mono text-[12px] leading-none font-bold shadow-raised hover:bg-crt-green-300 disabled:cursor-not-allowed disabled:opacity-30"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  placeEnergy(player.id, slot.index, sign === '+' ? 1 : -1);
+                }}
+                title={sign === '+' ? 'Put a token on it' : 'Take a token back off'}
+              >
+                {sign === '+' ? '+' : '−'}
+              </button>
+            ))}
+          </div>
+        )}
+      </ModuleTile>
     </div>
   );
 }
 
-function ScrapPanel({
-  state,
-  player,
-  onPickUp,
+/** An open cell next to the ship. Lights up when what's held may land here. */
+function OpenCell({
+  playerId,
+  cell,
+  armed,
+  accepts,
+  onDrop,
 }: {
-  state: GameState;
-  player: PlayerState;
-  onPickUp: (held: Held) => void;
+  playerId: PlayerId;
+  cell: Cell;
+  armed: DragPayload | null;
+  accepts: (p: DragPayload) => boolean;
+  onDrop: (p: DragPayload) => void;
 }) {
-  const config = useConfig();
+  const zone = useDropZone(`cell:${playerId}:${cell.x},${cell.y}`, { accepts, onDrop });
+  const clickable = !zone.dragging && !!armed && accepts(armed);
+  const lit = zone.active || clickable;
+  return (
+    <div
+      {...zone.props}
+      onClick={() => clickable && armed && onDrop(armed)}
+      title={clickable ? 'Put it here' : undefined}
+      className={[
+        'box-border h-full w-full border-2 border-dashed transition-[background-color,border-color,opacity,transform] duration-150',
+        zone.over
+          ? 'scale-[1.04] border-accent-primary bg-crt-green-300/60'
+          : lit
+            ? 'cursor-pointer border-accent-primary bg-putty-100'
+            : zone.dragging || armed
+              ? 'border-putty-400 opacity-30'
+              : 'border-putty-400/70 opacity-60',
+      ].join(' ')}
+    />
+  );
+}
+
+// ------------------------------------------------------------------- racks
+
+/** Leftover tokens, waiting to go on the ship as starting ⚡. */
+function EnergyPool({ player }: { player: PlayerState }) {
+  const autoEnergy = useGameStore((s) => s.autoEnergy);
+  const error = useGameStore((s) => s.error);
+  const dragging = useDragStore((s) => s.payload?.kind === 'token');
+  return (
+    <div className={`border-2 bg-crt-glass p-3 shadow-raised transition-colors ${dragging ? 'border-crt-green-500' : 'border-border-strong'}`}>
+      <div className="mb-1 flex items-baseline justify-between">
+        <div className="font-display text-[13px] font-bold text-crt-white">STARTING ENERGY</div>
+        <div className="font-mono text-[12px] text-crt-green-500">{player.tokens} LEFT</div>
+      </div>
+      <div className="mb-2 text-[13px] leading-[1.3] text-putty-400">
+        Tokens you didn’t spend. Drag one onto a module — up to its max — or use the module’s + and −.
+      </div>
+      <div className="mb-2 flex min-h-6 flex-wrap gap-1.5">
+        <AnimatePresence initial={false}>
+          {Array.from({ length: player.tokens }, (_, i) => (
+            <motion.div
+              key={i}
+              layout
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              className="h-6 w-6 cursor-grab rounded-full border-2 border-crt-green-700 bg-crt-green-500 shadow-[0_0_8px_rgb(159_217_160/0.6)] active:cursor-grabbing"
+              {...dragSource({ kind: 'token' }, () => (
+                <div className="h-6 w-6 rounded-full border-2 border-crt-green-700 bg-crt-green-500 shadow-[0_0_12px_rgb(159_217_160/0.9)]" />
+              ))}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="secondary" disabled={player.tokens === 0} onClick={() => autoEnergy(player.id)}>
+          Spread them for me
+        </Button>
+        {error && <span className="font-mono text-[11px] text-toggle-red-300">{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** The hold (setup) or the scrap deck (everywhere else): cards off the ship. */
+function CardRack({
+  id,
+  title,
+  count,
+  cards,
+  empty,
+  kind,
+  canDrag,
+  zone,
+}: {
+  id: string;
+  title: string;
+  count: string;
+  cards: CardId[];
+  empty: string;
+  kind: 'hold' | 'scrap';
+  canDrag: boolean;
+  zone: { accepts: (p: DragPayload) => boolean; onDrop: (p: DragPayload) => void } | null;
+}) {
   const selectedPartId = useUiStore((s) => s.selectedPartId);
   const selectPart = useUiStore((s) => s.selectPart);
-  const capacity = scrapCapacityFor(player, config);
-  const canEdit = state.phase === 'rearrange' || state.phase === 'map' || state.phase === 'victory';
+  const drop = useDropZone(id, zone);
 
   return (
-    <div className="border-2 border-border-strong bg-surface-panel p-3 shadow-raised">
+    <div
+      {...drop.props}
+      className={`border-2 bg-surface-panel p-3 shadow-raised transition-[border-color,background-color] duration-150 ${
+        drop.over ? 'border-accent-primary bg-crt-green-300/30' : drop.active ? 'border-accent-primary' : 'border-border-strong'
+      }`}
+    >
       <div className="mb-2.5 flex items-baseline justify-between">
-        <div className="font-display text-[13px] font-bold">SCRAP DECK</div>
-        <div className="font-mono text-[12px] text-putty-700">
-          {player.scrapDeck.length}/{capacity}
-        </div>
+        <div className="font-display text-[13px] font-bold">{title}</div>
+        <div className="font-mono text-[12px] text-putty-700">{count}</div>
       </div>
-      <div className="grid grid-cols-2 gap-2" style={{ gridAutoRows: '128px' }}>
-        {Array.from({ length: capacity }, (_, i) => {
-          const cardId = player.scrapDeck[i] ?? null;
-          return (
-            <ModuleTile
-              key={i}
-              slot={{ partId: cardId }}
-              variant="scrap"
-              selected={!!cardId && cardId === selectedPartId}
-              draggable={canEdit && !!cardId}
-              onDragStart={(e) => {
-                if (!cardId) return;
-                startDrag(e);
-                onPickUp({ kind: 'scrap', cardId });
-              }}
-              onClick={() => selectPart(cardId)}
-            />
-          );
-        })}
-      </div>
-      {!canEdit && player.scrapDeck.length > 0 && (
-        <div className="pt-2 text-[13px] text-putty-700">
-          Hoarded modules go in at a rearrangement point.
+      {cards.length === 0 ? (
+        <div className="text-[14px] text-putty-700">{drop.active ? 'Drop it here.' : empty}</div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2" style={{ gridAutoRows: '128px' }}>
+          <AnimatePresence initial={false} mode="popLayout">
+            {cards.map((cardId, i) => (
+              <motion.div key={`${cardId}-${i}`} layout exit={{ opacity: 0, scale: 0.8 }}>
+                <ModuleTile
+                  slot={{ partId: cardId }}
+                  variant="scrap"
+                  selected={cardId === selectedPartId}
+                  flyKey={`card:${cardId}`}
+                  {...dragSource(canDrag ? { kind, cardId } : null, () => <ModuleTile slot={{ partId: cardId }} variant="scrap" />)}
+                  onClick={() => selectPart(cardId === selectedPartId ? null : cardId)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
     </div>
@@ -618,145 +850,142 @@ function ScrapPanel({
 function SelectedPanel({
   state,
   player,
-  canEdit,
+  selectedSlot,
+  onDone,
 }: {
   state: GameState;
   player: PlayerState;
-  canEdit: boolean;
+  selectedSlot: SlotIndex | null;
+  onDone: () => void;
 }) {
+  const config = useConfig();
   const selectedPartId = useUiStore((s) => s.selectedPartId);
   const selectPart = useUiStore((s) => s.selectPart);
   const assemblePart = useGameStore((s) => s.assemblePart);
-  const installCockpit = useGameStore((s) => s.installCockpit);
   const returnPart = useGameStore((s) => s.returnPart);
-  const rearrange = useGameStore((s) => s.rearrange);
+  const fitFromScrap = useGameStore((s) => s.fitFromScrap);
+  const stowToScrap = useGameStore((s) => s.stowToScrap);
   const selected = getPart(selectedPartId);
 
   const drafting = state.phase === 'setup';
+  const rebuilding = state.phase === 'rearrange';
   const inHold = !!selectedPartId && drafting && player.carriedParts.includes(selectedPartId);
   const inScrap = !!selectedPartId && player.scrapDeck.includes(selectedPartId);
-  const onGrid =
-    drafting && !!selectedPartId && selectedPartId !== player.ship.cockpitId
-      ? player.ship.slots.find((s) => s.partId === selectedPartId)
+  const gridSlot = selectedSlot !== null && player.ship.slots[selectedSlot]?.partId === selectedPartId ? selectedSlot : null;
+  const isCockpitSlot = gridSlot !== null && gridSlot === shipEngine.cockpitIndex(player.ship);
+
+  const room = !!selectedPartId && shipEngine.hasRoomFor(CONTENT, player.ship, selectedPartId, config.shipSizeRule);
+  const spot = !!selectedPartId && !!shipEngine.bestCell(CONTENT, player.ship, selectedPartId);
+  const fits = !!selectedPartId && selected?.role !== 'COCKPIT' && room && spot;
+  const size = sizeReadout(player.ship, config);
+  const whyNot = !room
+    ? `No room — ${size.text.toLowerCase()}`
+    : !spot
+      ? 'Nowhere on the ship it may sit — check the layout rules'
       : undefined;
-  const noRoom =
-    shipEngine.bestAttachSlot(player.ship) < 0 ||
-    !shipEngine.hasFreeCapacity(CONTENT, player.ship);
-  const stuck = !!onGrid && !shipEngine.canDetach(player.ship, onGrid.index);
 
   const act = (fn: () => void) => {
     fn();
     selectPart(null);
+    onDone();
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-2 border-border-strong bg-surface-panel p-3 shadow-raised">
-      <div className="mb-2.5 font-display text-[13px] font-bold">
+      <div className="mb-2.5 flex items-center gap-2 font-display text-[13px] font-bold">
         SELECTED · {selected ? selected.name.toUpperCase() : 'NONE'}
+        {selected?.firstDown && <FirstDownBadge />}
       </div>
 
-      {selected ? (
-        <div className="flex flex-col gap-2 border border-border-strong bg-crt-glass p-2.5">
-          <div className="flex flex-wrap gap-3.5 font-mono text-[12px] text-crt-white">
-            {selected.role === 'COCKPIT' ? (
-              <>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={selectedPartId ?? 'none'}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.15 }}
+        >
+          {selected ? (
+            <div className="flex flex-col gap-2 border border-border-strong bg-crt-glass p-2.5">
+              <div className="flex flex-wrap gap-3.5 font-mono text-[12px] text-crt-white">
                 <span>
-                  SLOTS <span className="text-crt-green-500">{selected.slots ?? 0}</span>
+                  MAX <span className="text-crt-green-500">{selected.energyCapacity}⚡</span>
                 </span>
+                {selected.role === 'COCKPIT' ? (
+                  <>
+                    <span>
+                      ATK <span className="text-crt-green-500">{selected.power ?? 0}⚔</span>
+                    </span>
+                    <span>
+                      GEN <span className="text-crt-green-500">+{selected.genPerDown ?? 0}⚡</span>
+                    </span>
+                    {config.shipSizeRule === 'slots' && (
+                      <span>
+                        SLOTS <span className="text-crt-green-500">{selected.slots ?? 0}</span>
+                      </span>
+                    )}
+                    {config.shipSizeRule === 'budget' && (
+                      <span>
+                        RATING <span className="text-crt-green-500">◆{selected.powerRating ?? 0}</span>
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span>
+                    COST <span className="text-crt-green-500">{powerCostOf(selected)} TOKENS</span>
+                  </span>
+                )}
                 <span>
-                  ATTACK <span className="text-crt-green-500">{selected.power ?? 0}⚔</span>
+                  TIER <span style={{ color: 'var(--rarity-3)' }}>{selected.rarity}</span>
                 </span>
-                <span>
-                  SHIELD <span className="text-crt-green-500">{selected.energyCapacity ?? 0}⚡</span>
-                </span>
-                <span>
-                  GEN <span className="text-crt-green-500">+{selected.genPerDown ?? 0}⚡/DOWN</span>
-                </span>
-              </>
-            ) : (
-              <>
-                <span>
-                  COST <span className="text-crt-green-500">{cardCost(selected)}⚡</span>
-                </span>
-                <span>
-                  MAX <span className="text-crt-green-500">{selected.energyCapacity ?? '—'}⚡</span>
-                </span>
-              </>
-            )}
-            <span>
-              TIER <span style={{ color: 'var(--rarity-3)' }}>{selected.rarity}</span>
-            </span>
-          </div>
-          {printedLines(selected).map((line, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <span className="mt-0.5 flex-none font-mono text-[10px] tracking-[0.08em] text-putty-600">
-                {line.timing === 'active' ? 'ACT' : 'PAS'}
-              </span>
-              <span className="text-[15px] leading-[1.35] text-crt-white">{line.text}</span>
+              </div>
+              {printedLines(selected).map((line, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span
+                    className="mt-0.5 flex-none font-mono text-[10px] tracking-[0.08em]"
+                    style={{ color: TIMING_CHIP[line.timing].color }}
+                  >
+                    {TIMING_CHIP[line.timing].label}
+                  </span>
+                  <span className="text-[15px] leading-[1.35] text-crt-white">{line.text}</span>
+                </div>
+              ))}
             </div>
-          ))}
-          {selected.oncePerSet && (
-            <div className="font-mono text-[11px] text-amber-300">ONE SHOT PER SET OF DOWNS</div>
-          )}
-        </div>
-      ) : (
-        <div className="text-[14px] text-putty-700">
-          Drag a part onto the grid, or click one and then click the position it goes in.
-        </div>
-      )}
-
-      {selectedPartId && (inHold || inScrap) && canEdit && (
-        <div className="mt-2.5 flex flex-col gap-2">
-          {selected?.role === 'COCKPIT' && inHold ? (
-            <Button
-              size="sm"
-              onClick={() => act(() => installCockpit(player.id, selectedPartId))}
-              title="Re-anchor the ship on this cockpit"
-            >
-              Install as cockpit · {selected.slots ?? 0} slots
-            </Button>
           ) : (
-            <Button
-              size="sm"
-              disabled={noRoom}
-              title={
-                noRoom
-                  ? shipEngine.hasFreeCapacity(CONTENT, player.ship)
-                    ? 'No free position touches the ship'
-                    : "Every one of the cockpit's slots is filled"
-                  : undefined
-              }
-              onClick={() =>
-                act(() =>
-                  inHold
-                    ? assemblePart(player.id, selectedPartId, -1)
-                    : rearrange(player.id, selectedPartId, -1),
-                )
-              }
-            >
-              Attach where it fits
-            </Button>
+            <div className="text-[14px] text-putty-700">
+              Drag a card onto a lit cell of the ship, or click it and then click the cell it goes in.
+            </div>
           )}
-        </div>
-      )}
+        </motion.div>
+      </AnimatePresence>
 
-      {onGrid && (
-        <div className="mt-2.5">
+      <div className="mt-2.5 flex flex-col gap-2">
+        {selectedPartId && inHold && (
+          <Button size="sm" disabled={!fits} title={whyNot} onClick={() => act(() => assemblePart(player.id, selectedPartId, null))}>
+            Fit where it fits best
+          </Button>
+        )}
+        {selectedPartId && inScrap && rebuilding && (
           <Button
             size="sm"
-            variant="secondary"
-            disabled={stuck}
-            title={
-              stuck
-                ? 'Taking this out would leave the modules hanging off it adrift — move them first'
-                : undefined
-            }
-            onClick={() => act(() => returnPart(player.id, onGrid.index))}
+            disabled={selected?.role !== 'COCKPIT' && !fits}
+            onClick={() => act(() => fitFromScrap(player.id, selectedPartId, null))}
+            title={selected?.role === 'COCKPIT' ? 'The old cockpit goes into the scrap deck in its place' : whyNot}
           >
+            {selected?.role === 'COCKPIT' ? 'Install as cockpit' : 'Fit where it fits best'}
+          </Button>
+        )}
+        {gridSlot !== null && !isCockpitSlot && drafting && (
+          <Button size="sm" variant="secondary" onClick={() => act(() => returnPart(player.id, gridSlot))}>
             Pull back into the hold
           </Button>
-        </div>
-      )}
+        )}
+        {gridSlot !== null && !isCockpitSlot && rebuilding && (
+          <Button size="sm" variant="secondary" onClick={() => act(() => stowToScrap(player.id, gridSlot))}>
+            Stow in the scrap deck
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

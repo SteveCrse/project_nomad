@@ -11,8 +11,7 @@ export function effectSummary(effect: CardEffect): string {
   const parts = def.params.map((p) => `${effectParam(effect, p.key)}${p.symbol ?? ''}`);
   if (effect.cost) parts.unshift(`${effect.cost}⚡`);
   if (effect.dice) {
-    const count = effect.dice.count === 'variable' ? 'X' : effect.dice.count;
-    parts.push(`${count}${effect.dice.die}`);
+    parts.push(`${effect.dice.count}${effect.dice.die}`);
   }
   return parts.length > 0 ? `${def.label} ${parts.join(' / ')}` : def.label;
 }
@@ -31,9 +30,10 @@ export function EffectChips({ card, onOpen }: { card: Card; onOpen?: () => void 
   const effects = card.effects ?? [];
 
   if (effects.length === 0) {
-    // A cockpit's weapon, shield and generator are intrinsic to being a
-    // cockpit — an empty list is right there, and only there.
-    const intrinsic = card.kind === 'part' && card.role === 'COCKPIT';
+    // A cockpit prints its attack and output on itself, a shield's job is its
+    // role, and an enemy action is its action — an empty list is right there.
+    const intrinsic =
+      card.kind === 'action' || (card.kind === 'part' && (card.role === 'COCKPIT' || card.role === 'SHD'));
     return (
       <button
         type="button"
@@ -43,7 +43,13 @@ export function EffectChips({ card, onOpen }: { card: Card; onOpen?: () => void 
           intrinsic ? 'text-putty-600' : 'text-toggle-red-500',
         ].join(' ')}
       >
-        {intrinsic ? 'intrinsic ⚔️ ⚡ gen' : 'no effects'}
+        {!intrinsic
+          ? 'no effects'
+          : card.kind === 'action'
+            ? 'its action'
+            : card.kind === 'part' && card.role === 'SHD'
+              ? 'blocks'
+              : 'printed ⚔️ ⚡'}
       </button>
     );
   }

@@ -1,12 +1,13 @@
 import { Fragment, type ReactNode } from 'react';
-import type { Card, CardKind, ModuleRole, Rarity } from '@engine/types';
+import type { Card, EnemyActionType, ModuleRole, Rarity } from '@engine/types';
 import {
+  ACTION_LABEL,
   attackOf,
-  cardCost,
   cardWarnings,
   effectParam,
-  isActiveEffect,
+  expectedDamage,
   isDamageEffect,
+  powerCostOf,
   printedText,
 } from '@engine';
 import { RARITY_NAME, ROLE_COLOR, rarityColor } from '@/lib/palette';
@@ -20,22 +21,31 @@ import { NumberCell, SelectCell, TextCell } from './inputs';
  * The deck as a spreadsheet.
  *
  * One row per card, every balance-critical number editable in place: rarity,
- * copies in the deck, ⚡ cost, max ⚡, ⚔️ attack — and the rules text those
- * numbers produce, read-only, because a card's text is derived from its
- * effects rather than typed. Anything with more shape than a number — the
- * effect list, its costs and dice, art, flavour — lives in the card panel, one
- * click away on the row.
+ * copies, max ⚡ (hit chance and HP), attack, generate output, the 1st-down
+ * icon, power cost — and the cockpit numbers that size a ship. Beside them,
+ * read-only, the rules' own balancing line (attack × ⚡ ÷ 6 at full charge) and
+ * the rules text the numbers produce. Anything with more shape than a number —
+ * the effect list, placement limits, art, flavour — lives in the card panel,
+ * one click away on the row.
  */
 
-const KIND_SECTIONS: { kind: CardKind; label: string }[] = [
-  { kind: 'part', label: 'PARTS DECK' },
-  { kind: 'item', label: 'ITEMS DECK' },
-  { kind: 'event', label: 'EVENTS DECK' },
+/** The decks in the rules' Test Materials, each its own section. */
+const SECTIONS: { key: string; label: string; match: (card: Card) => boolean }[] = [
+  { key: 'cockpits', label: 'COCKPIT DECK', match: (c) => c.kind === 'part' && c.role === 'COCKPIT' },
+  { key: 'parts', label: 'PARTS DECK', match: (c) => c.kind === 'part' && c.role !== 'COCKPIT' },
+  { key: 'items', label: 'ITEMS DECK', match: (c) => c.kind === 'item' },
+  { key: 'events', label: 'EVENTS DECK', match: (c) => c.kind === 'event' },
+  {
+    key: 'actions',
+    label: 'ENEMY ACTION DECKS · EVERY DECK HOLDS ALL OF THESE',
+    match: (c) => c.kind === 'action',
+  },
 ];
 
-/** A cockpit is a role now, so it's one option in the same dropdown. */
+/** A cockpit is a role, so it's one option in the same dropdown. */
 const PART_ROLES: ModuleRole[] = ['COCKPIT', 'GEN', 'WPN', 'SHD', 'RDS', 'OTH'];
 const ITEM_ROLES: ModuleRole[] = ['GEN', 'WPN', 'SHD', 'RDS', 'OTH'];
+const ACTIONS = Object.keys(ACTION_LABEL) as EnemyActionType[];
 
 interface Column {
   key: string;
@@ -48,15 +58,18 @@ interface Column {
 const COLUMNS: Column[] = [
   { key: 'art', label: '', width: 30, title: 'art' },
   { key: 'name', label: 'NAME', width: 168 },
-  { key: 'subtype', label: 'SUBTYPE', width: 104, title: 'events only — the classification printed on the card' },
+  { key: 'type', label: 'TYPE', width: 104, title: 'an event’s printed subtype, or an enemy card’s action' },
   { key: 'role', label: 'ROLE', width: 86 },
   { key: 'rarity', label: 'RARITY', width: 104 },
   { key: 'amount', label: '×N', width: 46, title: 'copies in the deck', right: true },
-  { key: 'cost', label: 'COST⚡', width: 58, right: true, title: '⚡ one activation draws, across the card’s active effects' },
-  { key: 'max', label: 'MAX⚡', width: 58, right: true, title: 'the most ⚡ this module’s own pool holds' },
-  { key: 'atk', label: 'ATK⚔️', width: 56, right: true },
-  { key: 'slots', label: 'SLOTS', width: 50, right: true },
-  { key: 'gen', label: 'GEN⚡', width: 52, right: true, title: 'cockpit generator, per down' },
+  { key: 'max', label: 'MAX⚡', width: 56, right: true, title: 'max energy — hit chance and HP at once' },
+  { key: 'atk', label: 'ATK⚔', width: 52, right: true, title: 'attack: ⚡ taken off the target per hit' },
+  { key: 'out', label: 'OUT⚡', width: 52, right: true, title: 'what one generate action adds' },
+  { key: 'first', label: '1ST', width: 38, title: 'the 1st-down icon — destroying it earns a 1st down' },
+  { key: 'cost', label: 'COST◆', width: 56, right: true, title: 'power cost: draft tokens / upkeep · blank = from rarity' },
+  { key: 'slots', label: 'SLOTS', width: 50, right: true, title: 'cockpit: max modules under the slot rule' },
+  { key: 'rating', label: 'RATING◆', width: 60, right: true, title: 'cockpit: upkeep budget, under the energy-budget size rule' },
+  { key: 'ev', label: 'E⚔', width: 50, right: true, title: 'expected damage per shot at full charge: attack × ⚡ ÷ 6' },
   { key: 'effects', label: 'EFFECTS', width: 210 },
   { key: 'text', label: 'PRINTS AS', width: 320, title: 'derived from the effects — edit the effect, not the text' },
   { key: 'actions', label: '', width: 60 },
@@ -91,8 +104,7 @@ export function DeckTable({
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = widthOf(column);
-    const onMove = (e: MouseEvent) =>
-      setWidth(column.key, Math.max(MIN_WIDTH, startWidth + e.clientX - startX));
+    const onMove = (e: MouseEvent) => setWidth(column.key, Math.max(MIN_WIDTH, startWidth + e.clientX - startX));
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
@@ -137,12 +149,12 @@ export function DeckTable({
         </thead>
 
         <tbody>
-          {KIND_SECTIONS.map(({ kind, label }) => {
-            const rows = cards.filter((c) => c.kind === kind);
+          {SECTIONS.map(({ key, label, match }) => {
+            const rows = cards.filter(match);
             if (rows.length === 0) return null;
             const copies = rows.reduce((sum, c) => sum + c.amount, 0);
             return (
-              <Fragment key={kind}>
+              <Fragment key={key}>
                 <tr className="bg-putty-300">
                   <td
                     colSpan={COLUMNS.length}
@@ -152,12 +164,7 @@ export function DeckTable({
                   </td>
                 </tr>
                 {rows.map((card) => (
-                  <Row
-                    key={card.id}
-                    card={card}
-                    selected={card.id === selectedId}
-                    onSelect={() => onSelect(card.id)}
-                  />
+                  <Row key={card.id} card={card} selected={card.id === selectedId} onSelect={() => onSelect(card.id)} />
                 ))}
               </Fragment>
             );
@@ -166,26 +173,17 @@ export function DeckTable({
       </table>
 
       {cards.length === 0 && (
-        <div className="p-6 text-center font-mono text-[12px] text-putty-700">
-          nothing matches those filters
-        </div>
+        <div className="p-6 text-center font-mono text-[12px] text-putty-700">nothing matches those filters</div>
       )}
     </div>
   );
 }
 
-function Row({
-  card,
-  selected,
-  onSelect,
-}: {
-  card: Card;
-  selected: boolean;
-  onSelect: () => void;
-}) {
+const Blank = () => <div className="px-1.5 py-1 text-center font-mono text-[12px] text-putty-500">—</div>;
+
+function Row({ card, selected, onSelect }: { card: Card; selected: boolean; onSelect: () => void }) {
   const patchCard = useDeckStore((s) => s.patchCard);
   const setEffectParam = useDeckStore((s) => s.setEffectParam);
-  const setEffectCost = useDeckStore((s) => s.setEffectCost);
   const duplicateCard = useDeckStore((s) => s.duplicateCard);
   const removeCard = useDeckStore((s) => s.removeCard);
   const revertCard = useDeckStore((s) => s.revertCard);
@@ -193,35 +191,28 @@ function Row({
   const custom = useDeckStore((s) => s.overlay.added.some((c) => c.id === card.id));
 
   const warnings = cardWarnings(card);
-  const isPart = card.kind === 'part';
-  const isCockpit = isPart && card.role === 'COCKPIT';
-  const part = isPart ? card : null;
+  const part = card.kind === 'part' ? card : null;
+  const isCockpit = part?.role === 'COCKPIT';
+  const effects = card.effects ?? [];
 
-  // ⚔️ lives in the damage effect for a module, but a cockpit's basic attack is
-  // printed on the cockpit itself — it isn't something fitted to one.
-  const attackIndex = (card.effects ?? []).findIndex((e) => isDamageEffect(e.type));
-  const attack = attackIndex >= 0 ? effectParam(card.effects![attackIndex]!, 'power') : attackOf(card);
+  // A module's attack lives in its damage effect, a cockpit's is printed on it.
+  const attackIndex = effects.findIndex((e) => isDamageEffect(e.type));
+  const attack = attackIndex >= 0 ? effectParam(effects[attackIndex]!, 'power') : attackOf(card);
   const canEditAttack = attackIndex >= 0 || isCockpit;
 
-  // Cost belongs to an effect now. One active effect means the row can still
-  // edit it in place; with two, the sheet shows what an activation totals and
-  // sends the designer to the panel, where each line has its own price.
-  const activeIndexes = (card.effects ?? [])
-    .map((e, i) => (isActiveEffect(e.type) ? i : -1))
-    .filter((i) => i >= 0);
-  const costIndex = activeIndexes.length === 1 ? activeIndexes[0]! : -1;
-  const cost = cardCost(card);
+  // Same for output: a generator's generate effect, a cockpit's printed number.
+  const genIndex = effects.findIndex((e) => e.type === 'generate');
+  const output = genIndex >= 0 ? effectParam(effects[genIndex]!, 'amount') : (part?.genPerDown ?? null);
+  const canEditOutput = genIndex >= 0 || isCockpit;
 
   const cell = 'border-b border-r border-putty-300 align-middle';
   const art = artUrl(card.art);
+  const ev = part && attackOf(part) > 0 ? expectedDamage(attackOf(part), part.energyCapacity) : null;
 
   return (
     <tr
       onClick={onSelect}
-      className={[
-        'cursor-pointer',
-        selected ? 'bg-amber-300/35' : 'bg-cream-100 hover:bg-putty-100',
-      ].join(' ')}
+      className={['cursor-pointer', selected ? 'bg-amber-300/35' : 'bg-cream-100 hover:bg-putty-100'].join(' ')}
     >
       <td className={cell}>
         <div className="flex h-7 w-full items-center justify-center">
@@ -235,11 +226,7 @@ function Row({
 
       <td className={cell}>
         <div className="flex items-center">
-          <TextCell
-            value={card.name}
-            onChange={(name) => patchCard(card.id, { name })}
-            title={card.id}
-          />
+          <TextCell value={card.name} onChange={(name) => patchCard(card.id, { name })} title={card.id} />
           {(edited || custom) && (
             <span
               title={custom ? 'card added here' : 'edited from the shipped deck'}
@@ -259,22 +246,25 @@ function Row({
             onChange={(subtype) => patchCard(card.id, { subtype })}
             placeholder="subtype"
           />
+        ) : card.kind === 'action' ? (
+          <SelectCell
+            value={card.action}
+            options={ACTIONS.map((a) => ({ value: a, label: ACTION_LABEL[a].toUpperCase() }))}
+            onChange={(action) => patchCard(card.id, { action })}
+          />
         ) : (
-          <div className="px-1.5 py-1 text-center font-mono text-[12px] text-putty-500">—</div>
+          <Blank />
         )}
       </td>
 
       <td className={cell}>
-        {card.kind === 'event' ? (
-          <div className="px-1.5 py-1 text-center font-mono text-[12px] text-putty-500">—</div>
+        {card.kind === 'event' || card.kind === 'action' ? (
+          <Blank />
         ) : (
           <div style={{ color: ROLE_COLOR[card.role] }}>
             <SelectCell
               value={card.role}
-              options={(card.kind === 'part' ? PART_ROLES : ITEM_ROLES).map((r) => ({
-                value: r,
-                label: r,
-              }))}
+              options={(card.kind === 'part' ? PART_ROLES : ITEM_ROLES).map((r) => ({ value: r, label: r }))}
               onChange={(role) => patchCard(card.id, { role })}
             />
           </div>
@@ -282,18 +272,18 @@ function Row({
       </td>
 
       <td className={cell}>
-        <div className="flex items-center gap-1 pr-1">
-          <span
-            className="h-3.5 w-1 flex-none"
-            style={{ background: rarityColor(card.rarity) }}
-            aria-hidden
-          />
-          <SelectCell
-            value={String(card.rarity)}
-            options={RARITY_NAME.map((name, i) => ({ value: String(i + 1), label: name }))}
-            onChange={(v) => patchCard(card.id, { rarity: Number(v) as Rarity })}
-          />
-        </div>
+        {card.kind === 'action' ? (
+          <Blank />
+        ) : (
+          <div className="flex items-center gap-1 pr-1">
+            <span className="h-3.5 w-1 flex-none" style={{ background: rarityColor(card.rarity) }} aria-hidden />
+            <SelectCell
+              value={String(card.rarity)}
+              options={RARITY_NAME.map((name, i) => ({ value: String(i + 1), label: name }))}
+              onChange={(v) => patchCard(card.id, { rarity: Number(v) as Rarity })}
+            />
+          </div>
+        )}
       </td>
 
       <td className={cell}>
@@ -307,33 +297,13 @@ function Row({
       </td>
 
       <td className={cell}>
-        {costIndex >= 0 ? (
-          <NumberCell
-            value={cost}
-            title="⚡ this card’s active effect draws to fire"
-            onChange={(value) => setEffectCost(card.id, costIndex, value ?? 0)}
-          />
-        ) : (
-          <div
-            title={
-              activeIndexes.length > 1
-                ? 'total across this card’s active effects — price them one by one in the panel'
-                : 'nothing here is activated'
-            }
-            className="px-1.5 py-1 text-right font-mono text-[12px] text-putty-600"
-          >
-            {activeIndexes.length > 1 ? cost : '—'}
-          </div>
-        )}
-      </td>
-
-      <td className={cell}>
         <NumberCell
           value={part ? part.energyCapacity : null}
           disabled={!part}
-          nullable
-          title={isCockpit ? 'the cockpit shield — the ship’s last charge' : 'the most ⚡ this module holds'}
-          onChange={(energyCapacity) => patchCard(card.id, { energyCapacity })}
+          min={1}
+          max={30}
+          title="max ⚡: hit chance (÷6) and HP"
+          onChange={(energyCapacity) => patchCard(card.id, { energyCapacity: energyCapacity ?? 1 })}
         />
       </td>
 
@@ -341,7 +311,7 @@ function Row({
         <NumberCell
           value={canEditAttack ? attack : null}
           disabled={!canEditAttack}
-          title={attackIndex >= 0 ? 'damage effect’s ⚔️' : 'the cockpit’s basic attack'}
+          title={attackIndex >= 0 ? 'the damage effect’s ⚔' : 'the cockpit’s attack'}
           onChange={(value) =>
             attackIndex >= 0
               ? setEffectParam(card.id, attackIndex, 'power', value ?? 0)
@@ -352,22 +322,75 @@ function Row({
 
       <td className={cell}>
         <NumberCell
-          value={isCockpit ? (part?.slots ?? null) : null}
-          disabled={!isCockpit}
+          value={canEditOutput ? output : null}
+          disabled={!canEditOutput}
+          title="what one generate action adds"
+          onChange={(value) =>
+            genIndex >= 0
+              ? setEffectParam(card.id, genIndex, 'amount', value ?? 0)
+              : patchCard(card.id, { genPerDown: value ?? 0 })
+          }
+        />
+      </td>
+
+      <td className={cell}>
+        {part ? (
+          <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={!!part.firstDown}
+              title="1st-down icon"
+              onChange={(e) => patchCard(card.id, { firstDown: e.target.checked })}
+              className="cursor-pointer"
+            />
+          </div>
+        ) : (
+          <Blank />
+        )}
+      </td>
+
+      <td className={cell}>
+        <NumberCell
+          value={part && !isCockpit ? (part.powerCost ?? null) : null}
+          disabled={!part || isCockpit}
+          nullable
           min={1}
-          max={24}
-          title="module slots this cockpit grants"
-          onChange={(slots) => patchCard(card.id, { slots: slots ?? 1 })}
+          max={3}
+          placeholder={part && !isCockpit ? `${powerCostOf(part)}` : '—'}
+          title="power cost, 1–3 · blank derives it from rarity"
+          onChange={(powerCost) => patchCard(card.id, { powerCost: powerCost ?? undefined })}
         />
       </td>
 
       <td className={cell}>
         <NumberCell
-          value={isCockpit ? (part?.genPerDown ?? null) : null}
+          value={isCockpit ? (part?.slots ?? null) : null}
           disabled={!isCockpit}
-          title="⚡ one down of the basic generator puts back"
-          onChange={(genPerDown) => patchCard(card.id, { genPerDown: genPerDown ?? 0 })}
+          min={0}
+          max={24}
+          title="max modules under the slot-limit rule"
+          onChange={(slots) => patchCard(card.id, { slots: slots ?? 0 })}
         />
+      </td>
+
+      <td className={cell}>
+        <NumberCell
+          value={isCockpit ? (part?.powerRating ?? null) : null}
+          disabled={!isCockpit}
+          min={0}
+          max={24}
+          title="upkeep budget, under the energy-budget size rule"
+          onChange={(powerRating) => patchCard(card.id, { powerRating: powerRating ?? 0 })}
+        />
+      </td>
+
+      <td className={cell}>
+        <div
+          className="px-1.5 py-1 text-right font-mono text-[12px] text-putty-700"
+          title="expected damage per shot at full charge — the rules' balancing line"
+        >
+          {ev !== null ? ev.toFixed(1) : '—'}
+        </div>
       </td>
 
       <td className={cell}>
@@ -386,10 +409,7 @@ function Row({
       <td className={cell}>
         <div className="flex items-center justify-end gap-0.5 px-1">
           {warnings.length > 0 && (
-            <span
-              title={warnings.join('\n')}
-              className="cursor-help font-mono text-[12px] text-toggle-red-500"
-            >
+            <span title={warnings.join('\n')} className="cursor-help font-mono text-[12px] text-toggle-red-500">
               ⚠
             </span>
           )}

@@ -3,9 +3,9 @@ import type { ItemCard } from '@engine/types';
 /**
  * Items deck. Drawn on Loot steps — distinct from the Parts deck.
  *
- * Items carry the same effect vocabulary modules do, costs and dice included;
- * played from hand they have no module pool, so an effect's ⚡ cost comes out
- * of the seat's loose charge.
+ * Items carry the same effect vocabulary modules do. Played from hand for a
+ * down, they have no energy of their own — so nothing to pay a cost with, and
+ * nothing to roll an attack against: an item's attack always lands.
  */
 export const ITEMS: ItemCard[] = [
   {
@@ -15,15 +15,9 @@ export const ITEMS: ItemCard[] = [
     role: 'WPN',
     rarity: 2,
     amount: 3,
-    // Negation aimed at *someone else's* attack isn't in the vocabulary —
-    // `negate-next-attack` shields the player who plays it.
-    effects: [
-      {
-        type: 'manual',
-        cost: 5,
-        text: "Select one enemy whose next attack doesn't do any damage.",
-      },
-    ],
+    // The rules' EMP card: an enemy module drained to 0 — offline, not
+    // destroyed, so it can still be looted.
+    effects: [{ type: 'emp' }],
   },
   {
     id: 'omega-13',
@@ -43,7 +37,7 @@ export const ITEMS: ItemCard[] = [
     rarity: 1,
     amount: 4,
     // Placeholder — gives Loot steps something to pay out.
-    effects: [{ type: 'damage', params: { power: 4 }, cost: 1 }],
+    effects: [{ type: 'damage', params: { power: 4 } }],
   },
   {
     id: 'patch-kit',

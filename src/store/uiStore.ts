@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { CardId, CardKind, EnergyTransfer, PlayerId, SlotIndex } from '@engine/types';
+import type { CardId, CardKind, PlayerId, RerouteMove, SlotIndex } from '@engine/types';
+import { ship as shipEngine } from '@engine';
 
 export type TabId = 'mission' | 'table' | 'builder' | 'cards';
 
@@ -12,6 +13,17 @@ export const TABS: { id: TabId; label: string }[] = [
   { id: 'builder', label: 'Ship Builder' },
   { id: 'cards', label: 'Cards' },
 ];
+
+/**
+ * What the seat holding the turn is in the middle of doing. Each action picks
+ * a module first and, if it aims, a target on the enemy after.
+ */
+export type CombatMode =
+  | { kind: 'attack'; slot: SlotIndex | null }
+  | { kind: 'generate' }
+  | { kind: 'reroute'; from: SlotIndex | null; moves: RerouteMove[] }
+  | { kind: 'use'; slot: SlotIndex | null }
+  | { kind: 'item'; cardId: CardId | null };
 
 /** View state only — nothing here is game state or tuning. */
 interface UiStore {
@@ -38,25 +50,13 @@ interface UiStore {
   /** Follow the run's phase when it changes views on its own. */
   autoFollow: boolean;
 
-  // ---- combat targeting ----
-  /** Enemy instance the active seat is shooting at. */
-  targetEnemyId: string | null;
-  /** Enemy module under the crosshair, for module-targeted weapons. */
-  targetSlot: SlotIndex | null;
-  /** Dice bought for a variable-dice weapon. */
-  diceCount: number;
+  // ---- combat ----
+  /** The action the seat on the clock is building, or null between actions. */
+  combatMode: CombatMode | null;
   /** Damage entered by hand for cards the engine leaves to the table. */
   manualDamage: number;
-
-  // ---- reroute pass ----
-  /**
-   * Legs queued for the current down's reroute pass. One down moves charge out
-   * of every module at most once, so this is built up on the grid and then
-   * committed in one go.
-   */
-  rerouteTransfers: EnergyTransfer[];
-  /** Module picked as the next leg's source, waiting on a neighbour. */
-  rerouteFrom: SlotIndex | null;
+  /** The run transcript is open beside the table. */
+  logOpen: boolean;
 
   setTab: (tab: TabId) => void;
   toggleConfig: () => void;
@@ -70,15 +70,15 @@ interface UiStore {
   editCard: (id: CardId | null) => void;
   setBuilderPlayer: (id: PlayerId) => void;
   selectPart: (id: CardId | null) => void;
-  setTarget: (enemyId: string | null) => void;
-  setTargetSlot: (slot: SlotIndex | null) => void;
-  setDiceCount: (n: number) => void;
   setManualDamage: (n: number) => void;
   setAutoFollow: (on: boolean) => void;
-  pickRerouteFrom: (slot: SlotIndex | null) => void;
-  queueTransfer: (transfer: EnergyTransfer) => void;
-  dropTransfer: (index: number) => void;
-  clearReroute: () => void;
+  setCombatMode: (mode: CombatMode | null) => void;
+  /** Reroute: pick (or let go of) the module ⚡ comes out of. */
+  pickRerouteSource: (slot: SlotIndex | null) => void;
+  /** Reroute: one more token along a leg. */
+  addRerouteLeg: (move: RerouteMove) => void;
+  undoRerouteLeg: () => void;
+  toggleLog: () => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -94,12 +94,9 @@ export const useUiStore = create<UiStore>((set) => ({
   selectedPartId: null,
   autoFollow: true,
 
-  targetEnemyId: null,
-  targetSlot: null,
-  diceCount: 1,
+  combatMode: null,
   manualDamage: 0,
-  rerouteTransfers: [],
-  rerouteFrom: null,
+  logOpen: true,
 
   setTab: (tab) => set({ tab }),
   toggleConfig: () => set((s) => ({ configOpen: !s.configOpen })),
@@ -118,24 +115,24 @@ export const useUiStore = create<UiStore>((set) => ({
   editCard: (editingCardId) => set({ editingCardId }),
   setBuilderPlayer: (builderPlayerId) => set({ builderPlayerId }),
   selectPart: (selectedPartId) => set({ selectedPartId }),
-  setTarget: (targetEnemyId) => set({ targetEnemyId, targetSlot: null }),
-  setTargetSlot: (targetSlot) => set({ targetSlot }),
-  setDiceCount: (diceCount) => set({ diceCount: Math.max(1, diceCount) }),
   setManualDamage: (manualDamage) => set({ manualDamage: Math.max(0, manualDamage) }),
   setAutoFollow: (autoFollow) => set({ autoFollow }),
-
-  pickRerouteFrom: (rerouteFrom) => set({ rerouteFrom }),
-  queueTransfer: (transfer) =>
-    set((s) => ({
-      // One drain per module per down: a second leg off the same source
-      // replaces the first rather than stacking.
-      rerouteTransfers: [
-        ...s.rerouteTransfers.filter((t) => t.from !== transfer.from),
-        transfer,
-      ],
-      rerouteFrom: null,
-    })),
-  dropTransfer: (index) =>
-    set((s) => ({ rerouteTransfers: s.rerouteTransfers.filter((_, i) => i !== index) })),
-  clearReroute: () => set({ rerouteTransfers: [], rerouteFrom: null }),
+  setCombatMode: (combatMode) => set({ combatMode }),
+  pickRerouteSource: (from) =>
+    set((s) => (s.combatMode?.kind === 'reroute' ? { combatMode: { ...s.combatMode, from } } : s)),
+  addRerouteLeg: (move) =>
+    set((s) =>
+      s.combatMode?.kind === 'reroute'
+        ? { combatMode: { ...s.combatMode, moves: shipEngine.addRerouteLeg(s.combatMode.moves, move) } }
+        : s,
+    ),
+  undoRerouteLeg: () =>
+    set((s) => {
+      if (s.combatMode?.kind !== 'reroute') return s;
+      const moves = s.combatMode.moves.slice();
+      const last = moves.pop();
+      if (last && last.amount > 1) moves.push({ ...last, amount: last.amount - 1 });
+      return { combatMode: { ...s.combatMode, moves } };
+    }),
+  toggleLog: () => set((s) => ({ logOpen: !s.logOpen })),
 }));

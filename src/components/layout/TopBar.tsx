@@ -19,7 +19,7 @@ export function TopBar() {
     <div className="flex h-14 flex-none items-center gap-6 border-b-2 border-border-strong bg-surface-panel px-5 shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]">
       <div className="flex items-baseline gap-2.5">
         <div className="font-display text-[17px] font-extrabold tracking-[0.04em]">N.O.M.A.D.</div>
-        <div className="font-mono text-[11px] text-putty-700">TEST TOOL v0.5</div>
+        <div className="font-mono text-[11px] text-putty-700">TEST TOOL v0.6 · RULES v3</div>
       </div>
 
       <Tabs items={TABS} active={tab} onChange={setTab} />

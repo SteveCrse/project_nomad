@@ -1,18 +1,22 @@
 import type { Card, CardId, PartCard } from '@engine/types';
 import { hydrateDeck, makeContent } from '@engine';
+import { COCKPITS } from './cockpits';
 import { PARTS } from './parts';
 import { ITEMS } from './items';
 import { EVENTS } from './events';
-import { ENEMIES } from './enemies';
+import { ENEMY_ACTIONS } from './actions';
+import { BOSSES } from './bosses';
 
+export { COCKPITS } from './cockpits';
 export { PARTS } from './parts';
 export { ITEMS } from './items';
 export { EVENTS } from './events';
-export { ENEMIES, ENEMIES_BY_ID } from './enemies';
+export { ENEMY_ACTIONS } from './actions';
+export { BOSSES, BOSSES_BY_ID } from './bosses';
 export { STARTING_LOADOUTS } from './ships';
 
 /** The authored deck, as it ships in this repo. The editor's baseline. */
-export const DEFAULT_CARDS: Card[] = [...PARTS, ...ITEMS, ...EVENTS];
+export const DEFAULT_CARDS: Card[] = [...COCKPITS, ...PARTS, ...ITEMS, ...EVENTS, ...ENEMY_ACTIONS];
 
 /**
  * The content bundle handed to the engine.
@@ -23,17 +27,18 @@ export const DEFAULT_CARDS: Card[] = [...PARTS, ...ITEMS, ...EVENTS];
  * never imports this file — the app passes it in — so a balance sweep can hand
  * the rules a different pool entirely.
  */
-export const CONTENT = makeContent(hydrateDeck(DEFAULT_CARDS), ENEMIES);
+export const CONTENT = makeContent(hydrateDeck(DEFAULT_CARDS), BOSSES);
 
 /**
  * Swap the deck the game is played with. Cards must already be compiled
  * (`hydrateDeck`), which is what the deck store hands over.
  */
 export function setDeck(cards: Card[]): void {
-  const next = makeContent(cards, ENEMIES);
+  const next = makeContent(cards, BOSSES);
   CONTENT.all = next.all;
   CONTENT.cards = next.cards;
   CONTENT.parts = next.parts;
+  CONTENT.actions = next.actions;
 }
 
 /** Every card currently in play, in browser order. */

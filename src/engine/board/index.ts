@@ -1,19 +1,19 @@
 import type { BoardNode, Mission, StepType } from '../types/board';
 import type { GameConfig } from '../types/config';
-import type { EnemyStatBlock } from '../types/enemy';
+import type { BossSheet } from '../types/enemy';
 import type { NodeId, PlayerId } from '../types/ids';
 import type { Rng } from '../rng';
 
 /**
- * Dungeon progression board: mission generation, movement, and checkpoints.
- * Open question #1 in the rules doc (physical board vs. deck-built campaign)
- * is still unresolved — this models the board, since the split-party choice
- * needs one.
+ * The mission step board: generation, movement, and rarity checkpoints.
+ * (The rules' ideas list floats a campaign built from decks instead; the tool
+ * models the board, since the split-party choice needs one.)
  *
- * Shape is Slay-the-Spire-ish: columns of 1-`maxBranches` nodes, edges only
- * to the next column, a start and a boss cap at either end, and a checkpoint
- * column every `checkpointEvery` steps that the whole party has to funnel
- * through (which is what makes it a natural rearrangement point).
+ * Shape is Slay-the-Spire-ish: columns of 1-`maxBranches` steps, edges only
+ * to the next column, a start and a boss cap at either end, and a rarity
+ * checkpoint column every `checkpointEvery` steps that the whole party funnels
+ * through. A step's column is its mission depth — regular enemies grow with it
+ * when they spawn, so nothing about them is decided here.
  */
 
 /** Step weights for a normal column. Blank steps exist but are rare. */
@@ -29,10 +29,13 @@ export function generateMission(
   sector: number,
   config: GameConfig,
   rng: Rng,
-  enemies: EnemyStatBlock[] = [],
+  bosses: BossSheet[] = [],
+  /** The rarity ceiling the mission starts at — later sectors start higher. */
+  startRarity = config.maxRarityNow,
 ): Mission {
   const length = Math.max(3, config.missionLength);
   const columns: BoardNode[][] = [];
+  let checkpoints = 0;
 
   for (let col = 0; col < length; col++) {
     const isStart = col === 0;
@@ -65,15 +68,16 @@ export function generateMission(
       };
 
       if (isCheckpoint) {
-        node.raisesRarityTo = Math.min(5, config.maxRarityNow + config.rarityPerCheckpoint);
+        // Each checkpoint stacks on the last: the deck gets rarer the deeper
+        // the party goes.
+        node.raisesRarityTo = Math.min(5, startRarity + (checkpoints + 1) * config.rarityPerCheckpoint);
         node.isRearrangePoint = config.checkpointsAreRearrangePoints;
       }
-      if (type === 'combat' || type === 'boss') {
-        node.enemyId = pickEnemy(enemies, type === 'boss', col / length, rng);
-      }
+      if (type === 'boss' && bosses.length > 0) node.bossId = rng.pick(bosses).id;
       return node;
     });
 
+    if (isCheckpoint) checkpoints += 1;
     columns.push(nodes);
   }
 
@@ -105,27 +109,6 @@ export function generateMission(
   const bossNodeId = columns[columns.length - 1]![0]!.id;
 
   return { seed, sector, nodes, startNodeId, bossNodeId, positions: {}, length };
-}
-
-/** Later columns lean elite; the boss column takes the boss. */
-function pickEnemy(
-  enemies: EnemyStatBlock[],
-  boss: boolean,
-  depth: number,
-  rng: Rng,
-): string | undefined {
-  const pool = enemies.filter((e) => !!e.isBoss === boss);
-  if (pool.length === 0) return undefined;
-  if (boss) return rng.pick(pool).id;
-  // Weight by how big a ship each enemy rolls against the depth we're at.
-  // With no HP anywhere, part count *is* the difficulty tier: more parts means
-  // more shields to grind through and more guns pointing back.
-  const hardest = Math.max(1, ...pool.map((e) => e.partsBase));
-  const weights = pool.map((e) => {
-    const tier = e.partsBase / hardest;
-    return Math.max(0.05, 1 - Math.abs(tier - Math.max(0.25, depth)));
-  });
-  return rng.pickWeighted(pool, weights).id;
 }
 
 export const nodeById = (mission: Mission, id: NodeId): BoardNode | undefined =>

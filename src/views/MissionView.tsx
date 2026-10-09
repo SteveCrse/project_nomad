@@ -1,16 +1,20 @@
+import { LayoutGroup, motion } from 'motion/react';
 import type { BoardNode, GameState, PlayerId } from '@engine/types';
-import { board } from '@engine';
+import { board, enemyModuleCount } from '@engine';
+import { BOSSES_BY_ID } from '@data';
 import { Button, Toggle } from '@/components/ds';
 import { LogPanel } from '@/components/game/LogPanel';
 import { useGame, useGameStore } from '@/store/gameStore';
 import { useConfig } from '@/store/configStore';
 
 /**
- * The dungeon progression board.
+ * The mission step board.
  *
  * Columns run left to right; the party moves one column at a time and every
- * branch is a decision. Checkpoint and boss columns are single nodes, which
- * is what makes them natural regroup/rearrange points.
+ * branch is a decision. A step's column is its depth, and a regular enemy
+ * spawns with depth + players modules — so each combat step says how big a
+ * ship to expect. Rarity checkpoints and the boss are single nodes the whole
+ * party funnels through.
  */
 export function MissionView() {
   const state = useGame();
@@ -21,8 +25,8 @@ export function MissionView() {
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         <div className="font-display text-[22px] font-bold">NO RUN LOADED</div>
         <div className="max-w-[520px] text-center text-[15px] text-putty-700">
-          A run generates a mission from the current config: board length, branching, checkpoint
-          cadence, enemy scaling and the rarity ceiling all come out of the sidebar.
+          A run opens with the draft, then generates a mission from the current config: board
+          length, branching, rarity checkpoints and enemy scaling all come out of the sidebar.
         </div>
         <Button onClick={() => newRun()}>Start a run</Button>
       </div>
@@ -55,8 +59,8 @@ function MissionHeader({ state }: { state: GameState }) {
         SEED {state.seed} · {state.mission.length} STEPS · TIER CEILING {state.maxRarityNow}
       </div>
       <div className="font-mono text-[12px] text-putty-700">
-        PARTS {state.decks.parts.drawPile.length} · ITEMS {state.decks.items.drawPile.length} ·
-        EVENTS {state.decks.events.drawPile.length}
+        COCKPITS {state.decks.cockpits.drawPile.length} · PARTS {state.decks.parts.drawPile.length} · ITEMS{' '}
+        {state.decks.items.drawPile.length} · EVENTS {state.decks.events.drawPile.length}
       </div>
 
       {multiplayer && (
@@ -80,8 +84,10 @@ function MissionHeader({ state }: { state: GameState }) {
       </div>
       {config.checkpointEvery > 0 && (
         <div className="w-full font-mono text-[11px] text-putty-700">
-          CHECKPOINT EVERY {config.checkpointEvery} STEPS · +{config.rarityPerCheckpoint} TIER EACH
-          {config.checkpointsAreRearrangePoints ? ' · DOUBLES AS A REARRANGE POINT' : ''}
+          RARITY CHECKPOINT EVERY {config.checkpointEvery} STEPS · +{config.rarityPerCheckpoint} TIER EACH
+          {config.commonsRemovedPerCheckpoint > 0 ? ` · −${config.commonsRemovedPerCheckpoint} COMMONS` : ''}
+          {config.checkpointsAreRearrangePoints ? ' · DOUBLES AS A REARRANGE POINT' : ''} · ENEMY MODULES = DEPTH ×{' '}
+          {config.enemyModulesPerDepth} + PLAYERS × {config.enemyModulesPerPlayer}
         </div>
       )}
     </div>
@@ -94,12 +100,16 @@ const NODE_STYLE: Record<string, { label: string; color: string }> = {
   loot: { label: 'LOOT', color: 'var(--crt-green-700)' },
   event: { label: 'EVENT', color: 'var(--role-rds)' },
   empty: { label: 'EMPTY', color: 'var(--putty-600)' },
-  checkpoint: { label: 'CHECK', color: 'var(--amber-500)' },
+  checkpoint: { label: 'RARITY', color: 'var(--amber-500)' },
   boss: { label: 'BOSS', color: 'var(--n-900)' },
 };
 
 function MapBoard({ state }: { state: GameState }) {
   const moveTo = useGameStore((s) => s.moveTo);
+  const config = useConfig();
+  // Who would fight here: the whole party moving together, or the one seat
+  // moving on its own when it's split.
+  const party = state.split ? 1 : state.party.players.filter((p) => !p.destroyed).length;
   const columns = groupByColumn(state.mission.nodes);
   const mover = state.awaitingMove[0];
   const options = mover ? board.optionsFor(state.mission, mover).map((n) => n.id) : [];
@@ -107,28 +117,34 @@ function MapBoard({ state }: { state: GameState }) {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto border-2 border-border-strong bg-surface-panel p-4 shadow-raised">
-      <div className="flex min-w-max items-stretch gap-3">
+      <LayoutGroup>
+      <div className="flex min-w-max items-stretch gap-3" key={`${state.seed}:${state.sector}`}>
         {columns.map((column, col) => (
           <div key={col} className="flex flex-col justify-center gap-3">
-            {column.map((node) => {
+            {column.map((node, row) => {
               const style = NODE_STYLE[node.type] ?? NODE_STYLE.empty!;
               const here = board.playersAt(state.mission, node.id);
               const reachable = options.includes(node.id);
               return (
-                <button
+                <motion.button
                   key={node.id}
+                  initial={{ opacity: 0, x: -16, scale: 0.92 }}
+                  animate={{ opacity: node.resolved && !(reachable && canMove) ? 0.6 : 1, x: 0, scale: 1 }}
+                  transition={{ delay: col * 0.05 + row * 0.03, type: 'spring', stiffness: 320, damping: 26 }}
+                  whileHover={reachable && canMove ? { y: -3, scale: 1.03 } : {}}
+                  whileTap={reachable && canMove ? { scale: 0.97 } : {}}
                   disabled={!canMove || !reachable}
                   onClick={() => mover && moveTo(mover, node.id)}
-                  aria-label={`${node.id} ${style.label}${node.enemyId ? ` ${node.enemyId}` : ''}${
+                  aria-label={`${node.id} ${style.label}${node.bossId ? ` ${node.bossId}` : ''}${
                     reachable && canMove ? ' — reachable' : ''
                   }`}
                   className={[
                     'flex w-[118px] cursor-pointer flex-col gap-1 border-2 px-2 py-2 text-left',
                     'disabled:cursor-default',
                     reachable && canMove
-                      ? 'border-accent-primary bg-putty-100 shadow-raised'
+                      ? 'attention border-accent-primary bg-putty-100 shadow-raised'
                       : node.resolved
-                        ? 'border-putty-500 bg-putty-200 opacity-60'
+                        ? 'border-putty-500 bg-putty-200'
                         : 'border-putty-500 bg-putty-100',
                   ].join(' ')}
                 >
@@ -142,8 +158,18 @@ function MapBoard({ state }: { state: GameState }) {
                     <span className="font-mono text-[9px] text-putty-600">{node.id}</span>
                   </div>
 
-                  {node.enemyId && (
-                    <div className="truncate text-[12px] text-putty-800">{node.enemyId}</div>
+                  {node.type === 'combat' && (
+                    <div
+                      className="font-mono text-[10px] text-putty-800"
+                      title="Mission depth + players: what a regular enemy spawns with here"
+                    >
+                      DEPTH {node.column} · ≈{enemyModuleCount(config, node.column, party)} MOD
+                    </div>
+                  )}
+                  {node.bossId && (
+                    <div className="truncate text-[12px] text-putty-800">
+                      {BOSSES_BY_ID[node.bossId]?.name ?? node.bossId}
+                    </div>
                   )}
                   {node.raisesRarityTo && (
                     <div className="font-mono text-[10px] text-amber-700">
@@ -161,12 +187,13 @@ function MapBoard({ state }: { state: GameState }) {
                       <PlayerPip key={id} state={state} id={id} />
                     ))}
                   </div>
-                </button>
+                </motion.button>
               );
             })}
           </div>
         ))}
       </div>
+      </LayoutGroup>
     </div>
   );
 }
@@ -174,14 +201,17 @@ function MapBoard({ state }: { state: GameState }) {
 function PlayerPip({ state, id }: { state: GameState; id: PlayerId }) {
   const player = state.party.players.find((p) => p.id === id);
   if (!player) return null;
+  // The same pip wherever the seat stands, so moving it glides it across the board.
   return (
-    <span
+    <motion.span
+      layoutId={`pip-${id}`}
+      transition={{ type: 'spring', stiffness: 260, damping: 26 }}
       className="flex h-4 w-6 items-center justify-center border border-n-900 font-mono text-[9px] text-n-950"
       style={{ background: player.accent }}
       title={player.ship.name}
     >
       {player.label}
-    </span>
+    </motion.span>
   );
 }
 
@@ -195,13 +225,16 @@ function MoveBar({ state }: { state: GameState }) {
         : 'The party moves together — pick the next step.'
       : 'Waiting.',
     combat: 'Combat in progress — switch to the Table.',
-    loot: 'Loot phase — resolve the wreck.',
+    loot:
+      state.prompt?.kind === 'salvage'
+        ? 'The boss is down — split its surviving parts round the table.'
+        : 'An enemy is down — take its ship over, or leave it.',
     event: 'An event is face up.',
     reward: 'Loot drawn — hand it out.',
-    rearrange: 'Rearrangement point.',
+    rearrange: 'Rebuild from the scrap deck in the Ship Builder.',
     victory: 'Boss down. Mission complete.',
-    defeat: 'Party wiped.',
-    setup: 'Drafting parts — build the ships in the Ship Builder before the mission starts.',
+    defeat: 'Every cockpit is destroyed. The team loses.',
+    setup: 'The draft — build the ships in the Ship Builder before the mission starts.',
   };
 
   return (

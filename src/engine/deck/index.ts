@@ -1,11 +1,13 @@
-import type { Card, Rarity } from '../types/card';
+import type { ActionCard, Card, Rarity } from '../types/card';
 import type { CardId } from '../types/ids';
 import type { DeckLike } from '../types/game';
+import type { ActionDeck } from '../types/combat';
 import type { Rng } from '../rng';
 
 /**
- * Deck construction, shuffling and drawing for the three decks
- * (Parts, Items, Events), plus the rarity gate that checkpoints raise.
+ * Deck construction, shuffling and drawing for the run's decks (parts,
+ * cockpits, items, events), the rarity gate that checkpoints raise, and the
+ * enemy's per-down action decks.
  *
  * Cards above the current ceiling are not thrown away — they sit in `reserve`
  * ("out of the bag") and get shuffled in when a checkpoint unlocks their tier.
@@ -62,7 +64,7 @@ export function draw(deck: Deck, count: number, rng: Rng): { deck: Deck; drawn: 
   return { deck: { ...deck, drawPile, discardPile }, drawn };
 }
 
-/** Put cards back — spent items, parts stripped off an abandoned ship. */
+/** Put cards on the discard pile — destroyed modules, spent items. */
 export function discard(deck: Deck, cardIds: CardId[]): Deck {
   return { ...deck, discardPile: [...deck.discardPile, ...cardIds] };
 }
@@ -74,11 +76,8 @@ export function returnToDeck(deck: Deck, cardIds: CardId[], rng: Rng): Deck {
 }
 
 /**
- * Crossing a checkpoint: fold newly-unlocked rarities into the draw pile.
- *
- * Signature note — the stub took `GameConfig`, but the ceiling is run state
- * rather than a tunable, and the reserve already knows which cards are held
- * back, so it needs the card index instead to read rarities.
+ * Crossing a checkpoint: fold newly-unlocked rarities into the draw pile —
+ * the rules' "shuffle in a stack of rarer cards".
  */
 export function applyCheckpoint(
   deck: Deck,
@@ -104,4 +103,63 @@ export function applyCheckpoint(
   };
 }
 
+/**
+ * "Optionally remove some commons": take up to `count` rarity-1 cards out of
+ * the draw pile for good, so the rarer stack that just went in weighs more.
+ */
+export function removeCommons(
+  deck: Deck,
+  cardsById: Record<CardId, Card>,
+  count: number,
+): { deck: Deck; removed: CardId[] } {
+  if (count <= 0) return { deck, removed: [] };
+  const removed: CardId[] = [];
+  const drawPile: CardId[] = [];
+  for (const id of deck.drawPile) {
+    if (removed.length < count && cardsById[id]?.rarity === 1) removed.push(id);
+    else drawPile.push(id);
+  }
+  return { deck: { ...deck, drawPile }, removed };
+}
+
 export const deckCount = (deck: Deck): number => deck.drawPile.length;
+
+// ------------------------------------------------------------ action decks
+
+/**
+ * The enemy's action decks: one per down, each holding every action card the
+ * content defines (copies and all), shuffled, top card face up.
+ */
+export function buildActionDecks(actions: ActionCard[], downs: number, rng: Rng): ActionDeck[] {
+  const ids = actions.flatMap((card) => Array.from({ length: card.amount }, () => card.id));
+  return Array.from({ length: Math.max(0, downs) }, () =>
+    flipActionCard({ faceUp: null, drawPile: shuffle(ids, rng), discardPile: [] }, rng),
+  );
+}
+
+/** Turn the next card face up if none is, reshuffling the discards when dry. */
+export function flipActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
+  if (deck.faceUp) return deck;
+  let drawPile = deck.drawPile;
+  let discardPile = deck.discardPile;
+  if (drawPile.length === 0) {
+    if (discardPile.length === 0) return deck;
+    drawPile = shuffle(discardPile, rng);
+    discardPile = [];
+  }
+  const [faceUp, ...rest] = drawPile;
+  return { faceUp: faceUp ?? null, drawPile: rest, discardPile };
+}
+
+/** The face-up card is done — resolved or unresolvable. Discard it and reveal the next. */
+export function cycleActionCard(deck: ActionDeck, rng: Rng): ActionDeck {
+  if (!deck.faceUp) return flipActionCard(deck, rng);
+  return flipActionCard(
+    { faceUp: null, drawPile: deck.drawPile, discardPile: [...deck.discardPile, deck.faceUp] },
+    rng,
+  );
+}
+
+/** Cards in an action deck, wherever they sit. */
+export const actionDeckSize = (deck: ActionDeck): number =>
+  deck.drawPile.length + deck.discardPile.length + (deck.faceUp ? 1 : 0);

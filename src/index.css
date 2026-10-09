@@ -213,10 +213,79 @@
     }
   }
 
+  /* A module the seat can pick right now breathes, so the options read at a glance. */
+  .tile-armed {
+    animation: tile-breathe 1.4s ease-in-out infinite;
+  }
+
+  .tile-targeted {
+    animation: tile-lock 0.9s ease-in-out infinite;
+  }
+
+  @keyframes tile-breathe {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(159 217 160 / 0);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgb(159 217 160 / 0.55);
+    }
+  }
+
+  @keyframes tile-lock {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(179 59 46 / 0);
+    }
+    50% {
+      box-shadow: 0 0 0 5px rgb(179 59 46 / 0.45);
+    }
+  }
+
+  /* A new line in the transcript slides in rather than appearing. */
+  .log-line {
+    animation: log-in 0.32s var(--ease-snap) both;
+  }
+
+  @keyframes log-in {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+  }
+
+  /* A turn handed over: whatever must be pressed next pulls the eye. */
+  .attention {
+    animation: attention 1.1s ease-in-out infinite;
+  }
+
+  @keyframes attention {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(217 154 62 / 0);
+      transform: translateY(0);
+    }
+    50% {
+      box-shadow: 0 0 0 5px rgb(217 154 62 / 0.45);
+      transform: translateY(-1px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .holo-band,
-    .holo-face::after {
+    .holo-face::after,
+    .tile-armed,
+    .tile-targeted,
+    .log-line,
+    .attention {
       animation: none;
     }
   }
+}
+
+/* While a card is in the air, nothing underneath gets selected. */
+body.dragging,
+body.dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
 }

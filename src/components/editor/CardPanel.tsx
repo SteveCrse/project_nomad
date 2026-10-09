@@ -1,6 +1,16 @@
 import { useState } from 'react';
-import type { Card, CardEffect, DieKind, EffectType, Specialization } from '@engine/types';
-import { EFFECTS, cardWarnings, effectParam, effectsForKind } from '@engine';
+import type {
+  ActionCard,
+  Card,
+  CardEffect,
+  DieKind,
+  EffectType,
+  ModuleRole,
+  PartCard,
+  PlacementKind,
+  Specialization,
+} from '@engine/types';
+import { ACTION_LABEL, ACTION_TEXT, EFFECTS, cardWarnings, effectParam, effectsForKind, placementLine } from '@engine';
 import { ART_ASSETS, artUrl } from '@/lib/art';
 import { useDeckStore } from '@/store/deckStore';
 import { CardTile } from '@/components/game/CardTile';
@@ -50,7 +60,9 @@ export function CardPanel({ card, onClose }: { card: Card; onClose: () => void }
           </div>
         )}
 
-        <Effects card={card} />
+        {card.kind === 'action' ? <EnemyAction card={card} /> : <Effects card={card} />}
+
+        {card.kind === 'part' && <Placement card={card} />}
 
         <SectionTitle>Card</SectionTitle>
         <Field label="Flavour">
@@ -91,14 +103,14 @@ export function CardPanel({ card, onClose }: { card: Card; onClose: () => void }
           </Field>
         )}
 
-        {card.kind === 'part' && card.role !== 'COCKPIT' && (
+        {card.kind === 'part' && (
           <label className="flex cursor-pointer items-center gap-2 pb-2">
             <input
               type="checkbox"
-              checked={!!card.oncePerSet}
-              onChange={(e) => patchCard(card.id, { oncePerSet: e.target.checked })}
+              checked={!!card.firstDown}
+              onChange={(e) => patchCard(card.id, { firstDown: e.target.checked })}
             />
-            <span className="text-[13px]">Fires at most once per fresh set of downs</span>
+            <span className="text-[13px]">1st-down icon — destroying it earns a 1st down</span>
           </label>
         )}
 
@@ -152,8 +164,10 @@ function Effects({ card }: { card: Card }) {
       {effects.length === 0 && (
         <div className="pb-1.5 text-[12px] text-putty-700 italic">
           {card.kind === 'part' && card.role === 'COCKPIT'
-            ? 'None — a cockpit’s weapon, shield and generator are intrinsic, and print from its own numbers.'
-            : 'Nothing yet — this card does nothing in play, and prints nothing.'}
+            ? 'None — a cockpit’s attack and generate output are printed on it, in the sheet.'
+            : card.kind === 'part' && card.role === 'SHD'
+              ? 'None — a shield’s job is its role: it sits at the front and blocks.'
+              : 'Nothing yet — this card does nothing in play, and prints nothing.'}
         </div>
       )}
 
@@ -201,17 +215,12 @@ function Effects({ card }: { card: Card }) {
               ))}
 
               {timing === 'active' && (
-                <Row
-                  label="Costs"
-                  symbol="⚡"
-                  narrow
-                  hint={effect.dice?.count === 'variable' ? 'per die' : undefined}
-                >
+                <Row label="Costs" symbol="⚡" narrow>
                   <NumberCell
                     value={effect.cost ?? 0}
                     min={0}
                     max={99}
-                    title="⚡ this effect draws from the card’s own pool when it fires"
+                    title="⚡ this effect burns off the module when it fires — rare: an attack already reads ⚡ as its hit chance"
                     onChange={(cost) => setEffectCost(card.id, i, cost ?? 0)}
                   />
                 </Row>
@@ -271,6 +280,97 @@ function Effects({ card }: { card: Card }) {
   );
 }
 
+// ------------------------------------------------------------ enemy action
+
+const ACTIONS = Object.keys(ACTION_LABEL) as ActionCard['action'][];
+
+/**
+ * An enemy action card has no effects: the action it names is the whole card,
+ * and the engine makes the same choices for it every time.
+ */
+function EnemyAction({ card }: { card: ActionCard }) {
+  const patchCard = useDeckStore((s) => s.patchCard);
+  return (
+    <div className="pb-2">
+      <SectionTitle>Enemy action</SectionTitle>
+      <Field label="Action">
+        <SelectCell
+          value={card.action}
+          options={ACTIONS.map((a) => ({ value: a, label: ACTION_LABEL[a].toUpperCase() }))}
+          onChange={(action) => patchCard(card.id, { action })}
+        />
+      </Field>
+      <div className="text-[12px] leading-tight text-putty-700">{ACTION_TEXT[card.action]}</div>
+      <div className="pt-1.5 text-[12px] leading-tight text-putty-700">
+        Every fight builds one deck per enemy down, each holding every action card ×{card.amount}. If the enemy
+        can’t carry the face-up card out, it’s discarded and the next one turned.
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------- placement
+
+const PLACEMENT_KINDS: { value: PlacementKind; label: string }[] = [
+  { value: 'not-in-front-of', label: 'NOT IN FRONT OF' },
+  { value: 'not-behind', label: 'NOT BEHIND' },
+  { value: 'next-to', label: 'NEXT TO' },
+  { value: 'not-next-to', label: 'NOT NEXT TO' },
+];
+const PLACEMENT_ROLES: ModuleRole[] = ['SHD', 'WPN', 'GEN', 'RDS', 'OTH', 'COCKPIT'];
+
+/**
+ * Placement limits printed on the card — "no shield in front of another
+ * shield". On top of the two rules every ship follows: the cockpit at the
+ * back, shields at the front.
+ */
+function Placement({ card }: { card: PartCard }) {
+  const patchCard = useDeckStore((s) => s.patchCard);
+  const rules = card.placement ?? [];
+  const set = (next: PartCard['placement']) => patchCard(card.id, { placement: next });
+
+  return (
+    <div className="pb-2">
+      <SectionTitle>Placement limits</SectionTitle>
+      {rules.length === 0 && (
+        <div className="pb-1.5 text-[12px] text-putty-700 italic">
+          None — it goes anywhere the ship rules allow
+          {card.role === 'SHD' ? ' (shields always sit at the front)' : ''}.
+        </div>
+      )}
+      {rules.map((rule, i) => (
+        <div key={i} className="mb-1 flex items-center gap-1">
+          <div className="w-[128px] border border-putty-400 bg-cream-100">
+            <SelectCell
+              value={rule.rule}
+              options={PLACEMENT_KINDS}
+              onChange={(value) => set(rules.map((r, j) => (j === i ? { ...r, rule: value } : r)))}
+            />
+          </div>
+          <div className="w-[96px] border border-putty-400 bg-cream-100">
+            <SelectCell
+              value={rule.role}
+              options={PLACEMENT_ROLES.map((role) => ({ value: role, label: role }))}
+              onChange={(value) => set(rules.map((r, j) => (j === i ? { ...r, role: value } : r)))}
+            />
+          </div>
+          <IconButton onClick={() => set(rules.filter((_, j) => j !== i))} title="remove this limit" danger>
+            ✕
+          </IconButton>
+        </div>
+      ))}
+      {rules.map((rule, i) => (
+        <div key={`text-${i}`} className="text-[12px] leading-tight text-putty-800">
+          {placementLine(rule, card.role)}
+        </div>
+      ))}
+      <div className="pt-1">
+        <ChipButton onClick={() => set([...rules, { rule: 'not-in-front-of', role: 'SHD' }])}>+ ADD LIMIT</ChipButton>
+      </div>
+    </div>
+  );
+}
+
 // --------------------------------------------------------------------- dice
 
 const DICE: DieKind[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
@@ -310,26 +410,9 @@ function Dice({
 
   return (
     <div className="border-t border-putty-400 bg-putty-200/60 px-1.5 py-1">
-      <Row label="How many">
-        <SelectCell
-          value={dice.count === 'variable' ? 'variable' : 'fixed'}
-          options={[
-            { value: 'fixed', label: 'FIXED' },
-            { value: 'variable', label: 'X — PLAYER BUYS' },
-          ]}
-          onChange={(mode) => set({ count: mode === 'variable' ? 'variable' : 1 })}
-        />
+      <Row label="Dice" narrow>
+        <NumberCell value={dice.count} min={1} max={20} onChange={(count) => set({ count: count ?? 1 })} />
       </Row>
-      {dice.count !== 'variable' && (
-        <Row label="Dice" narrow>
-          <NumberCell
-            value={dice.count}
-            min={1}
-            max={20}
-            onChange={(count) => set({ count: count ?? 1 })}
-          />
-        </Row>
-      )}
       <Row label="Die">
         <SelectCell
           value={dice.die}
@@ -364,8 +447,8 @@ function Dice({
       </Row>
       <div className="pt-1 text-[11px] leading-tight text-putty-700">
         {dice.hitUnder === undefined && dice.hitOver === undefined
-          ? 'No hit rule: the dice are summed onto this effect’s payload.'
-          : 'With a hit rule the roll can miss — a gain-⚡ effect gambles its loss instead.'}
+          ? 'No hit rule: the dice are summed onto this effect’s payload — on top of the attack roll, never instead of it.'
+          : 'With a hit rule the roll can miss — a generate effect gambles its loss instead.'}
       </div>
       <div className="pt-1">
         <ChipButton onClick={() => setEffectDice(cardId, index, undefined)}>✕ NO DICE</ChipButton>

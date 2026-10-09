@@ -11,13 +11,15 @@ const TONE: Record<LogTone, string> = {
 
 /**
  * The run transcript, CRT-styled. It's the primary playtest artefact: every
- * roll, every conversion and every refusal ends up here in order.
+ * roll, every 1st down and every refusal ends up here in order.
  */
 export function LogPanel({ log, className = '' }: { log: LogEntry[]; className?: string }) {
   const endRef = useRef<HTMLDivElement>(null);
+  // Lines already there when the panel opened are history; only new ones slide in.
+  const opened = useRef(log[log.length - 1]?.id ?? 0);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
+    endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [log.length]);
 
   return (
@@ -35,7 +37,10 @@ export function LogPanel({ log, className = '' }: { log: LogEntry[]; className?:
           <div className="font-mono text-[11px] text-console-dim">No entries yet.</div>
         )}
         {log.map((entry) => (
-          <div key={entry.id} className="flex gap-2 py-[1px] font-mono text-[11px] leading-[1.35]">
+          <div
+            key={entry.id}
+            className={`flex gap-2 py-[1px] font-mono text-[11px] leading-[1.35] ${entry.id > opened.current ? 'log-line' : ''}`}
+          >
             <span className="w-8 flex-none text-right text-console-faint">
               {entry.round > 0 ? `R${entry.round}` : '··'}
             </span>

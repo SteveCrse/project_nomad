@@ -1,60 +1,206 @@
-import type { Card, DiceSpec, PartCard } from '../types/card';
-import type { GameConfig } from '../types/config';
-import type { Ship, ShipSlot } from '../types/ship';
+import type { DiceSpec, PartCard } from '../types/card';
+import type { Cell, Ship, ShipSlot } from '../types/ship';
+import type { SlotIndex } from '../types/ids';
 import type { Content } from '../content';
 import { partOf } from '../content';
-import { activeEffects, cardCost } from '../cards';
-import { isDamageEffect } from '../effects';
+import { attackOf, outputOf } from '../cards';
 import type { Rng } from '../rng';
 
 /**
- * Reading a module's behaviour off its card.
+ * Reading a module's behaviour off its card and its slot.
  *
- * Everything here derives from the card's effect list and the flat fields
- * compiled from it — never from a card id — so new content stays a data edit.
+ * Everything here derives from the card's numbers and effect list — never from
+ * a card id — so new content stays a data edit.
  */
 
 /**
- * Can a down be spent on this module?
- *
- * Its effect list is the whole answer — a module carrying an active effect can
- * be fired, whatever else it also does passively.
+ * Online: still there and holding ⚡. A module at 0 is offline — it can't
+ * attack, generate or be used until something reroutes charge back into it —
+ * but it still blocks if it's a shield, and one more hit destroys it.
  */
-export const isActive = (part: PartCard): boolean => activeEffects(part).length > 0;
+export const isOnline = (slot: ShipSlot | undefined): boolean =>
+  !!slot && !slot.destroyed && slot.energy > 0;
 
-/** Offensive modules are the ones a blanket once-per-set rule would cap. */
-export const isOffensive = (part: PartCard): boolean =>
-  activeEffects(part).some((e) => isDamageEffect(e.type));
+/** The most ⚡ a slot's module can hold. */
+export const maxEnergyOf = (content: Content, slot: ShipSlot | undefined): number =>
+  Math.max(0, partOf(content, slot?.partId)?.energyCapacity ?? 0);
 
-/**
- * A charged shield soaks damage before the cockpit has to — the cards that
- * print an `absorb` effect. A SHD module that spends its charge on an action
- * instead (a Defense Turret) simply doesn't carry one.
- *
- * A cockpit is always an absorber: its pool is the ship's basic shield, and
- * the last one standing.
- */
-export const isAbsorber = (part: PartCard): boolean =>
-  (part.energyCapacity ?? 0) > 0 && (part.role === 'COCKPIT' || !!part.absorbs);
+/** Room left in a slot's pool. */
+export const roomIn = (content: Content, slot: ShipSlot | undefined): number =>
+  slot && !slot.destroyed ? Math.max(0, maxEnergyOf(content, slot) - slot.energy) : 0;
 
-/**
- * Energy one activation costs from the card's own pool.
- *
- * Cost is carried per effect, so this is the sum across everything the
- * activation resolves — a card that shoots *and* patches pays for both off one
- * down. Takes the whole card so an item off the hand costs what its printed
- * lines say, the same way a fitted module does.
- */
-export function energyCostOf(card: Card, config: GameConfig, diceCount = 1): number {
-  return Math.max(0, Math.round(cardCost(card, diceCount) * config.energyCostMult));
+export interface Fitted {
+  slot: ShipSlot;
+  part: PartCard;
 }
 
-/** How many dice one effect rolls. */
-export function diceCountOf(effect: { dice?: DiceSpec }, requested?: number): number {
-  if (!effect.dice) return 0;
-  if (effect.dice.count === 'variable') return Math.max(1, requested ?? 1);
-  return effect.dice.count;
+/** The module in a position, card resolved. */
+export function moduleAt(content: Content, ship: Ship, index: SlotIndex): Fitted | null {
+  const slot = ship.slots[index];
+  const part = partOf(content, slot?.partId);
+  return slot && part ? { slot, part } : null;
 }
+
+/** Every position that hasn't been destroyed, card resolved — the cockpit included. */
+export function liveSlots(content: Content, ship: Ship): Fitted[] {
+  const out: Fitted[] = [];
+  for (const slot of ship.slots) {
+    if (slot.destroyed) continue;
+    const part = partOf(content, slot.partId);
+    if (part) out.push({ slot, part });
+  }
+  return out;
+}
+
+/** Where the cockpit sits in `slots`. */
+export const cockpitIndex = (ship: Ship): SlotIndex =>
+  ship.slots.findIndex((s) => s.partId === ship.cockpitId);
+
+export function cockpitOf(content: Content, ship: Ship): Fitted | null {
+  const index = cockpitIndex(ship);
+  return index >= 0 ? moduleAt(content, ship, index) : null;
+}
+
+/** Attack strength of whatever sits in a slot — cockpit or weapon. */
+export const attackAt = (content: Content, ship: Ship, index: SlotIndex): number => {
+  const part = partOf(content, ship.slots[index]?.partId);
+  return part ? attackOf(part) : 0;
+};
+
+/** What a generate action adds to whatever sits in a slot. */
+export const outputAt = (content: Content, ship: Ship, index: SlotIndex): number => {
+  const part = partOf(content, ship.slots[index]?.partId);
+  return part ? outputOf(part) : 0;
+};
+
+/** Cockpits and generators — the only things the rules let produce ⚡. */
+export const isProducer = (part: PartCard): boolean =>
+  outputOf(part) > 0 && (part.role === 'COCKPIT' || part.role === 'GEN');
+
+// ------------------------------------------------------------------ grid
+
+/** The module on a cell, destroyed or not. */
+export const slotAt = (ship: Ship, cell: Cell): ShipSlot | undefined =>
+  ship.slots.find((s) => s.x === cell.x && s.y === cell.y);
+
+/** The four cells touching one. */
+export const cellsAround = (cell: Cell): Cell[] => [
+  { x: cell.x, y: cell.y - 1 },
+  { x: cell.x + 1, y: cell.y },
+  { x: cell.x, y: cell.y + 1 },
+  { x: cell.x - 1, y: cell.y },
+];
+
+/** Touching orthogonally — what "connected" means on the grid. */
+export const touching = (a: Cell, b: Cell): boolean =>
+  Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+
+/** Slots on the cells touching this one, destroyed ones included. */
+export function neighbours(ship: Ship, index: SlotIndex): SlotIndex[] {
+  const slot = ship.slots[index];
+  if (!slot) return [];
+  return ship.slots.filter((s) => s.index !== index && touching(s, slot)).map((s) => s.index);
+}
+
+/** Can ⚡ move straight between these two? Both still there, and touching. */
+export function connected(ship: Ship, a: SlotIndex, b: SlotIndex): boolean {
+  const from = ship.slots[a];
+  const to = ship.slots[b];
+  return !!from && !!to && !from.destroyed && !to.destroyed && touching(from, to);
+}
+
+export interface GridBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/** The smallest box holding every module. */
+export function gridBounds(ship: Ship): GridBounds {
+  if (ship.slots.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  return {
+    minX: Math.min(...ship.slots.map((s) => s.x)),
+    maxX: Math.max(...ship.slots.map((s) => s.x)),
+    minY: Math.min(...ship.slots.map((s) => s.y)),
+    maxY: Math.max(...ship.slots.map((s) => s.y)),
+  };
+}
+
+/**
+ * Where a cell sits relative to the cockpit: in front of it (above, for a
+ * player), beside it, or behind it. Front is where attacks arrive.
+ */
+export function zoneOf(ship: Ship, cell: Cell): 'front' | 'side' | 'back' {
+  const cockpit = ship.slots[cockpitIndex(ship)];
+  const y = cockpit?.y ?? 0;
+  return cell.y < y ? 'front' : cell.y > y ? 'back' : 'side';
+}
+
+// ------------------------------------------------------------- targeting
+
+const isShield = (content: Content, slot: ShipSlot | undefined): boolean =>
+  !!slot && !slot.destroyed && partOf(content, slot.partId)?.role === 'SHD';
+
+/**
+ * The living shield standing in front of a module — same column, further
+ * forward — or -1. Nothing may sit in front of a shield, so there is at most
+ * one, and it's the front of its column.
+ */
+export function shieldInFront(content: Content, ship: Ship, index: SlotIndex): SlotIndex {
+  const slot = ship.slots[index];
+  if (!slot) return -1;
+  const cover = ship.slots
+    .filter((s) => s.x === slot.x && s.y < slot.y && isShield(content, s))
+    .sort((a, b) => a.y - b.y)[0];
+  return cover ? cover.index : -1;
+}
+
+/**
+ * What an attack can reach: every module with no living shield in front of
+ * it. A shield covers its own column — what's behind it is out of reach until
+ * it's destroyed — so a column with no shield is open all the way back. A
+ * precision weapon ignores the shields entirely.
+ */
+export function exposedSlots(content: Content, ship: Ship, precision = false): SlotIndex[] {
+  return ship.slots
+    .filter((s) => !s.destroyed && (precision || shieldInFront(content, ship, s.index) < 0))
+    .map((s) => s.index);
+}
+
+export const canTarget = (
+  content: Content,
+  ship: Ship,
+  index: SlotIndex,
+  precision = false,
+): boolean => exposedSlots(content, ship, precision).includes(index);
+
+/**
+ * Where an attack lands when nobody picks: the cockpit, or the shield in
+ * front of it that must be destroyed first. It's also the only place the
+ * enemy ever aims.
+ */
+export function defaultTargetSlot(content: Content, ship: Ship): SlotIndex {
+  const cockpit = cockpitIndex(ship);
+  const cover = shieldInFront(content, ship, cockpit);
+  return cover >= 0 ? cover : cockpit;
+}
+
+// -------------------------------------------------------------- passives
+
+/** Any online module that lets charge move without spending a down. */
+export const hasFreeReroute = (content: Content, ship: Ship): boolean =>
+  liveSlots(content, ship).some((m) => isOnline(m.slot) && !!m.part.freeReroute);
+
+/** Scrap cap raised by fitted modules — counted while they're on the ship at all. */
+export const scrapCapBonus = (content: Content, ship: Ship): number =>
+  liveSlots(content, ship).reduce((sum, m) => sum + (m.part.scrapCapBonus ?? 0), 0);
+
+/** ⚡ sitting on the ship, everywhere. */
+export const storedEnergy = (ship: Ship): number =>
+  ship.slots.reduce((sum, s) => sum + (s.destroyed ? 0 : s.energy), 0);
+
+// ------------------------------------------------------------------ dice
 
 export interface DiceRoll {
   dice: number[];
@@ -68,17 +214,13 @@ export interface DiceRoll {
 export const NO_ROLL: DiceRoll = { dice: [], hits: 0, bonus: 0, hitRule: false };
 
 /**
- * Roll one effect's dice.
- *
- * Dice belong to the effect that calls for them, so a card that both hurts and
- * charges rolls once for each — its two halves can gamble on different odds.
- * Dice with a hit rule pay `perHit` per hit (Laser Array); dice without one
- * are summed onto the payload.
+ * Roll one effect's own dice — on top of the attack roll, never instead of it.
+ * Dice with a hit rule pay `perHit` per hit; dice without one are summed.
  */
-export function rollDice(spec: DiceSpec | undefined, count: number, rng: Rng): DiceRoll {
-  if (!spec || count <= 0) return NO_ROLL;
+export function rollDice(spec: DiceSpec | undefined, rng: Rng): DiceRoll {
+  if (!spec || spec.count <= 0) return NO_ROLL;
 
-  const dice = rng.rollMany(count, spec.die);
+  const dice = rng.rollMany(spec.count, spec.die);
   const { hitUnder, hitOver, perHit } = spec;
   if (hitUnder === undefined && hitOver === undefined) {
     return { dice, hits: dice.length, bonus: dice.reduce((a, b) => a + b, 0), hitRule: false };
@@ -87,93 +229,4 @@ export function rollDice(spec: DiceSpec | undefined, count: number, rng: Rng): D
     (d) => (hitUnder !== undefined && d <= hitUnder) || (hitOver !== undefined && d >= hitOver),
   ).length;
   return { dice, hits, bonus: hits * (perHit ?? 1), hitRule: true };
-}
-
-/**
- * Slots holding a live module, with the card resolved.
- *
- * The cockpit is deliberately *not* in here. It carries its own weapon,
- * shield and generator, but it isn't a fitted module: it never takes upkeep
- * from the reactor spread, never bleeds to an infestation, and never counts
- * toward a role chain. Everything the cockpit does goes through the helpers
- * below instead, so the two never double up.
- */
-export function liveModules(
-  content: Content,
-  ship: Ship,
-): { slot: ShipSlot; part: PartCard }[] {
-  const out: { slot: ShipSlot; part: PartCard }[] = [];
-  for (const slot of ship.slots) {
-    if (slot.disabled) continue;
-    const part = partOf(content, slot.partId);
-    if (part && part.role !== 'COCKPIT') out.push({ slot, part });
-  }
-  return out;
-}
-
-// ------------------------------------------------------------- the cockpit
-
-/**
- * The cockpit as a card, plus the slot it sits in.
- *
- * With HP gone this is the ship's whole baseline: `power` is the basic attack
- * a down always buys, `energyCapacity` is the basic shield, and `genPerDown`
- * is what the basic generator puts back per down.
- */
-export function cockpitOf(
-  content: Content,
-  ship: Ship,
-): { slot: ShipSlot; part: PartCard } | null {
-  const index = ship.slots.findIndex((s) => s.partId === ship.cockpitId);
-  const slot = ship.slots[index];
-  const part = partOf(content, slot?.partId);
-  return slot && part ? { slot, part } : null;
-}
-
-/** ⚔ the cockpit's basic attack deals. 0 when the card prints none. */
-export const cockpitPower = (content: Content, ship: Ship): number =>
-  cockpitOf(content, ship)?.part.power ?? 0;
-
-/** ⚡ one down of the basic generator puts into the cockpit's shield. */
-export const cockpitGeneration = (content: Content, ship: Ship): number =>
-  cockpitOf(content, ship)?.part.genPerDown ?? 0;
-
-/** Charge currently in the cockpit's shield pool. */
-export const cockpitCharge = (content: Content, ship: Ship): number =>
-  cockpitOf(content, ship)?.slot.energy ?? 0;
-
-/** Size of the cockpit's shield pool. */
-export const cockpitCapacity = (content: Content, ship: Ship): number =>
-  cockpitOf(content, ship)?.part.energyCapacity ?? 0;
-
-/**
- * Everything standing between this ship and a wreck: charged shield modules
- * plus the cockpit's own pool. This is the number that replaced hull — what
- * targeting reads to pick the softest ship on the table.
- */
-export function shieldPool(content: Content, ship: Ship): number {
-  const modules = liveModules(content, ship)
-    .filter((m) => isAbsorber(m.part))
-    .reduce((sum, m) => sum + m.slot.energy, 0);
-  return modules + cockpitCharge(content, ship);
-}
-
-/** Total energy sitting in module pools. */
-export function storedEnergy(ship: Ship): number {
-  return ship.slots.reduce((sum, s) => sum + s.energy, 0);
-}
-
-/** Capacity of a slot's module, 0 when empty. */
-export function capacityOf(content: Content, slot: ShipSlot): number {
-  return partOf(content, slot.partId)?.energyCapacity ?? 0;
-}
-
-/** Any equipped redistributor makes energy movement free of a down. */
-export function hasFreeReroute(content: Content, ship: Ship): boolean {
-  return liveModules(content, ship).some((m) => m.part.freeReroute || m.part.role === 'RDS');
-}
-
-/** Scrap cap bonus contributed by equipped modules (e.g. Cargo Bay). */
-export function scrapCapBonus(content: Content, ship: Ship): number {
-  return liveModules(content, ship).reduce((sum, m) => sum + (m.part.scrapCapBonus ?? 0), 0);
 }

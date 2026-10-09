@@ -4,6 +4,10 @@ Browser-based prototype and playtesting tool for a sci-fi roguelike deckbuilding
 looter shooter card game. This is a **rules and balance workbench**, not a
 shippable game — it optimises for changing a number and seeing what happens.
 
+The rules it implements are [`ship-dungeon-card-game-rules-v3.md`](ship-dungeon-card-game-rules-v3.md).
+That doc is the design authority; its last section lists every gap the tool had
+to fill and how it fills it today.
+
 ```bash
 npm install
 npm run dev
@@ -19,58 +23,77 @@ Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
 
 ## Playing a round
 
-1. **Mission** — press *Start a run*. A board is generated from the config:
-   length, branching, checkpoint cadence, enemy scaling, rarity ceiling.
-2. **Ship Builder** — the run opens in the draft. Each seat pulls
-   `starting_draws` parts off the shared Parts deck, one card at a time and
-   round the table, and the card that comes up lands in that seat's hold. The
-   first cockpit a seat draws takes over its hull, because capacity is the
-   cockpit's. Then lay the grid out: drag a part from the hold onto a position
-   (or click the part, then the position), drag fitted modules around to
-   reorder them, and drag one back to the hold to pull it off. **A part has to
-   attach next to something already fitted** — legal positions light up while
-   you're holding one — so a hull grows outward from its cockpit and adjacency
-   is a decision. Then *Start the mission*; parts left in the hold ride along
-   in the Scrap Deck up to its cap, and the overflow is shuffled back into the
-   deck. Set `starting_draws` to 0 to skip the draft and
-   roll out on the authored loadouts instead. The same grid editing is
-   available at every rearrangement point.
-3. Click a reachable step. With 2+ seats, the *split party* switch turns the
-   branch into the rules' higher-risk choice — seats move one at a time and
-   each occupied node resolves its own encounter, with only the seats standing
-   there in the fight.
-4. **Table** — the view follows the run, so walking into a combat step puts you
-   on the table. Spend downs from the action bar; every button is gated by the
-   engine's own legality check, and the refusal reason is the tooltip. A module
-   fires as often as its pool can pay for, one down a shot. To reload, build a
-   **reroute pass** on your own grid — click a charged module, then the
-   neighbour it feeds, as many links as you like — and commit it for a single
-   down; each module may be drained once, and ⚡ only moves between neighbours.
-   *End set* converts if the set beat the defender's threshold, otherwise it
-   passes the turn. The enemy plays itself, one down or one turn at a time.
-5. Wrecks open the **loot phase**: A (take the whole ship, keep one module) or
-   B (strip one module into the Scrap Deck).
-6. Checkpoints raise the rarity ceiling, shuffle the newly unlocked tiers into
-   all three decks, and double as a **rearrangement point** — slot hoarded
-   modules, and buy an own-threshold upgrade if that switch is on.
-7. Kill the boss to end the mission; *Next sector* rolls the next one forward.
+1. **Draft** — press *Start a run*; the run opens in the Ship Builder on the
+   snake draft. Every seat has **10 energy tokens** (`draft_tokens`). The
+   cockpit round deals seats + 1 cockpits, free; then **3 module rounds**
+   (`draft_rounds`) each deal seats-still-drafting + 1 modules, which cost 1–3
+   tokens (rarer being dearer). Pick order reverses each round. Drag a card
+   onto a cell of your ship (or into the hold), or click it and *Take* it — or
+   *Pass* the round to keep your tokens. *Draft the rest* finishes it for
+   everyone.
+2. **Arrange & charge** — a ship is a grid around its cockpit: rows above it
+   are the front, below it the back. Weapons go beside or behind the cockpit;
+   nothing goes in front of a shield, and a shield covers its column. Every
+   module has to touch the ship. Pick a card up and every cell it may land on
+   lights up; drop a module on another to swap them. Then put your **leftover
+   tokens** on your modules as starting ⚡ — drag a token onto a module, or use
+   its + / − (`draft_start_energy` adds a flat amount to every module, 0 by
+   default). *Start the mission*.
+3. **Mission** — click a reachable step. Each combat step shows how big an
+   enemy to expect there: mission depth + players modules. With 2+ seats the
+   *split party* switch lets seats take different branches.
+4. **Table** — the enemy has the top of the table, its ship flipped to face
+   you; every seat sits side by side below it, the one on the clock lit and the
+   rest greyed. Along the bottom: **Attack**, **Generate**, **Reroute** (plus
+   *Ability* and *Item* when you have one). Press one and the modules that can
+   do it light up — pick one, and an attack then asks for its target. Every
+   module's energy is its hit chance *and* its HP: an attack rolls a d6 and hits
+   at or under the ⚡ on the module firing. The dice come up on screen — click
+   to roll, read the result, *Continue*, and only then does the shot fly. A hit
+   takes ⚡ off the target equal to its attack (at least 1); at 0 a module is
+   offline, and the next hit destroys it. A **reroute** moves ⚡ between modules
+   that touch — as much as you like, from as many modules as you like, each
+   token one step, nothing over its max — click a source then a neighbour per
+   token, or drag; confirm and it's one down. Destroying a module with the
+   **1st-down icon** ends your turn and hands it to the next seat; running out
+   of downs hands it to the enemy. Either way you press *End turn*.
+5. **Enemy turn** — four action decks, one per down, top card face up so you
+   can read its next four moves: attack, generate or reroute. *Play down* steps
+   it one down at a time; its rolls come up on the dice too. A card it can't
+   carry out is discarded and the next turned; a 1st down sends it back to
+   Down 1. Its attacks go to the **aggressor**, the seat that attacked last.
+6. **Loot** — destroyed modules are gone. After a kill one seat may abandon its
+   ship and take the wreck over, keeping one old module in its scrap deck. The
+   boss is taken in pieces: its surviving parts go round the table into scrap
+   decks.
+7. **Rebuild** — at the end of the mission, rebuild from what you fly plus the
+   scrap deck (a cockpit there can be installed). *Next sector* rolls on.
 
-Everything lands in the run transcript on the right — rolls, soaks,
-conversions, refusals — which is the artefact a playtest actually produces.
+Rarity checkpoints raise the ceiling and shuffle the rarer stack into the decks
+(`commons_removed` optionally culls commons). Everything lands in the run
+transcript on the right — rolls, hits, discarded enemy cards, 1st downs — which
+is the artefact a playtest actually produces.
+
+Everything that happens is animated rather than swapped in: cards dealt and
+flown to where they land, chits popping as ⚡ comes and goes, shots crossing the
+table, modules shaking and crumpling, charge streaming along a reroute, the
+turn changing hands. The engine records each of these as a *table event*; the
+effects layer (`components/fx`) plays them back.
 
 ## Layout
 
 ```
 src/
   engine/      rules engine — plain TS, no React (see engine/README.md)
-  data/        cards, enemies, starting loadouts — content, not logic
-  store/       Zustand: config (tuning) + game (the run) + ui (view state)
+  data/        cockpits, parts, items, events, enemy actions, the boss sheet
+  store/       Zustand: config (tuning) + game (the run) + ui (view state) + deck (edits)
   components/
     ds/        design-system primitives ported from Claude Design
-    game/      module tiles, panels, action bar, log, prompt overlay
+    fx/        drag and drop, the dice overlay, the table's effects layer
+    game/      module tiles, ship grids, panels, action bar, log, prompt overlay
     editor/    the deck spreadsheet, card panel, effect + art pickers
     layout/    top bar + config sidebar
-  views/       Mission, Table, Ship Builder, Deck
+  views/       Mission, Table, Ship Builder, Cards
   styles/      design tokens as CSS custom properties
 ```
 
@@ -79,93 +102,78 @@ Three boundaries hold this together:
 1. **Engine never imports UI — or content.** It takes state, `GameConfig` and a
    `Content` bundle and returns new state, so the same rules can run headless
    for balance sweeps.
-2. **Content lives in `src/data`.** Adding a card or enemy is a data edit — or
-   no edit at all, since the deck editor writes cards at runtime. A card is a
-   list of `effects` picked from the vocabulary in `engine/effects.ts`, each
-   with its own numbers; anything outside that vocabulary is marked `manual`
-   and left to the table.
+2. **Content lives in `src/data`.** Adding a card is a data edit — or no edit at
+   all, since the deck editor writes cards at runtime. A card is a list of
+   `effects` from the vocabulary in `engine/effects.ts`; anything outside it is
+   marked `manual` and left to the table.
 3. **Tunables live in `GameConfig`.** If a playtester might want to change a
-   number, it belongs there — not as a literal in engine code.
+   number — or flip an open question — it belongs there, not in engine code.
 
 ## Config sidebar
 
-A live editor over the Zustand config store, rendered from the field
-descriptors in `src/store/configFields.ts`. Adding a tunable is: add it to
-`GameConfig` + `DEFAULT_CONFIG`, add a descriptor, done. Config persists to
-localStorage; `EXPORT JSON` copies it to the clipboard. A new run picks up the
-current config; changes mid-run bite from the next turn.
+A live editor over the config store, rendered from the descriptors in
+`src/store/configFields.ts`. Numbers, switches, and *selects* for the rules'
+open questions with named options (ship size rule, downed player). Adding a
+tunable is: add it to `GameConfig` + `DEFAULT_CONFIG`, add a descriptor, done.
+Config persists to localStorage (`nomad.config.v2` — v1 saves from the old
+rules aren't read, and a saved option that's since been retired falls back to
+its default); `EXPORT JSON` copies it to the clipboard. A new run picks up the
+current config.
 
 ## Deck editor
 
-The **Deck** tab shows the same cards two ways. *Gallery* is the deck as
-printed. *Spreadsheet* is the deck as an economy: one row per card, with the
-numbers a balance pass actually moves — rarity, copies in the deck, ⚡ cost, ⚡
-pool, ⚔️ attack — editable in place, and a strip along the bottom totalling
-copies per tier, the cockpit-to-parts ratio (which sets how big enemies spawn)
-and average ⚔️ bought per ⚡ spent.
+The **Cards** tab shows the decks two ways. *Gallery* is the deck as printed,
+every element explaining itself on hover. *Spreadsheet* is the deck as an
+economy: one section per deck (cockpits, parts, items, events, enemy actions),
+one row per card, with the numbers a balance pass moves — copies, max ⚡, attack,
+generate output, the 1st-down icon, power cost, a cockpit's slots and rating —
+editable in place. Beside them, read-only, the rules' balancing line: expected
+damage per shot at full charge (attack × ⚡ ÷ 6), and in the footer what one ⚡
+is worth across the deck (average attack ÷ 6).
 
 Selecting a row opens the card panel: the card face as it will print, its
-**effect list**, and the wording. Effects are the reusable half of the model —
-`Attack`, `Generate ⚡`, `Absorbs ⚔️`, `Retaliate`, `Drain the ship` and the
-rest — and a card is however many of them you stack up, each carrying its own
-parameters. So a new card is assembled rather than coded, and retuning one is a
-number: change a damage effect from 4⚔️ to 9⚔️ and the next shot in combat
-deals 9. Cards whose rule the vocabulary can't express carry `Manual` (active)
-or `Printed rule` (passive), which print their text and leave the payload to
-the table rather than pretending to resolve it.
+effect list, its **placement limits**, and the wording. Printed text is derived
+from the effects, so a card can't be retuned into contradicting itself.
 
-Printed text quotes the same numbers through `{placeholders}` — `{cost}`,
-`{power}`, an effect's `{amount}` — so a card can't be retuned into
-contradicting itself, and *redraft text* rewrites the line from the effects
-when you'd rather start from what the card does. Art is picked from the PNG
-fronts in the repo, or any URL.
-
-Edits are saved in the browser as an **overlay** on the shipped deck — the
-cards you touched, the cards you added, the ids you removed — so content added
-to `src/data` later still shows up, and *revert* on a row or *reset* on the
-toolbar puts the repo's version back. `EXPORT JSON` writes the overlay to a
-file and `IMPORT` reads one, which is how a balance pass moves between
-machines. A ⚠ on a row flags a card that would waste a playtest: an active
-module whose cost is larger than its own pool (the printed Infested Railgun),
-an attack that deals 0⚔️, a card with no effects at all.
+Edits are saved in the browser as an **overlay** on the shipped deck — the cards
+you touched, the cards you added, the ids you removed — so content added to
+`src/data` later still shows up. Edits saved before v3 are migrated forward
+(generation became an action, blocking became the shield role) and pick up the
+new fields from the shipped card; *reset* puts the repo's deck back. `EXPORT
+JSON` / `IMPORT` move a balance pass between machines. A ⚠ on a row flags a card
+that would waste a playtest: a module holding no ⚡, an ability that costs more
+⚡ than the module can hold, a non-generator that generates.
 
 ## Status
 
-Playable end to end: generate a mission, walk it, fight, loot, cross a
-checkpoint, kill the boss, roll into the next sector. Solo and up to four
-seats, together or split.
+Playable end to end under the v3 rules: energy-token draft, grid layout and
+starting energy, walk the mission, fight with the attack roll and 1st downs
+against the enemy action decks, take ships over, cross rarity checkpoints,
+split the boss, rebuild, next sector. Solo and up to four seats, together or
+split. Every open question in the rules doc runs, most of them behind a switch.
 
-### What the first playthroughs turned up
+The sweep findings below predate the grid, the token draft and the new
+reroute; they're worth re-running before they're relied on.
 
-Findings, not bugs — they're decisions for the rules doc:
+### What a headless sweep turned up
 
-- **Conversion was unreachable for a one-weapon ship** while offensive modules
-  fired once per fresh set: the most a side could deal in a set was the sum of
-  its weapons' power, so a single 4⚔ gun could never reach a threshold of 12.
-  Settled by letting a module fire as often as its pool can pay for — charge
-  and downs ration a volley now, not a per-set flag. `once_per_set` puts the
-  old rule back for comparison.
-- **Printed energy costs outrun generation.** Generators make 1–2⚡ a turn into
-  their own pools; weapons cost 3–4⚡ a shot and rerouting used to cost a down.
-  Fights stalled with both sides unable to fire. Two changes make it run:
-  `energy_per_turn` (a reactor baseline spread across the grid at upkeep,
-  default 6) and free rerouting on any ship carrying a redistributor. Both are
-  tunable — `energy_per_turn: 0` puts you back on generator modules alone.
-  Weapons sit outside that baseline (`reactor_feeds_wpn`, off by default): a
-  gun is loaded by rerouting into it from a neighbour, which is what makes
-  where the generators sit on the grid matter.
-- **Enemy size is drawn, not dialled.** "Draw until the next cockpit" means an
-  enemy can arrive with 3 modules or 9. `enemy_parts_base` acts as a floor
-  rather than a count. That variance is the rule as written; worth confirming
-  it's wanted.
-- **Infested Railgun can't pay its own cost** — printed pool 1⚡, printed cost
-  2⚡. Raised to 4 in the data with a comment; the card text needs a decision.
+Engine-level runs (auto-drafted ships, a simple greedy bot per seat, 10 seeds
+per variant) — findings for the rules doc, not bugs:
 
-### Rules questions, as modelled
-
-- **Board vs. deck-built campaign** (#1) — modelled as a board, since the split
-  choice needs one.
-- **Threshold upgrades** (#2) — threshold is a defensive stat, and a seat can
-  buy `+threshold_step` at a cost of `threshold_cost`⚔ per attack at any
-  rearrangement point. Switch it off with `threshold_upgrades`.
-- **One Scrap Deck or two** (#3) — one pool, as the doc leans.
+- **A ship can go dead in the water.** Only producers make ⚡, and an offline
+  producer can't generate. A ship whose cockpit and generators all sit at 0 can
+  only come back if something still charged reroutes into them — otherwise it
+  never acts again. The enemy hits it the same way; with nothing to roll
+  against, both sides can stall.
+- **`attack_spends_energy` stalls fights.** Spending the energy placed on every
+  attack drains ships to 0 faster than generate can refill them, and most
+  sweeps never finished a fight. The default (energy is only hit chance and HP)
+  plays through.
+- **Enemy action decks spend a lot of downs turning cards.** With one card of
+  each action per deck, an enemy with no weapon online discards its way through
+  Attack and Reroute before anything resolves. That's the rule as written;
+  worth deciding whether "can't" should be rarer.
+- **Fewer seats is much harder.** In the last sweep 4 seats won 6 runs in 10,
+  2 seats 2, solo 1 (10 seeds each — small, but consistent). Enemies grow by one
+  module per player, but every extra seat brings four more downs before the
+  enemy moves — and a 1st down skips the enemy entirely.

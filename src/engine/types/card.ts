@@ -1,47 +1,48 @@
 import type { CardId } from './ids';
 
-/** The three decks called out in the rules: Parts, Items, Events. */
-export type CardKind = 'part' | 'item' | 'event';
+/**
+ * The decks called out in the rules: Parts (cockpits are their own deck but
+ * share the part shape), Items, Events, and the enemy's action decks.
+ */
+export type CardKind = 'part' | 'item' | 'event' | 'action';
 
 /**
  * What a part is for.
  *
  *   GEN generator · WPN weapon · SHD shield · RDS redistributor · OTH other
- *   COCKPIT — the ship anchor, and the Parts deck's enemy-spawn delimiter
+ *   COCKPIT — the back of every ship, and its own deck
  *
- * There is no active/passive distinction on top of this: **a module is just a
- * module**. Whatever active effects it carries can be fired for a down, and
- * whatever passive effects it carries are on the whole time. A card can do
- * both, and most interesting ones should.
+ * Role carries rules of its own now: a shield sits at the front and blocks
+ * what's behind it, a generator is one of the two things that may produce ⚡,
+ * and a cockpit is the ship. Everything else a card does is its effect list.
  */
 export type ModuleRole = 'GEN' | 'WPN' | 'SHD' | 'RDS' | 'OTH' | 'COCKPIT';
 
 /**
- * Optional build specialization from the rules ("tank/DPS/luck"). Distinct
- * from role: role is what the module does, specialization is what it pushes
- * the ship toward.
+ * Optional build specialization from the rules ("tank, high DPS, luck").
+ * Distinct from role: role is what the module does, specialization is what it
+ * pushes the ship toward.
  */
 export type Specialization = 'tank' | 'dps' | 'luck' | 'support';
 
-/** 1 common → 5 legendary. Gated in play by config.maxRarityNow. */
+/** 1 common → 5 legendary. Gated in play by the rarity checkpoints. */
 export type Rarity = 1 | 2 | 3 | 4 | 5;
 
 /**
  * When an effect happens.
- *   active  — a down (and whatever ⚡ the effect costs) fires it
- *   passive — always on while the card is fitted
+ *   active  — a down fires it
+ *   passive — always on while the module is online
  *   event   — resolves when the card is drawn on a step
  */
 export type EffectTiming = 'active' | 'passive' | 'event';
 
-/** Dice an effect's activation may call for. */
+/** Dice an effect's resolution may call for, on top of the attack roll. */
 export type DieKind = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20';
 
 export interface DiceSpec {
-  /** How many dice, or 'variable' when the player chooses (e.g. spend X⚡ → X🎲). */
-  count: number | 'variable';
+  count: number;
   die: DieKind;
-  /** Rolls at or below this count as hits (Laser Array: "for every 1 you roll"). */
+  /** Rolls at or below this count as hits. */
   hitUnder?: number;
   /** Rolls at or above this count as hits. */
   hitOver?: number;
@@ -58,23 +59,21 @@ export interface DiceSpec {
  * from parts that already work rather than written as a new special case.
  *
  * Deliberately small. Anything outside the vocabulary is `manual` (active) or
- * `reminder` (passive): the tool still spends the down and the energy, and the
- * table adjudicates the payload. Better a knowingly-manual card than a
+ * `reminder` (passive): the tool still spends the down, and the table
+ * adjudicates the payload. Better a knowingly-manual card than a
  * silently-wrong one.
  */
 export type EffectType =
-  // ---- active: spend a down (and the effect's own ⚡ cost) to fire ----
+  // ---- active: spend a down to fire ----
   | 'damage'
-  | 'damage-all'
   | 'damage-module'
-  | 'gain-energy'
+  | 'generate'
+  | 'emp'
   | 'restore-shield'
   | 'negate-next-attack'
   | 'retaliate'
   | 'manual'
-  // ---- passive: always on while the module is fitted ----
-  | 'absorb'
-  | 'generate'
+  // ---- passive: always on while the module is online ----
   | 'damage-reduction'
   | 'drain'
   | 'free-reroute'
@@ -89,33 +88,42 @@ export type EffectType =
 /**
  * One effect on a card, with everything that makes it *this* card's version.
  *
- * There is no card-level cost and no card-level dice: an effect carries its
- * own. Both are modifiers on the same footing — ⚡ drawn to fire it, dice
- * rolled to resolve it — so a card that shoots for 1⚡ and rolls for a
- * separate payout says exactly that, per effect.
- *
- * Params are the ⚡/⚔️/🎲 values a card prints: tuning a card means changing
- * a number here, never writing a new effect. Keys the card omits fall back to
- * the registry's default, so an effect is always resolvable.
+ * Params are the numbers a card prints: tuning a card means changing a number
+ * here, never writing a new effect. Keys the card omits fall back to the
+ * registry's default, so an effect is always resolvable.
  */
 export interface CardEffect {
   type: EffectType;
   params?: Record<string, number>;
   /**
-   * ⚡ this effect draws from the card's own pool when it fires. Active
-   * effects only — a passive is on for free or not at all. With variable dice
-   * this is the cost *per die* ("spend X⚡ to cast X🎲").
+   * ⚡ this effect draws from the module's own pool when it fires. Active
+   * effects only, and rare: the attack roll already reads a weapon's energy,
+   * so a cost is for abilities that burn charge to work (a turret, a mine).
    */
   cost?: number;
   /** Dice this effect's resolution calls for, if any. */
   dice?: DiceSpec;
   /**
-   * Printed wording for effects resolved in code or at the table (`manual`,
-   * `reminder`). The rest of the vocabulary prints from its registry template
-   * and its own numbers, so its text can't drift; these two have no numbers to
-   * print, which is exactly why they carry their sentence here.
+   * Printed wording for effects resolved at the table (`manual`, `reminder`).
+   * The rest of the vocabulary prints from its registry template and its own
+   * numbers, so its text can't drift.
    */
   text?: string;
+}
+
+/**
+ * Where a module may sit, relative to the modules around it — the limits the
+ * rules print on the card ("no shield in front of another shield").
+ *
+ * On the grid, *in front of* and *behind* mean the same column, further
+ * forward or further back; *next to* means one of the four cells touching it.
+ */
+export type PlacementKind = 'not-in-front-of' | 'not-behind' | 'next-to' | 'not-next-to';
+
+export interface PlacementRule {
+  rule: PlacementKind;
+  /** The role the rule is about. */
+  role: ModuleRole;
 }
 
 interface CardBase {
@@ -137,59 +145,54 @@ interface CardBase {
   effects?: CardEffect[];
 }
 
-/** Parts deck: becomes ship components, and generates enemy ships. */
+/** Parts and cockpits: the two decks ships are built from. */
 export interface PartCard extends CardBase {
   kind: 'part';
-  /** `COCKPIT` anchors a ship and delimits an enemy spawn; the rest are modules. */
+  /** `COCKPIT` cards form the cockpit deck; every other role is a module. */
   role: ModuleRole;
   specialization?: Specialization;
   /**
-   * Max ⚡ this module's own pool holds. null when it holds none.
-   *
-   * On a **cockpit** this is the ship's basic shield: the ⚡ it can hold, the
-   * last charge standing between an attack and a wreck.
+   * Max ⚡ this module holds. Energy is both hit chance and HP, so this is the
+   * ceiling on both: a common gun holds a lot, a rare one very little.
    */
-  energyCapacity: number | null;
-  /** Cockpits only: module slot count this cockpit grants. */
+  energyCapacity: number;
+  /** Destroying this module earns the attacker a 1st down. */
+  firstDown?: boolean;
+  /** Placement limits printed on the card. */
+  placement?: PlacementRule[];
+  /** Cards that raise the scrap deck cap declare it here (derived). */
+  scrapCapBonus?: number;
+
+  // ---- cockpits: printed on the card, not effects ----
+  /** Cockpits: max modules under the slot-limit rule. */
   slots?: number;
+  /** Cockpits: power rating — draft tokens, or upkeep capacity under a budget. */
+  powerRating?: number;
   /**
-   * Damage this module deals per activation, before dice/config modifiers.
-   *
-   * On a **cockpit** this is the basic attack — one down, no ⚡. Every ship can
-   * always shoot, however badly.
+   * Attack strength. On a cockpit it's printed; on a module it's derived from
+   * the card's damage effects.
    */
   power?: number;
-  /**
-   * Cockpits only: ⚡ the basic generator puts into the cockpit's own shield
-   * pool for one down. Distinct from `generates`, which is passive upkeep on a
-   * module; running the cockpit generator costs the down that could have been
-   * the cockpit's attack.
-   */
+  /** Cockpits: what one generate action adds to the cockpit. */
   genPerDown?: number;
-  /** Cards that raise the scrap deck cap declare it here. */
-  scrapCapBonus?: number;
+
+  // ---- modules ----
   /**
-   * Fires at most once per fresh set of downs. The default is unlimited: a
-   * module can be activated as often as its pool can pay for, one down each,
-   * so a card only carries this when its own text says otherwise.
+   * Draft cost in energy tokens, and upkeep under an energy budget: 1–3,
+   * rarer being dearer. Blank derives it from rarity.
    */
-  oncePerSet?: boolean;
+  powerCost?: number;
 
   // ---- derived from `effects` by `compileCard`; don't author by hand ----
-  // The engine reads these directly, so they stay flat and cheap. Editing a
-  // card's effect list rewrites them, which is what makes a retuned number
-  // show up in play.
-  /** Passive: energy added to this module's pool at the start of its turn. */
-  generates?: number;
-  /** Passive: flat cut off each incoming attack, draining 1⚡ per use. */
+  /** What one generate action adds to this module. */
+  output?: number;
+  /** Passive: flat cut off each hit taken, paid for with 1⚡ from this module. */
   damageReduction?: number;
-  /** Passive: energy this module bleeds from the whole ship each turn (Infested). */
+  /** Passive: ⚡ this module bleeds from the whole ship each turn (Infested). */
   drainPerTurn?: number;
-  /** Passive SHD with a pool soaks damage before the cockpit. */
-  absorbs?: boolean;
-  /** Passive: energy may be rerouted without spending a down (RDS chains). */
+  /** Passive: rerouting costs no down. */
   freeReroute?: boolean;
-  /** Attacks that hit a single enemy module rather than its shields. */
+  /** Attacks that may pick any module, shields or not. */
   targetsModule?: boolean;
 }
 
@@ -215,19 +218,37 @@ export interface EventCard extends CardBase {
   marker?: string;
 
   // ---- derived from `effects` by `compileCard`; don't author by hand ----
-  /** Events that alter the board place a marker on the current node. */
   placesMarker?: boolean;
-  /** Loot cards handed out when the event resolves. */
   grantsLoot?: number;
-  /** ⚔ dealt to every ship at the node, resolved through shields as usual. */
+  /** One hit of this strength on every ship at the node. */
   damage?: number;
-  /** The event spawns a fight instead of resolving on the spot. */
   spawnsCombat?: boolean;
 }
 
-export type Card = PartCard | ItemCard | EventCard;
+/**
+ * What an enemy can do with a down. Charging a shield is a reroute into one;
+ * the enemy doesn't fire module abilities for now.
+ */
+export type EnemyActionType = 'attack' | 'generate' | 'reroute';
+
+export const ENEMY_ACTIONS_ALL: readonly EnemyActionType[] = ['attack', 'generate', 'reroute'];
+
+/**
+ * Enemy action decks: one per down, each holding every action. The card *is*
+ * its action — which module fires, where the energy goes, is the engine's
+ * call, made the same way every time (see `engine/ai`).
+ */
+export interface ActionCard extends CardBase {
+  kind: 'action';
+  action: EnemyActionType;
+}
+
+export type Card = PartCard | ItemCard | EventCard | ActionCard;
 
 export const isPart = (c: Card): c is PartCard => c.kind === 'part';
 export const isItem = (c: Card): c is ItemCard => c.kind === 'item';
 export const isEvent = (c: Card): c is EventCard => c.kind === 'event';
+export const isAction = (c: Card): c is ActionCard => c.kind === 'action';
 export const isCockpit = (c: Card): c is PartCard => isPart(c) && c.role === 'COCKPIT';
+/** A part that isn't a cockpit — what the parts deck holds. */
+export const isModule = (c: Card): c is PartCard => isPart(c) && c.role !== 'COCKPIT';

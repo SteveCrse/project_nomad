@@ -4,9 +4,12 @@ The rules engine for Project N.O.M.A.D. Plain TypeScript — **no React, no
 Zustand, no DOM**. The UI reads `GameConfig` out of the Zustand store and
 passes it in; the engine never reaches back.
 
-That boundary is the point: the same code should be runnable headless for
-balance sweeps (roll 10k combats across a range of `convThreshold` values)
-without dragging a renderer along.
+That boundary is the point: the same code runs headless for balance sweeps
+(roll a thousand fights across a range of `startEnergy` values) without
+dragging a renderer along.
+
+The rules are `ship-dungeon-card-game-rules-v3.md` at the repo root. Where they
+leave a gap, the doc's *Open Questions* section says how the engine fills it.
 
 ## Layout
 
@@ -14,148 +17,123 @@ without dragging a renderer along.
 | ------------ | --------------------------------------------------------------------- |
 | `types/`     | The data model — cards, ships, enemies, players, combat, board, config |
 | `effects.ts` | The effect catalogue: what a card can be assembled from                |
-| `cards.ts`   | Compiling a card's effects into what the engine resolves, and the text it prints |
-| `content.ts` | The injected card/enemy bundle. The engine never imports `src/data`    |
-| `combat/`    | Symmetric downs system: downs, conversion, damage, shields             |
-| `deck/`      | Deck building, shuffling, drawing, checkpoint rarity gates             |
-| `ship/`      | Ship assembly, enemy spawning, upkeep, energy rerouting, adjacency     |
-| `loot/`      | Loot phase A/B, scrap deck, rearrangement, threshold upgrades          |
-| `board/`     | Mission generation, movement, party splits                            |
-| `ai/`        | Enemy decision-making, so one side of the table can play itself        |
-| `game/`      | Run orchestration: the piece that makes a whole round playable         |
+| `cards.ts`   | Compiling a card's effects, the text it prints, the balancing helpers  |
+| `content.ts` | The injected card/boss bundle. The engine never imports `src/data`     |
+| `combat/`    | Downs, the attack roll, hits, 1st downs, the enemy's action decks      |
+| `deck/`      | Decks, shuffling, drawing, rarity checkpoints, action decks            |
+| `ship/`      | The grid, layout rules, rerouting, size rules, hits, enemy spawning    |
+| `loot/`      | Ship takeover, boss salvage, the scrap deck, rebuilding                |
+| `board/`     | Mission generation, movement, party splits                             |
+| `ai/`        | What each enemy action card turns into; the draft auto-pick            |
+| `game/`      | Run orchestration: the draft (`draft.ts`) and everything after it      |
 | `rng.ts`     | Seeded RNG so a playtest run is reproducible                           |
 
-## How a round runs
+## How a run runs
 
-`game.newRun` builds the three decks, the party's ships and a mission, then
-every step is a pure `(state, …) → state` call:
+Every step is a pure `(state, …) → state` call:
 
 ```
-newRun → draftCard* → assemblePart* → startMission
-       → moveTo ─┬─ combat  → takeDown* → endTurn → enemyStep* → resolveLoot
+newRun → draftCard* / passDraft* → assemblePart* / moveModule* / placeEnergy* → startMission
+       → moveTo ─┬─ combat  → takeDown* → endTurn → enemyStep* → resolveLoot | salvage*
                  ├─ event   → resolveEvent
                  ├─ loot    → claimReward
-                 └─ checkpoint → applyRearrange* → closePrompt
+                 └─ checkpoint → closePrompt
+       → (boss) salvage* → fitFromScrap* / stowToScrap* / moveModule* → closePrompt → nextMission
 ```
 
-The run opens in `setup` with a draft: `config.startingPartsDraws × seats` parts
-come off the shared Parts deck in one deal and sit face up (`game.draftPool`).
-The seats then take turns taking any card on the table (`game.nextDrafter` says
-whose pick it is, round the table; `game.draftCard` takes one), fit what they
-took, and `startMission` puts the party on the board — it can be called at any
-point, and whatever is still face up is shuffled back into the Parts deck.
-The first cockpit a seat takes re-anchors its ship, since capacity is the
-cockpit's — and so are the basic attack, shield and generator — and parts left
-over ride along in the Scrap Deck so a rearrangement point can still spend them. `startingPartsDraws: 0` skips the draft and rolls
-the authored loadouts in `data/ships.ts` out instead.
+`game.continueRun` is where every step ends: it resolves the next occupied step
+that hasn't been triggered yet — a split party's steps one after another — or
+hands control back to the map.
 
-`game.takeDown` is the single entry point for spending a down; it asks
-`combat.actionError` first, so an illegal action comes back as a reason string
-instead of a corrupted state. The store never mutates game state itself.
+## Ships
+
+A ship is a **grid**: every `ShipSlot` carries an `x`/`y`, the cockpit sits at
+(0, 0), and lower `y` is the front — everything above the cockpit, for a
+player; an enemy is the same grid drawn flipped. `slots` is in no order, and a
+`SlotIndex` stays put for the length of a fight. Four rules decide where a
+module may sit, all read by `ship.layoutErrors`:
+
+1. every module is attached — it touches the cockpit, or a module that does;
+2. weapons sit beside or behind the cockpit, never in front of it;
+3. nothing sits in front of a shield (same column, further forward);
+4. whatever `placement` limits the card prints (`not-in-front-of`, `not-behind`,
+   `next-to`, `not-next-to` a role).
+
+Every edit is checked against the whole grid (`canPlaceAt`, `canMoveTo` — a
+move onto another module swaps them) and may not break anything that wasn't
+already broken (`editAllowed`). Anything placed without a chosen cell goes to
+`bestCell`: guns beside the cockpit, shields over what's worth covering, the
+rest touching what it feeds.
+
+**Size**: the draft limits a ship — its rounds and tokens. `config.shipSizeRule`
+can cap it on top: `slots` counts modules against the cockpit's `slots`;
+`budget` sums each module's `powerCostOf` (1–3, from rarity unless printed —
+also its price in tokens) against `powerRating`.
 
 ## Combat model
 
-- Threshold is a **defensive** stat. The attacker has to deal the *defender's*
-  threshold within one set of downs to convert. That's what makes rules open
-  question #2 (buying a higher own-threshold, paid for in attack power)
-  mechanically real — see `loot.buyThresholdUpgrade`.
-- A side's threshold each set is the softest living opponent's, recomputed
-  when the set opens.
-- **There is no HP.** Damage order: negation → flat reduction (Shock Absorber)
-  → charged shield modules → the cockpit's own pool. Damage still standing
-  after all of that has nothing left to bite on, and the ship is destroyed.
-  `config.thresholdCountsShielded` decides whether damage eaten by shield
-  modules still counts toward conversion, or only what reached the cockpit.
-- **The cockpit is a weapon, a shield and a generator.** Its card prints
-  `power` (the basic attack), `energyCapacity` (max ⚡ — the basic shield, and
-  the ship's last charge) and `genPerDown` (what one down of the basic
-  generator puts back). Two extra down actions expose them — `cockpit-attack` and
-  `cockpit-generate` — and neither costs ⚡, so a ship stripped to bare metal
-  still has something to spend a down on. A cockpit is the part whose `role` is
-  `COCKPIT`; it sits outside `liveModules`, so it never doubles up with the
-  upkeep spread or a role chain, and everything it does goes through the
-  `cockpit*` helpers in `ship/module.ts`.
-- A module fires as often as its own pool can pay for — one down per shot. A
-  card printed `oncePerSet` is capped at one, and `offensiveOncePerSet` puts
-  every gun back under that cap for comparison. What actually rations a volley
-  is charge and downs, not a per-set flag.
-- Energy: `config.energyPerTurn` is spread across the grid at upkeep (actives
-  first), generator modules top up their own pools, and a ship carrying a
-  redistributor can reroute without spending a down and feed a module from
-  loose ⚡. **Weapons are outside the upkeep spread** unless
-  `weaponsDrawFromReactor` is on — a gun is loaded by rerouting into it.
+- **Energy is hit chance and HP.** An attack rolls a d6 against the ⚡ on the
+  module firing it; at or under hits. A hit takes `max(1, attack)` ⚡ off the
+  module it lands on (`ship.hitSlot`), never spilling past it. At 0 a module is
+  offline — it can't attack, generate or be used — and the next hit destroys
+  it. Destroying the cockpit destroys the ship.
+- **Targeting.** A shield covers its column: nothing behind it can be reached
+  while it stands (`exposedSlots`), and a column with no shield is open all the
+  way back. A `damage-module` effect ignores the shields. The enemy always aims
+  for the cockpit — the shield in front of it first — of the **aggressor**, the
+  seat that attacked last (`aggroTarget`).
+- **Downs.** `generate` puts the producer's output on the producer; `reroute`
+  plays a list of moves between modules that touch (`ship/reroute.ts`): every
+  token one step at most, no module ever over its max, the whole list one down
+  (into a shield, it's *charging* it); `use-module` fires a module's other
+  abilities; `play-card` plays an item, whose attacks land without a roll.
+  `attackSpendsEnergy` makes an attack use up the energy it rolled against.
+- **1st downs.** `combat.playerDown` ends the turn when a 1st-down module is
+  destroyed or the downs run out (`turnOver`), and the turn waits there:
+  `endPlayerTurn` hands it to the next seat after a 1st down, to the enemy
+  otherwise.
+  `combat.enemyDown` plays the face-up card of the current down's deck — the
+  planner in `ai/` turns it into an action, or says why it can't, in which case
+  it's discarded and the next card turned — goes back to Down 1 on a 1st down,
+  and after the last down hands the turn to the seat after the one that failed.
 
-## The grid is the rules surface
+## Table events
 
-Slots are a `gridCols`-wide grid, and `ship.neighbourSlots` is the one piece of
-geometry every adjacency rule reads:
-
-- **Shape.** The grid isn't a rectangle the cockpit hands out — it's the
-  bounding box of whatever is fitted, re-padded by `normalizeGrid` so there is
-  exactly one open position on every free side of every part. A ship is any
-  shape the player builds, and the cockpit is a part on the grid like the rest:
-  it can be moved (`canMoveTo`), it just can't be jettisoned.
-- **Capacity.** The cockpit's `slots` is how many *modules* may hang off it and
-  does not count the cockpit itself (`moduleCapacity` / `hasFreeCapacity`).
-- **Attaching.** A part has to touch something already fitted (`canAttachAt`),
-  so a hull grows outward from its cockpit — enemy ships included. Moving or
-  detaching may never split the hull in two (`isConnected`, `canDetach`), and
-  anything placed without a chosen position goes where the hull stays squarest
-  (`bestAttachSlot`).
-- **Rerouting.** ⚡ only ever moves between neighbours. One down buys a whole
-  pass: every module may be drained once, and the legs resolve in order, so a
-  generator can fill a redistributor that then fills a gun inside one down.
-- **Charging a shield** draws on the player's loose pool and on *adjacent*
-  generators, for the same reason.
-- **Chains.** `findAdjacencyBonuses` reads GEN→RDS→WPN off the same geometry.
+Every step also records what happened as `TableEvent`s — each die rolled (with
+what it needed and what it meant), each hit, each ⚡ charged, drained or
+rerouted, each enemy card played or discarded, each change of turn — on
+`combat.events`, folded into the run's numbered `events`. The log says it in
+words; the events say it in a shape the UI can animate, and the store holds
+back any step that rolled until its dice have been shown.
 
 ## Card behaviour
 
-A card is a **list of effects**, each with its own numbers, its own ⚡ cost and
-its own dice:
+A card is a **list of effects**, each with its own numbers:
 
 ```ts
 effects: [
-  { type: 'damage', params: { power: 5 }, cost: 2 },
+  { type: 'damage', params: { power: 5 } },
   { type: 'drain', params: { amount: 1 } },   // the Infested Railgun, both halves
 ]
 ```
 
-**There is no card-level cost and no card-level dice.** Both are modifiers on
-an effect, on the same footing: what an activation pays is the sum across the
-active effects it resolves (`cardCost`), and each rolls its own dice. A cost on
-a passive is meaningless and `cardWarnings` says so.
-
-**A module is just a module.** There is no active/passive kind sitting on top
-of the effect list to disagree with it: a card can be fired for a down exactly
-when it carries an active effect (`isActivatable`), and whatever passives it
-also carries are on the whole time. One card can do both, and the good ones do.
-`COCKPIT` is a **role** like GEN or WPN — the one that anchors a ship, delimits
-an enemy spawn, and prints its three intrinsic lines off `power`, `genPerDown`
-and `energyCapacity`.
-
 `effects.ts` is the catalogue — label, timing, tunable params, printed-text
 fragment — and `cards.ts` compiles a card's list into the flat fields the rest
-of the engine reads (`power`, `generates`, `absorbs`, `damageReduction`, an
-event's `damage`…). Those flat fields are **derived**: don't author them, and
-don't expect an edit to one to survive the next compile.
+of the engine reads (`power`, `output`, `targetsModule`, an event's `damage`…).
+Those flat fields are **derived**: don't author them.
 
-Combat walks the active effects in printed order, rolling each one's dice as it
-comes. Adding an **effect** means an entry in `effects.ts` and a case in
-`resolveEffect`; adding a **card** means neither, which is what lets the deck
-editor assemble new cards at runtime.
+Role carries rules of its own: a shield blocks by being a shield, and only
+cockpits and generators may produce ⚡ (`cardWarnings` flags anything else that
+does). A cockpit prints its attack, output, slots and rating rather than
+carrying effects.
 
 The vocabulary is deliberately small. Anything outside it is `manual` (active)
-or `reminder` (passive): the tool still spends the down and the energy, prints
-the effect's own wording, and leaves the payload to the table. A knowingly-
-manual card beats a silently-wrong one.
+or `reminder` (passive): the tool still spends the down, prints the effect's
+wording, and leaves the payload to the table.
 
 **Printed text is derived, not authored.** `printedLines` builds a card's rules
-text from its effects every time — each line tagged `active`, `passive` or
-`event` so the face can chip it ACT/PAS/EVT — off the registry template, the
-effect's numbers, its cost and its dice. A cockpit has no effects, so its three
-intrinsic lines are printed from `power`, `genPerDown` and `energyCapacity`
-instead. There is no text field to fall out of date with the numbers.
+text from its effects and placement limits every time, each line tagged with
+when it happens (ACT / PAS / EVT / LAY, and ENM for an enemy action card).
 
 ## Conventions
 
@@ -163,6 +141,7 @@ instead. There is no text field to fall out of date with the numbers.
   inputs, no module-level mutable state (the seeded `Rng` is the one exception,
   and it tracks its own draw count so a run can be replayed).
 - **No tuning literals.** Anything a playtester might want to change belongs in
-  `GameConfig` (`types/config.ts`), not in a function body.
-- **Content lives in `src/data`,** not here. Adding a card or an enemy must
-  never require an engine edit — content arrives as a `Content` parameter.
+  `GameConfig` (`types/config.ts`), not in a function body. The d6 is the one
+  constant (`HIT_DIE`): the rules' balancing maths is built on it.
+- **Content lives in `src/data`,** not here. Adding a card or a boss must never
+  require an engine edit — content arrives as a `Content` parameter.

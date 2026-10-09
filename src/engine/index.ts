@@ -3,7 +3,7 @@
  *
  * Plain TypeScript, no React, no store imports — the UI passes state and
  * config in and gets new state back. Keep it that way: it's what lets the
- * same rules run in a headless balance simulator later.
+ * same rules run in a headless balance simulator.
  */
 
 export * from './types';
@@ -30,30 +30,38 @@ export {
 } from './effects';
 export type { EffectDef, EffectParamDef } from './effects';
 export {
+  ACTION_LABEL,
+  ACTION_TEXT,
+  HIT_DIE,
+  abilityEffects,
   activeEffects,
   attackOf,
   blankCard,
-  cardCost,
   cardWarnings,
   compileCard,
-  costPerDie,
+  costOf,
   diceOf,
   effectCost,
   effectLine,
   effectParam,
   effectsOf,
+  expectedDamage,
   hasEffect,
-  hasVariableDice,
+  hitChance,
   hydrateDeck,
   isActivatable,
+  isPlayable,
   makeEffect,
   migrateCard,
+  outputOf,
   passiveEffects,
+  placementLine,
+  powerCostOf,
   printedLines,
   printedText,
   timingOf,
 } from './cards';
-export type { PrintedLine } from './cards';
+export type { PrintedLine, PrintedTiming } from './cards';
 export type { Deck } from './deck';
 export type { LootChoice } from './loot';
 export type { Loadout } from './game';

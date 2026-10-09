@@ -1,59 +1,62 @@
 import type { PartId, ShipId, SlotIndex } from './ids';
 
 /**
- * One position in a ship's module grid.
- * `null` part = empty slot. The cockpit occupies a slot like anything else,
- * but is flagged so it can't be jettisoned.
+ * One module on a ship's grid.
+ *
+ * Energy is the module's hit chance *and* its HP. At 0 it's offline — it can't
+ * act, but it's still there, still blocks if it's a shield, and one more hit
+ * destroys it. A destroyed module keeps its cell until the fight is over so
+ * targets don't shuffle mid-combat; it's gone afterwards.
  */
 export interface ShipSlot {
+  /** Position in `Ship.slots` — stable for the length of a fight. */
   index: SlotIndex;
-  partId: PartId | null;
-  /** Current charge in this module's own energy pool. */
+  partId: PartId;
   energy: number;
-  /** Fired this set — only limits modules that are capped to one shot per set. */
-  usedThisDownSet: boolean;
-  /** Knocked out; occupies the slot but contributes nothing. */
-  disabled: boolean;
+  destroyed: boolean;
+  /** Grid column. The cockpit sits at x 0. */
+  x: number;
+  /**
+   * Grid row, front to back. The cockpit sits at y 0: everything at a lower y
+   * is in front of it, everything higher behind it, and its own row is its
+   * sides. The same numbers hold for every ship — an enemy is drawn flipped,
+   * front facing the players, but its grid reads the same way.
+   */
+  y: number;
+}
+
+/** A grid position. */
+export interface Cell {
+  x: number;
+  y: number;
 }
 
 /**
  * Combat effects a ship is carrying that outlive a single down but not the
- * fight: a charged Defense Turret, armed Mines. Cleared when combat ends.
+ * fight: a charged Defense Turret, armed Mines. Cleared when combat starts.
  */
 export interface ShipFlags {
-  /** Attacks that will be fully negated (Defense Turret). */
+  /** Hits that will be negated outright (Defense Turret). */
   negateNext: number;
-  /** Damage returned to the next attacker (Mines). */
+  /** Strength of the hit returned to the next attacker (Mines). */
   retaliate: number;
 }
 
 /**
- * A ship is a cockpit plus the modules attached to it. How many modules it may
- * carry comes from the cockpit and doesn't count the cockpit itself, so
- * swapping cockpits (Loot option A) can leave modules displaced.
+ * A ship is a cockpit plus the modules attached around it on a grid. The same
+ * rules apply to players and enemies.
  *
- * The grid is the ship's *shape* rather than its capacity: the parts fitted,
- * plus one ring of open positions around them, re-padded on every placement.
- *
- * There is no HP pool. A ship's durability is the charge sitting in its
- * shields, and the cockpit's own pool is the last of them: once every shield
- * and the cockpit are dry and damage still lands, the ship is destroyed.
+ * There is no HP pool: every module's energy is its own HP, and the ship is
+ * destroyed when its cockpit is.
  */
 export interface Ship {
   id: ShipId;
   name: string;
-  /** Part id of the cockpit anchoring this ship. */
+  /** Part id of the cockpit, at cell (0, 0). */
   cockpitId: PartId;
-  /** Width of the slot array, in cells — the grid's geometry, not a capacity. */
-  gridCols: number;
+  /** Every module, cockpit included, in no particular order — `x`/`y` place them. */
   slots: ShipSlot[];
-  /** Shot out from under its pilot: damage landed with no ⚡ left to soak it. */
+  /** The cockpit has been destroyed. */
   destroyed: boolean;
   flags: ShipFlags;
-}
-
-/** Adjacency chain bonus (GEN → RDS → WPN), evaluated by the engine. */
-export interface AdjacencyBonus {
-  slotIndices: SlotIndex[];
-  description: string;
 }

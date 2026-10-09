@@ -1,6 +1,6 @@
 import type { EnemyId, NodeId, PlayerId } from './ids';
 
-/** Step types placed on the dungeon progression board. */
+/** Step types placed on the mission step board. */
 export type StepType = 'start' | 'combat' | 'loot' | 'event' | 'empty' | 'checkpoint' | 'boss';
 
 export interface BoardNode {
@@ -8,15 +8,16 @@ export interface BoardNode {
   type: StepType;
   /** Nodes reachable from here — more than one means the party may split. */
   next: NodeId[];
-  /** Depth into the mission, 0 = start. Layout and difficulty both use it. */
+  /** Mission depth, 0 = start. Enemy size scales with it. */
   column: number;
   /** Position within the column, for layout only. */
   row: number;
-  /** Crossing a checkpoint raises the rarity ceiling for later draws. */
+  /** Crossing a rarity checkpoint raises the ceiling to this tier. */
   raisesRarityTo?: number;
-  /** Proposed: checkpoints double as module rearrangement points. */
+  /** Optional: a checkpoint that doubles as a rearrangement point. */
   isRearrangePoint?: boolean;
-  enemyId?: EnemyId;
+  /** The boss sheet fought here. Regular fights are built at spawn time. */
+  bossId?: EnemyId;
   /** Markers dropped by events, e.g. a Gravity Well chit. */
   markers?: string[];
   /** The step has already been triggered — re-entering it does nothing. */

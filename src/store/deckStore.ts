@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Card, CardEffect, CardId, CardKind, DiceSpec, EffectType } from '@engine/types';
-import { blankCard, hydrateDeck, makeEffect, migrateCard } from '@engine';
+import { blankCard, hydrateDeck, isPlayable, makeEffect, migrateCard } from '@engine';
 import { DEFAULT_CARDS, setDeck } from '@data';
 
 /**
@@ -31,12 +31,29 @@ const EMPTY_OVERLAY: DeckOverlay = { edits: {}, added: [], removed: [] };
 
 const DEFAULT_IDS = new Set(DEFAULT_CARDS.map((c) => c.id));
 
+/**
+ * Fields the v3 rules added to cards. An edit saved before they existed has
+ * none of them, so it takes the shipped card's — a shield edited under v2
+ * still carries its 1st-down icon, a cockpit still has a power rating.
+ */
+const V3_FIELDS = ['firstDown', 'placement', 'powerRating', 'powerCost'] as const;
+
+function withV3Fields(edit: Card, shipped: Card): Card {
+  if (edit.kind !== 'part' || shipped.kind !== 'part') return edit;
+  const filled: Record<string, unknown> = { ...edit };
+  for (const key of V3_FIELDS) {
+    if (!(key in edit) && shipped[key] !== undefined) filled[key] = shipped[key];
+  }
+  return filled as unknown as Card;
+}
+
 /** Resolve the overlay against the authored deck and compile the result. */
 function buildDeck(overlay: DeckOverlay): Card[] {
   const removed = new Set(overlay.removed);
-  const shipped = DEFAULT_CARDS.filter((c) => !removed.has(c.id)).map(
-    (c) => overlay.edits[c.id] ?? c,
-  );
+  const shipped = DEFAULT_CARDS.filter((c) => !removed.has(c.id)).map((c) => {
+    const edit = overlay.edits[c.id];
+    return edit ? withV3Fields(edit, c) : c;
+  });
   const added = overlay.added.filter((c) => !removed.has(c.id));
   return hydrateDeck([...shipped, ...added]);
 }
@@ -56,7 +73,8 @@ function sanitize(value: unknown): DeckOverlay {
         .filter(([, card]) => isCard(card))
         .map(([id, card]) => [id, migrateCard(card as Card)]),
     ) as Record<CardId, Card>,
-    added: (raw.added ?? []).filter(isCard).map(migrateCard),
+    // An enemy card for an action the enemy no longer has is dropped.
+    added: (raw.added ?? []).filter(isCard).map(migrateCard).filter(isPlayable),
     removed: (raw.removed ?? []).filter((id): id is CardId => typeof id === 'string'),
   };
 }
@@ -81,7 +99,8 @@ interface DeckStore {
   /** Printed wording for a coded effect (`manual`, `reminder`). */
   setEffectText: (id: CardId, index: number, text: string) => void;
 
-  addCard: (kind: CardKind) => CardId;
+  /** A blank card; `cockpit` is a part with the cockpit role. */
+  addCard: (kind: CardKind | 'cockpit') => CardId;
   duplicateCard: (id: CardId) => CardId | null;
   removeCard: (id: CardId) => void;
   /** Drop edits to a shipped card. No-op for one that only exists here. */
@@ -201,7 +220,8 @@ export const useDeckStore = create<DeckStore>()(
 
       addCard: (kind) => {
         const id = uniqueId(get().cards, `new ${kind}`);
-        const card = blankCard(kind, id, `New ${kind[0]!.toUpperCase()}${kind.slice(1)}`);
+        const noun = kind === 'action' ? 'Enemy Action' : `${kind[0]!.toUpperCase()}${kind.slice(1)}`;
+        const card = blankCard(kind, id, `New ${noun}`);
         set((s) => commit({ ...s.overlay, added: [...s.overlay.added, card] }));
         return id;
       },

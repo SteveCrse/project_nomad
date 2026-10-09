@@ -1,17 +1,19 @@
 import type {
   Battle,
+  CardId,
   DownAction,
-  EnergyTransfer,
   GameConfig,
   GameState,
+  ItemCard,
   PartCard,
   PlayerState,
+  RerouteMove,
   Ship,
   SideRef,
   SlotIndex,
 } from '@engine/types';
-import { activeEffects, combat, hasVariableDice, ship as shipEngine } from '@engine';
-import { CONTENT, getPart } from '@data';
+import { abilityEffects, attackOf, combat, expectedDamage, hitChance, outputOf, ship as shipEngine } from '@engine';
+import { CONTENT, getCard, getPart } from '@data';
 
 /**
  * View-side derivations for the combat surface.
@@ -23,157 +25,155 @@ import { CONTENT, getPart } from '@data';
 export const battleOf = (state: GameState): Battle | null =>
   state.combat ? { party: state.party, combat: state.combat } : null;
 
-export interface ModuleOption {
+/** A down, and the engine's verdict on it. */
+export interface Option {
+  action: DownAction;
+  /** null when the down can be spent this way right now. */
+  error: string | null;
+}
+
+/** Everything one module on the acting ship can do with a down. */
+export interface ModuleOptions {
   slot: SlotIndex;
   part: PartCard;
-  action: DownAction;
-  /** null when the module can be fired right now. */
-  error: string | null;
-  energyCost: number;
-  /** Fired already in this set of downs. */
-  spent: boolean;
-  offensive: boolean;
-  /** Carries at least one active effect, so a down can be spent on it. */
-  activatable: boolean;
-  /** The player has to pick an enemy module for this one. */
-  needsModuleTarget: boolean;
-  manual: boolean;
+  energy: number;
+  max: number;
+  destroyed: boolean;
+  /** Attack strength, 0 when it has none. */
+  attack: number;
+  /** d6 ≤ energy, as a fraction. */
+  hitChance: number;
+  /** attack × energy ÷ 6 — the rules' balancing line. */
+  expected: number;
+  /** What a generate action adds. */
+  output: number;
+  fire: Option | null;
+  generate: Option | null;
+  use: Option | null;
 }
 
-export interface TargetChoice {
-  target?: SideRef;
-  targetSlot?: SlotIndex;
-  diceCount?: number;
-  manualDamage?: number;
+const verdict = (battle: Battle, config: GameConfig, side: SideRef, action: DownAction): Option => ({
+  action,
+  error: combat.actionError(CONTENT, battle, config, side, action),
+});
+
+/**
+ * The enemy module the seat is aiming at: the one picked on the table if it
+ * can be reached, else where an attack lands by default — the front shield,
+ * or the cockpit once the shields are gone.
+ */
+export function aimAt(state: GameState, picked: SlotIndex | null, precision = false): SlotIndex | undefined {
+  const enemy = state.combat?.enemy.ship;
+  if (!enemy) return undefined;
+  if (picked !== null && shipEngine.canTarget(CONTENT, enemy, picked, precision)) return picked;
+  return shipEngine.defaultTargetSlot(CONTENT, enemy);
 }
 
-/** Every module on the active seat's ship, with the engine's verdict on each. */
+/** Every module on the acting seat's ship, with what each can do. */
 export function moduleOptions(
   state: GameState,
   config: GameConfig,
   side: SideRef,
-  choice: TargetChoice,
-): ModuleOption[] {
+  picked: SlotIndex | null,
+  manualDamage = 0,
+): ModuleOptions[] {
   const battle = battleOf(state);
   if (!battle) return [];
   const ship = combat.shipOf(battle, side);
   if (!ship) return [];
 
-  return ship.slots
-    .map((slot): ModuleOption | null => {
-      const part = getPart(slot.partId);
-      if (!part || part.role === 'COCKPIT') return null;
-
-      const manual = activeEffects(part).some((e) => e.type === 'manual');
-      const activatable = activeEffects(part).length > 0;
-      const needsModuleTarget = !!part.targetsModule;
-      const action: DownAction = {
-        type: 'activate-module',
-        slot: slot.index,
-        ...(choice.target ? { target: choice.target } : {}),
-        ...(needsModuleTarget && choice.targetSlot !== undefined && choice.targetSlot !== null
-          ? { targetSlot: choice.targetSlot }
-          : {}),
-        ...(hasVariableDice(part) ? { diceCount: choice.diceCount ?? 1 } : {}),
-        ...(manual && choice.manualDamage ? { manualDamage: choice.manualDamage } : {}),
-      };
-
-      // A module with nothing active isn't broken — its passives are simply
-      // doing their job without a down being spent on them.
-      const error = activatable
-        ? combat.actionError(CONTENT, battle, config, side, action)
-        : 'nothing to activate — its effects are always on';
-
-      return {
-        slot: slot.index,
-        part,
-        action,
-        error,
-        energyCost: shipEngine.energyCostOf(part, config, choice.diceCount),
-        spent: slot.usedThisDownSet,
-        offensive: shipEngine.isOffensive(part),
-        activatable,
-        needsModuleTarget,
-        manual,
-      };
-    })
-    .filter((o): o is ModuleOption => o !== null);
+  return ship.slots.map((slot): ModuleOptions => {
+    const part = getPart(slot.partId)!;
+    const attack = attackOf(part);
+    const output = outputOf(part);
+    const abilities = abilityEffects(part);
+    const targetSlot = aimAt(state, picked, !!part.targetsModule);
+    const aimed = targetSlot !== undefined ? { targetSlot } : {};
+    return {
+      slot: slot.index,
+      part,
+      energy: slot.energy,
+      max: part.energyCapacity,
+      destroyed: slot.destroyed,
+      attack,
+      hitChance: hitChance(slot.energy),
+      expected: expectedDamage(attack, slot.energy),
+      output,
+      fire: attack > 0 ? verdict(battle, config, side, { type: 'attack', slot: slot.index, ...aimed }) : null,
+      generate: shipEngine.isProducer(part)
+        ? verdict(battle, config, side, { type: 'generate', slot: slot.index })
+        : null,
+      use:
+        abilities.length > 0
+          ? verdict(battle, config, side, {
+              type: 'use-module',
+              slot: slot.index,
+              ...aimed,
+              ...(manualDamage > 0 ? { manualDamage } : {}),
+            })
+          : null,
+    };
+  });
 }
 
-/** Shield modules with room, for the charge-shield action. */
-export function shieldOptions(
+/** The items in the acting seat's hand, each with the engine's verdict. */
+export function handOptions(
   state: GameState,
   config: GameConfig,
   side: SideRef,
-): { slot: SlotIndex; part: PartCard; error: string | null }[] {
+  picked: SlotIndex | null,
+  manualDamage = 0,
+): { cardId: CardId; card: ItemCard; option: Option }[] {
   const battle = battleOf(state);
-  if (!battle) return [];
-  const ship = combat.shipOf(battle, side);
-  if (!ship) return [];
-  return ship.slots
-    .map((slot) => {
-      const part = getPart(slot.partId);
-      // The cockpit has its own row in the action bar — its generator is the
-      // way it recharges, so it isn't listed among the chargeable shields.
-      if (!part || part.role !== 'SHD') return null;
-      const action: DownAction = { type: 'charge-shield', slot: slot.index, amount: 1 };
-      return { slot: slot.index, part, error: combat.actionError(CONTENT, battle, config, side, action) };
-    })
-    .filter((o): o is { slot: SlotIndex; part: PartCard; error: string | null } => o !== null);
+  if (!battle || side.kind !== 'player') return [];
+  const player = combat.playerOf(battle, side.id);
+  if (!player) return [];
+  return player.hand.flatMap((cardId) => {
+    const card = getCard(cardId);
+    if (card?.kind !== 'item') return [];
+    const precision = (card.effects ?? []).some((e) => e.type === 'damage-module');
+    const targetSlot = aimAt(state, picked, precision);
+    const action: DownAction = {
+      type: 'play-card',
+      cardId,
+      ...(targetSlot !== undefined ? { targetSlot } : {}),
+      ...(manualDamage > 0 ? { manualDamage } : {}),
+    };
+    return [{ cardId, card, option: verdict(battle, config, side, action) }];
+  });
 }
 
-export interface CockpitOptions {
-  part: PartCard;
-  /** Printed ⚔ of the basic attack. */
-  power: number;
-  /** ⚡ one down of the basic generator puts back. */
-  generation: number;
-  charge: number;
-  capacity: number;
-  attack: { action: DownAction; error: string | null };
-  generate: { action: DownAction; error: string | null };
+/** Downed teammates the acting seat could revive, when the switch allows it. */
+export function reviveOptions(state: GameState, config: GameConfig, side: SideRef): { player: PlayerState; option: Option }[] {
+  const battle = battleOf(state);
+  if (!battle || config.downedPlayer !== 'revive') return [];
+  return state.party.players
+    .filter((p) => p.destroyed && battle.combat.participants.includes(p.id))
+    .map((player) => ({ player, option: verdict(battle, config, side, { type: 'revive', playerId: player.id }) }));
 }
 
 /**
- * The two downs every ship always has: the cockpit's basic attack and its
- * basic generator.
- *
- * Both are free of ⚡ by design — with no HP pool, the cockpit is the ship's
- * weapon of last resort *and* its last shield, so a seat stripped down to bare
- * metal still has something to do with a down.
+ * A reroute being built, played out: the ship as it would be, what each
+ * module can still send this reroute, and why the plan can't go ahead if it
+ * can't.
  */
-export function cockpitOptions(
-  state: GameState,
-  config: GameConfig,
-  side: SideRef,
-  choice: TargetChoice,
-): CockpitOptions | null {
-  const battle = battleOf(state);
-  if (!battle) return null;
-  const ship = combat.shipOf(battle, side);
-  if (!ship) return null;
-  const cockpit = shipEngine.cockpitOf(CONTENT, ship);
-  if (!cockpit) return null;
-
-  const attack: DownAction = {
-    type: 'cockpit-attack',
-    ...(choice.target ? { target: choice.target } : {}),
-  };
-  const generate: DownAction = { type: 'cockpit-generate' };
-
+export function reroutePlan(ship: Ship, moves: RerouteMove[]) {
+  const run = shipEngine.runReroute(CONTENT, ship, moves);
   return {
-    part: cockpit.part,
-    power: shipEngine.cockpitPower(CONTENT, ship),
-    generation: shipEngine.cockpitGeneration(CONTENT, ship),
-    charge: shipEngine.cockpitCharge(CONTENT, ship),
-    capacity: shipEngine.cockpitCapacity(CONTENT, ship),
-    attack: { action: attack, error: combat.actionError(CONTENT, battle, config, side, attack) },
-    generate: { action: generate, error: combat.actionError(CONTENT, battle, config, side, generate) },
+    ship: run.ship,
+    error: run.error,
+    /** ⚡ each module started with that it can still pass on. */
+    sendable: run.sendable,
+    /** Room left in each module, with the plan applied. */
+    room: run.ship.slots.map((s) => shipEngine.roomIn(CONTENT, s)),
   };
 }
 
+/** Whether rerouting is free on this ship right now. */
+export const freeReroute = (ship: Ship): boolean => shipEngine.hasFreeReroute(CONTENT, ship);
+
 export function activePlayer(state: GameState): PlayerState | undefined {
-  const side = state.combat ? combat.currentSide(state.combat) : undefined;
+  const side = state.combat?.turn;
   if (side?.kind !== 'player') return undefined;
   return state.party.players.find((p) => p.id === side.id);
 }
@@ -184,38 +184,40 @@ export const sideLabelOf = (state: GameState, side: SideRef | undefined): string
   return combat.sideName(battle, side);
 };
 
-/** Downs readout for a side. */
-export function downsOf(state: GameState, side: SideRef | undefined) {
-  if (!state.combat || !side) return undefined;
-  return combat.downsFor(state.combat, side);
-}
-
-export const livingEnemies = (state: GameState) =>
-  state.combat ? combat.livingEnemies(state.combat) : [];
-
-/** Adjacency chains on a ship, for the builder readout. */
-export function adjacencyFor(player: PlayerState) {
-  return shipEngine.findAdjacencyBonuses(CONTENT, player.ship);
+/** The seat the enemy is aiming at right now. */
+export function aggroOf(state: GameState) {
+  const battle = battleOf(state);
+  return battle ? combat.aggroTarget(battle) : null;
 }
 
 export const scrapCapacityFor = (player: PlayerState, config: GameConfig): number =>
   config.scrapCap + shipEngine.scrapCapBonus(CONTENT, player.ship);
 
-/**
- * What a pool will hold once the legs already queued for this reroute pass
- * land — a leg drains whatever its source is holding *at its turn in the
- * order*, so a generator feeding a redistributor raises what the
- * redistributor can pass on.
- */
-export function projectedEnergy(
-  ship: Ship,
-  transfers: EnergyTransfer[],
-  slot: SlotIndex,
-): number {
-  let energy = ship.slots[slot]?.energy ?? 0;
-  for (const t of transfers) {
-    if (t.to === slot) energy += t.amount;
-    if (t.from === slot) energy -= t.amount;
-  }
-  return Math.max(0, energy);
+/** The cockpit's numbers, for gauges. */
+export function cockpitStats(ship: Ship) {
+  const cockpit = shipEngine.cockpitOf(CONTENT, ship);
+  return {
+    energy: cockpit?.slot.energy ?? 0,
+    max: cockpit?.part.energyCapacity ?? 0,
+    destroyed: !!cockpit?.slot.destroyed,
+    part: cockpit?.part,
+  };
 }
+
+/** The size readout for a ship under the rule in play. */
+export function sizeReadout(ship: Ship, config: GameConfig) {
+  const used = shipEngine.sizeUsed(CONTENT, ship, config.shipSizeRule);
+  const limit = shipEngine.sizeLimit(CONTENT, ship, config.shipSizeRule);
+  const unit = config.shipSizeRule === 'slots' ? 'SLOTS' : config.shipSizeRule === 'budget' ? 'UPKEEP' : 'MODULES';
+  return {
+    used,
+    limit,
+    unit,
+    over: used > limit,
+    /** "MODULES 3", "SLOTS 2/3". */
+    text: Number.isFinite(limit) ? `${unit} ${used}/${limit}` : `${unit} ${used}`,
+  };
+}
+
+/** The key the effects layer finds a module by. */
+export const fxKey = (side: SideRef, slot: SlotIndex): string => `${side.kind}:${side.id}:${slot}`;

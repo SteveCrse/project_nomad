@@ -1,164 +1,127 @@
-import type { EnemyId } from './ids';
+/**
+ * How ship size is limited. The draft decides most of it now — a seat spends
+ * energy tokens over a fixed number of rounds — and the two other options the
+ * rules listed can cap a ship on top of that.
+ *
+ *   draft  — only the draft's rounds and tokens limit a ship (the decision)
+ *   slots  — the cockpit also prints a max number of modules
+ *   budget — modules also draw upkeep from the cockpit's rating; checked on the built ship
+ */
+export type ShipSizeRule = 'draft' | 'slots' | 'budget';
+
+/**
+ * What a seat does once its cockpit is destroyed — open in the rules.
+ *
+ *   out    — sits out the rest of the mission, rebuilds at its end
+ *   revive — a teammate may spend a down to restore the cockpit with 1⚡
+ */
+export type DownedRule = 'out' | 'revive';
 
 /**
  * Every tunable knob for a playtest run. This is the contract between the
- * config sidebar (which writes it) and the engine (which will read it) —
- * nothing in the rules that we expect to tune should be a literal in engine code.
+ * config sidebar (which writes it) and the engine (which reads it) — nothing
+ * in the rules that we expect to tune should be a literal in engine code.
  */
 export interface GameConfig {
   // ---- party ----
   /** Seats at the table, 1-4. */
   playerCount: number;
-  /**
-   * Downs each side gets per turn before the turn passes. Rules default: 4.
-   * With energy, this is what rations a turn: one down per activation, and a
-   * module fires as often as its own pool can pay for.
-   */
+  /** Downs per turn, both sides. Rules: 4 — and the enemy gets one action deck per down. */
   downCount: number;
-  /**
-   * Parts per seat in the run-start draft pool: the whole spread is dealt off
-   * the Parts deck at once and the seats take turns picking any card in it.
-   * 0 skips the draft and rolls the pre-set loadouts out instead.
-   */
-  startingPartsDraws: number;
+  /** Snake-draft the starting ships. Off rolls the authored loadouts out instead. */
+  draft: boolean;
+  /** Energy tokens every seat drafts with. Whatever isn't spent is its starting ⚡. */
+  draftTokens: number;
+  /** Module rounds in the draft, after the cockpit round. */
+  draftRounds: number;
+  /** ⚡ on every module of a drafted ship before the leftover tokens go on. */
+  draftStartEnergy: number;
+  /** How a ship's size is limited on top of the draft. */
+  shipSizeRule: ShipSizeRule;
 
-  // ---- combat ----
+  // ---- energy & combat ----
   /**
-   * Damage an attacker must deal within one set of downs to earn a fresh set.
-   * Used when an enemy has no per-enemy override.
+   * ⚡ a module comes into play with outside the draft: every enemy module,
+   * an authored loadout, a cockpit brought back by a takeover or a rebuild, a
+   * part fitted from the scrap deck. Rules: 1.
    */
-  convThreshold: number;
-  /** The party's own threshold — what an enemy must beat to convert on them. */
-  playerConvThreshold: number;
-  /** Per-enemy threshold overrides, keyed by stat block id. */
-  enemyConvThresholds: Record<EnemyId, number>;
+  startEnergy: number;
   /**
-   * Can players raise their own threshold (making enemies work harder to
-   * convert against them)? Open question #2 in the rules doc.
+   * Open question: does an attack use up the energy it rolled against? Off,
+   * energy is only hit chance and HP, and firing costs nothing.
    */
-  allowThresholdUpgrades: boolean;
-  /** Threshold gained per upgrade bought at a rearrangement point. */
-  thresholdUpgradeStep: number;
-  /** Attack power lost per point... per upgrade — the cost side of the trade. */
-  thresholdUpgradePowerCost: number;
-  /**
-   * Does damage eaten by shield modules still count toward the attacker's
-   * threshold? True reads "damage dealt"; false counts only what reached the
-   * cockpit — the ship's last shield — or went past it.
-   */
-  thresholdCountsShielded: boolean;
-  /**
-   * Cap every offensive module at one shot per set of downs, the way the
-   * rules draft first read it. Off, a module fires as often as its own pool
-   * can pay for — one down each — and only cards printed `oncePerSet` are
-   * capped.
-   */
-  offensiveOncePerSet: boolean;
-  /** Parts drawn past the cockpit when spawning an enemy, at 1 player. */
-  enemyPartsBase: number;
-  /**
-   * Multiplayer scaling: extra parts drawn per player beyond the first. With
-   * no HP anywhere, this *is* the difficulty dial — more parts means more
-   * shields to chew through and more guns pointing back.
-   */
-  partsPerExtraPlayer: number;
+  attackSpendsEnergy: boolean;
+  /** Enemy modules per step of mission depth. Rules: depth + players. */
+  enemyModulesPerDepth: number;
+  /** Enemy modules per player in the fight. */
+  enemyModulesPerPlayer: number;
+  /** Hold enemy ships to the same size limit as the players' ships. */
+  enemySizeCapped: boolean;
+  /** Open question: what a seat does after its cockpit is destroyed. */
+  downedPlayer: DownedRule;
 
-  // ---- economy ----
-  /** Scrap deck cap. Rules default: 4; some modules raise it. */
+  // ---- loot ----
+  /** Scrap deck cap. Rules: 4; some modules raise it. */
   scrapCap: number;
-  /**
-   * Reactor baseline: ⚡ each side gains at the start of its turn, spread
-   * across the grid before generator modules tick. This is the dial that
-   * decides how many downs a side can actually spend on modules.
-   */
-  energyPerTurn: number;
-  /**
-   * Does the reactor baseline top weapons up too? Off (the default), a gun is
-   * only ever loaded by rerouting charge into it from a neighbour, which is
-   * what makes generator placement a decision.
-   */
-  weaponsDrawFromReactor: boolean;
-  /** Global multiplier applied to every module/item energy cost. */
-  energyCostMult: number;
-  /** Energy the grid loses per transfer in a reroute pass. */
-  energyCostReroute: number;
-  energyCostChargeShield: number;
   /** Item cards held in hand. */
   handSize: number;
   /** Item cards drawn per Loot step. */
   lootPerNode: number;
-  /** Unequipped parts a player may carry (rules: don't hoard). */
-  carriedPartsCap: number;
+  /** From the ideas list: a kill may also pay out one surviving module instead of the ship. */
+  lootOneModule: boolean;
 
   // ---- board / rarity ----
   /** Columns on the generated map, start and boss included. */
   missionLength: number;
   /** Widest a column of the map may get — the ceiling on branching. */
   maxBranches: number;
-  /** A checkpoint every N steps. */
+  /** A rarity checkpoint every N steps. */
   checkpointEvery: number;
-  /** Proposed in the rules doc: checkpoints double as rearrangement points. */
+  /** Not in the rules: let checkpoints double as rearrangement points too. */
   checkpointsAreRearrangePoints: boolean;
-  /** Rarity ceiling right now — tiers above this are out of the bag. */
+  /** Rarity ceiling at the start of a run. Rules: commons only. */
   maxRarityNow: number;
-  /** Rarity ceiling gained each time the party crosses a checkpoint. */
+  /** Rarity ceiling gained at each checkpoint. */
   rarityPerCheckpoint: number;
+  /** Commons taken out of the parts deck at each checkpoint ("optionally"). */
+  commonsRemovedPerCheckpoint: number;
 }
 
-/** Defaults taken from the rules doc and the test tool's DEFAULTS block. */
+/** Defaults taken from the rules doc. */
 export const DEFAULT_CONFIG: GameConfig = {
   playerCount: 4,
   downCount: 4,
-  startingPartsDraws: 5,
+  draft: true,
+  draftTokens: 10,
+  draftRounds: 3,
+  draftStartEnergy: 0,
+  shipSizeRule: 'draft',
 
-  convThreshold: 12,
-  playerConvThreshold: 12,
-  enemyConvThresholds: {},
-  allowThresholdUpgrades: true,
-  thresholdUpgradeStep: 2,
-  thresholdUpgradePowerCost: 1,
-  thresholdCountsShielded: true,
-  offensiveOncePerSet: false,
-  enemyPartsBase: 2,
-  partsPerExtraPlayer: 2,
+  startEnergy: 1,
+  attackSpendsEnergy: false,
+  enemyModulesPerDepth: 1,
+  enemyModulesPerPlayer: 1,
+  enemySizeCapped: false,
+  downedPlayer: 'out',
 
   scrapCap: 4,
-  energyPerTurn: 6,
-  weaponsDrawFromReactor: false,
-  energyCostMult: 1,
-  energyCostReroute: 0,
-  energyCostChargeShield: 1,
   handSize: 3,
   lootPerNode: 1,
-  carriedPartsCap: 4,
+  lootOneModule: false,
 
   missionLength: 10,
   maxBranches: 3,
-  checkpointEvery: 5,
-  checkpointsAreRearrangePoints: true,
-  maxRarityNow: 3,
+  checkpointEvery: 4,
+  checkpointsAreRearrangePoints: false,
+  maxRarityNow: 1,
   rarityPerCheckpoint: 1,
+  commonsRemovedPerCheckpoint: 0,
 };
 
-/** Resolve an enemy's effective threshold: per-enemy override, else global. */
-export function effectiveThreshold(
-  config: GameConfig,
-  enemyId: EnemyId,
-  statBlockThreshold: number,
-): number {
-  return config.enemyConvThresholds[enemyId] ?? statBlockThreshold ?? config.convThreshold;
-}
-
-/**
- * The party's own threshold: what an enemy has to deal to this player within
- * one set to earn a fresh one. `bonus` is what the player bought with power.
- */
-export function playerThreshold(config: GameConfig, bonus = 0): number {
-  return config.playerConvThreshold + (config.allowThresholdUpgrades ? bonus : 0);
-}
-
-/** Parts drawn past the cockpit for an enemy spawn at the current player count. */
-export function partsForSpawn(config: GameConfig, partsBase: number): number {
-  const extraPlayers = Math.max(0, config.playerCount - 1);
-  return partsBase + config.partsPerExtraPlayer * extraPlayers;
+/** Modules an enemy spawns with: mission depth + players, as tuned. */
+export function enemyModuleCount(config: GameConfig, depth: number, players: number): number {
+  return Math.max(
+    0,
+    Math.round(config.enemyModulesPerDepth * depth + config.enemyModulesPerPlayer * players),
+  );
 }

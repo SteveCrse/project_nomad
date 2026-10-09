@@ -15,9 +15,19 @@ const RARITIES = [{ label: 'ALL', value: 0 }, ...RARITY_NAME.map((n, i) => ({ la
 
 const KINDS: { label: string; value: CardKind | null }[] = [
   { label: 'ALL DECKS', value: null },
-  { label: 'PARTS', value: 'part' },
+  { label: 'PARTS + COCKPITS', value: 'part' },
   { label: 'ITEMS', value: 'item' },
   { label: 'EVENTS', value: 'event' },
+  { label: 'ENEMY ACTIONS', value: 'action' },
+];
+
+/** The new-card buttons: a cockpit is a part with the cockpit role, but its own deck. */
+const NEW_KINDS: { kind: CardKind | 'cockpit'; label: string }[] = [
+  { kind: 'part', label: 'MODULE' },
+  { kind: 'cockpit', label: 'COCKPIT' },
+  { kind: 'item', label: 'ITEM' },
+  { kind: 'event', label: 'EVENT' },
+  { kind: 'action', label: 'ENEMY ACTION' },
 ];
 
 /**
@@ -184,9 +194,9 @@ function DeckToolbar() {
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-2 border-b-0 border-n-900 bg-putty-200 px-2 py-1.5">
       <span className="pr-1 font-mono text-[10px] tracking-[0.12em] text-putty-700">NEW</span>
-      {(['part', 'item', 'event'] as CardKind[]).map((kind) => (
+      {NEW_KINDS.map(({ kind, label }) => (
         <ChipButton key={kind} onClick={() => editCard(addCard(kind))}>
-          + {kind.toUpperCase()}
+          + {label}
         </ChipButton>
       ))}
 

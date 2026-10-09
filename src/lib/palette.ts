@@ -38,6 +38,7 @@ const KIND_NOUN: Record<Card['kind'], string> = {
   part: 'Module',
   item: 'Item',
   event: 'Event',
+  action: 'Enemy Action',
 };
 
 /**
@@ -49,6 +50,8 @@ const KIND_NOUN: Record<Card['kind'], string> = {
  * it.
  */
 export function cardTitleLine(card: Card): string {
+  // An enemy action card has no tier worth printing: every deck holds them all.
+  if (card.kind === 'action') return KIND_NOUN.action;
   const role = card.kind === 'event' ? '' : ROLE_NOUN[card.role];
   const kind = role === 'Cockpit' ? '' : KIND_NOUN[card.kind];
   return [rarityName(card.rarity), role, kind].filter(Boolean).join(' ');
@@ -91,9 +94,9 @@ export const rarityInk = (rarity: Rarity | number): string =>
   rarity >= 5 ? 'var(--cream-100)' : 'var(--n-900)';
 
 /**
- * Shield bar colour by remaining percentage — green / amber / red.
- * Red means the cockpit pool is nearly dry, which is as close to "critical"
- * as a ship gets: the next hit past it wrecks the ship.
+ * Cockpit gauge colour by remaining percentage — green / amber / red. Red
+ * means the cockpit is nearly dry: at 0 the next hit destroys it, and the
+ * ship with it.
  */
 export function shieldColor(pct: number): string {
   if (pct < 30) return 'var(--toggle-red-500)';

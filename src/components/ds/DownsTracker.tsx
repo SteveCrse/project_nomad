@@ -1,8 +1,8 @@
 interface DownsTrackerProps {
-  /** Downs spent in the current set. */
+  /** Downs spent this turn. */
   current: number;
   total: number;
-  /** Hit the threshold — this side takes a fresh set instead of passing. */
+  /** Earned a 1st down — the turn moves on rather than running out. */
   converted?: boolean;
   /** Small squares for the table HUD, large numbered boxes elsewhere. */
   size?: 'sm' | 'md';
@@ -16,7 +16,7 @@ export function DownsTracker({
 }: DownsTrackerProps) {
   const boxes = Array.from({ length: total }, (_, i) => i);
   const spent = (i: number) => i < current;
-  // Last down of the set — red, because failing to convert passes the turn.
+  // Last down of the turn — red, because no 1st down by then hands it to the enemy.
   const critical = current >= total - 1;
 
   if (size === 'sm') {

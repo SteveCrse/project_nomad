@@ -1,156 +1,192 @@
-import type { EnergyTransfer, PlayerState, SlotIndex } from '@engine/types';
-import { playerThreshold } from '@engine/types';
-import { ship as shipEngine } from '@engine';
+import { motion } from 'motion/react';
+import type { PlayerState, Ship, ShipSlot, SlotIndex } from '@engine/types';
 import { DownsTracker } from '@/components/ds';
+import { dragSource, useDropZone, type DragPayload } from '@/components/fx/drag';
+import { ShipGrid } from './ShipGrid';
 import { ModuleTile } from './ModuleTile';
 import { shieldColor } from '@/lib/palette';
-import { CONTENT } from '@data';
+import { cockpitStats, fxKey, scrapCapacityFor, sizeReadout } from '@/lib/combatView';
 import { useConfig } from '@/store/configStore';
+
+/** How the seat's own ship takes part in what it's doing this down. */
+export interface PanelControls {
+  /** Modules that can be picked for the action in hand. */
+  armed: SlotIndex[];
+  /** Modules something can go to — a reroute's destinations. */
+  open: SlotIndex[];
+  selected: SlotIndex | null;
+  /** Planned ⚡ change per module, while a reroute is being built. */
+  deltas: Record<number, number>;
+  onSlotClick: (slot: SlotIndex) => void;
+  /** Dragging ⚡ between modules, while rerouting. */
+  drag: {
+    source: (slot: SlotIndex) => boolean;
+    accepts: (from: SlotIndex, to: SlotIndex) => boolean;
+    onDrop: (from: SlotIndex, to: SlotIndex) => void;
+  } | null;
+}
 
 interface PlayerPanelProps {
   player: PlayerState;
   /** This seat holds the turn. */
   active?: boolean;
-  /** Downs spent / total in the current set, straight from the fight. */
-  downs?: { used: number; total: number; damageThisSet: number; threshold: number; conversions: number };
-  /** Slots the seat could fire right now, for the armed outline. */
-  armedSlots?: SlotIndex[];
-  compact?: boolean;
-  onSlotClick?: (slot: SlotIndex) => void;
-  selectedSlot?: SlotIndex | null;
-  /** Legs queued for this down's reroute pass, marked on the grid. */
-  rerouteLinks?: EnergyTransfer[];
+  /** Someone holds the turn and it isn't this seat — knocked back. */
+  waiting?: boolean;
+  /** Downs spent this turn, while it holds the turn. */
+  downsUsed?: number;
+  /** The enemy is aiming at this seat. */
+  aggro?: boolean;
+  /** The ship to draw — a reroute in the works shows its plan. */
+  ship?: Ship;
+  controls?: PanelControls;
 }
 
 /**
- * One seat's readout: shields, downs, ⚡, scrap, and the ship's module grid.
- * In combat it also carries the set's damage-vs-threshold tally — the number
- * that decides whether the seat converts or hands the turn over.
- *
- * The bar is the cockpit's own pool, not a hull bar. It is the last charge on
- * the ship, so it is the one number that says how close this seat is to being
- * wrecked; the SHIELDS figure beside it counts every charged absorber on top.
+ * One seat: the cockpit gauge (the ship dies with it), downs, scrap, and the
+ * ship on its grid, front up — facing the enemy across the table. The seat
+ * the enemy is aiming at — the aggressor — is flagged; seats waiting for
+ * their turn are greyed back so the one acting stands out.
  */
-export function PlayerPanel({
-  player,
-  active,
-  downs,
-  armedSlots = [],
-  compact,
-  onSlotClick,
-  selectedSlot,
-  rerouteLinks = [],
-}: PlayerPanelProps) {
+export function PlayerPanel({ player, active, waiting, downsUsed, aggro, ship, controls }: PlayerPanelProps) {
   const config = useConfig();
-  const linked = new Set(rerouteLinks.flatMap((t) => [t.from, t.to]));
-  const cockpitCharge = shipEngine.cockpitCharge(CONTENT, player.ship);
-  const cockpitCap = shipEngine.cockpitCapacity(CONTENT, player.ship);
-  const shields = shipEngine.shieldPool(CONTENT, player.ship);
-  const pct = cockpitCap > 0 ? Math.round((cockpitCharge / cockpitCap) * 100) : 0;
-  const used = downs?.used ?? player.downsUsed;
-  const total = downs?.total ?? config.downCount;
-  const atRisk = used >= total - 1;
-  const ownThreshold = playerThreshold(config, player.thresholdBonus);
-  const hull = shipEngine.hullGrid(player.ship);
+  const shown = ship ?? player.ship;
+  const cockpit = cockpitStats(player.ship);
+  const pct = cockpit.max > 0 ? Math.round((cockpit.energy / cockpit.max) * 100) : 0;
+  const size = sizeReadout(player.ship, config);
+  const side = { kind: 'player' as const, id: player.id };
 
   return (
-    <div
-      className={`box-border border-2 bg-surface-panel shadow-raised ${
-        active ? 'border-accent-primary' : 'border-border-strong'
-      } ${player.destroyed ? 'opacity-55' : ''} ${compact ? 'w-[420px]' : 'w-[520px]'}`}
+    <motion.div
+      data-seat={player.id}
+      layout="position"
+      animate={{
+        opacity: waiting ? 0.5 : player.destroyed ? 0.45 : 1,
+        filter: waiting ? 'grayscale(0.85)' : 'grayscale(0)',
+        y: active ? -4 : 0,
+      }}
+      transition={{ duration: 0.3 }}
+      className={`box-border flex flex-none flex-col border-2 bg-surface-panel shadow-raised ${
+        active ? 'border-accent-primary shadow-[0_0_0_3px_rgb(159_217_160/0.35),0_2px_0_rgb(0_0_0/0.3)]' : 'border-border-strong'
+      }`}
     >
-      <div className="h-1" style={{ background: player.accent }} />
-      <div className="px-2.5 pt-2 pb-2.5">
-        <div className="mb-2 flex items-center gap-2.5">
-          <div className="font-display text-[14px] font-bold">{player.label}</div>
+      <div className="h-1.5" style={{ background: player.accent }} />
+      <div className="flex flex-col gap-1.5 px-2.5 pt-2 pb-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="font-display text-[15px] font-bold">{player.label}</div>
           <div className="text-[14px] tracking-[0.02em] text-putty-700">{player.ship.name}</div>
           {player.destroyed && (
-            <span className="font-mono text-[10px] tracking-[0.1em] text-toggle-red-500">
-              DESTROYED
-            </span>
+            <span className="font-mono text-[10px] tracking-[0.1em] text-toggle-red-500">COCKPIT DESTROYED</span>
           )}
           {active && !player.destroyed && (
-            <span className="font-mono text-[10px] tracking-[0.1em] text-accent-primary-text">
-              ACTIVE
-            </span>
+            <span className="bg-accent-primary px-1 font-mono text-[10px] tracking-[0.1em] text-n-900">YOUR TURN</span>
           )}
-          <div className="ml-auto flex items-center gap-3 font-mono text-[12px]">
-            <span title="Cockpit shield — the last charge before the ship is wrecked">
-              COCKPIT{' '}
-              <span className="text-n-900">
-                {cockpitCharge}/{cockpitCap}⚡
-              </span>
-            </span>
-            <span className="text-putty-700" title="Every charged absorber, cockpit included">
-              SHIELDS {shields}
-            </span>
-            <span className="text-putty-700">⚡ {player.energy}</span>
-            <span className="text-putty-700">SCRAP {player.scrapDeck.length}</span>
-          </div>
-        </div>
-
-        <div className="mb-2 flex items-center gap-2.5">
-          <div className="h-2.5 flex-1 overflow-hidden border border-putty-600 bg-crt-glass">
-            <div className="h-full" style={{ width: `${pct}%`, background: shieldColor(pct) }} />
-          </div>
-          <DownsTracker current={used} total={total} size="sm" />
-          <div
-            className="font-mono text-[11px]"
-            style={{ color: atRisk ? 'var(--toggle-red-500)' : 'var(--putty-700)' }}
-          >
-            {used}/{total}
-          </div>
-        </div>
-
-        <div className="mb-2 flex items-center gap-3 font-mono text-[11px] text-putty-700">
-          <span>
-            SET DMG{' '}
-            <span
-              style={{
-                color:
-                  downs && downs.damageThisSet >= downs.threshold
-                    ? 'var(--crt-green-700)'
-                    : 'var(--n-900)',
-              }}
+          {aggro && !player.destroyed && (
+            <motion.span
+              initial={{ scale: 1.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="border border-toggle-red-500 bg-toggle-red-500 px-1 font-mono text-[9px] tracking-[0.1em] text-cream-100"
+              title="The enemy's attacks go to the player who attacked last"
             >
-              {downs?.damageThisSet ?? player.damageThisDownSet}
-            </span>
-            /{downs?.threshold ?? '—'}
-          </span>
-          <span>OWN THRESHOLD {ownThreshold}</span>
-          {player.powerPenalty > 0 && (
-            <span className="text-toggle-red-500">−{player.powerPenalty}⚔ PER ATTACK</span>
-          )}
-          {(downs?.conversions ?? 0) > 0 && (
-            <span className="text-crt-green-700">×{(downs?.conversions ?? 0) + 1} SETS</span>
+              ◎ AGGRO
+            </motion.span>
           )}
         </div>
 
-        {/* The ship as it was laid out, in its own shape. The builder's ring
-            of open positions is dropped here: nothing attaches mid-fight, so
-            only the hull and the gaps inside it are worth the space. */}
-        <div className="overflow-x-auto pb-1">
-          <div
-            className="grid w-fit gap-1.5"
-            style={{
-              gridTemplateColumns: `repeat(${hull.cols}, ${compact ? '68px' : '74px'})`,
-              gridAutoRows: compact ? '94px' : '102px',
-            }}
-          >
-            {hull.slots.map((slot) => (
-              <ModuleTile
-                key={slot.index}
-                slot={slot}
-                variant="compact"
-                armed={armedSlots.includes(slot.index)}
-                selected={selectedSlot === slot.index}
-                hint={linked.has(slot.index) ? 'ok' : null}
-                {...(onSlotClick ? { onClick: () => onSlotClick(slot.index) } : {})}
-              />
-            ))}
+        <div className="flex items-center gap-2.5 font-mono text-[11px] text-putty-700">
+          <span title="Cockpit ⚡ — at 0 the next hit destroys the ship">
+            COCKPIT <span className="text-n-900">{cockpit.energy}/{cockpit.max}⚡</span>
+          </span>
+          <span title="Ship size under the rule in play">{size.text}</span>
+          <span>SCRAP {player.scrapDeck.length}/{scrapCapacityFor(player, config)}</span>
+          <span>HAND {player.hand.length}</span>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <div className="h-2 flex-1 overflow-hidden border border-putty-600 bg-crt-glass">
+            <motion.div className="h-full" animate={{ width: `${pct}%`, background: shieldColor(pct) }} transition={{ duration: 0.4 }} />
           </div>
+          {active && downsUsed !== undefined && (
+            <>
+              <DownsTracker current={downsUsed} total={config.downCount} size="sm" />
+              <div className="font-mono text-[11px] text-putty-700">
+                {downsUsed}/{config.downCount}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-center pt-1">
+          <ShipGrid
+            ship={shown}
+            facing="up"
+            size="sm"
+            renderSlot={(slot) => (
+              <SeatModule
+                playerId={player.id}
+                slot={slot}
+                fx={fxKey(side, slot.index)}
+                controls={controls}
+                actual={player.ship.slots[slot.index]?.energy ?? slot.energy}
+              />
+            )}
+          />
         </div>
       </div>
+    </motion.div>
+  );
+}
+
+function SeatModule({
+  playerId,
+  slot,
+  fx,
+  controls,
+  actual,
+}: {
+  playerId: string;
+  slot: ShipSlot;
+  fx: string;
+  controls: PanelControls | undefined;
+  actual: number;
+}) {
+  const drag = controls?.drag ?? null;
+  const zone = useDropZone(
+    `seat:${playerId}:${slot.index}`,
+    drag
+      ? {
+          accepts: (p: DragPayload) => p.kind === 'reroute' && drag.accepts(p.slot, slot.index),
+          onDrop: (p: DragPayload) => {
+            if (p.kind === 'reroute') drag.onDrop(p.slot, slot.index);
+          },
+        }
+      : null,
+  );
+  const armed = !!controls?.armed.includes(slot.index);
+  const open = !!controls?.open.includes(slot.index);
+  const selected = controls?.selected === slot.index;
+  const clickable = !!controls && (armed || open || selected);
+  const source = !!drag && drag.source(slot.index);
+  const delta = controls?.deltas[slot.index];
+
+  return (
+    <div {...zone.props} className="h-full w-full">
+      <ModuleTile
+        slot={slot}
+        variant="compact"
+        armed={armed && !selected}
+        selected={selected}
+        hint={zone.over ? 'over' : zone.active || (open && !zone.dragging) ? 'ok' : null}
+        dim={!!controls && !armed && !open && !selected && !slot.destroyed}
+        fxKey={fx}
+        {...(delta !== undefined ? { delta } : {})}
+        title={delta ? `${actual}⚡ now → ${slot.energy}⚡ with the reroute` : undefined}
+        {...dragSource(source ? { kind: 'reroute', slot: slot.index } : null, () => (
+          <div className="flex h-full w-full items-center justify-center">
+            <div className="h-5 w-5 rounded-full border-2 border-crt-green-700 bg-crt-green-500 shadow-[0_0_12px_rgb(159_217_160/0.9)]" />
+          </div>
+        ))}
+        {...(clickable ? { onClick: () => controls!.onSlotClick(slot.index) } : {})}
+      />
     </div>
   );
 }

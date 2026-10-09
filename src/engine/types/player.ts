@@ -10,42 +10,23 @@ export interface PlayerState {
   shipId: ShipId;
   ship: Ship;
 
-  /**
-   * Downs spent in the current set. The player converts (and resets this)
-   * by dealing damage >= the opposing threshold within one set.
-   */
-  downsUsed: number;
-  /** Damage dealt in the current set of downs, measured against the threshold. */
-  damageThisDownSet: number;
-
-  /** Loose energy not yet committed to a module pool. */
-  energy: number;
-
-  /**
-   * Rules open question #2: a player may buy a higher own-threshold, making
-   * enemies work harder to convert, and pay for it in attack power.
-   */
-  thresholdBonus: number;
-  /** Flat power lost per attack, the price paid for `thresholdBonus`. */
-  powerPenalty: number;
-
-  /** Hoarded modules + the module kept when abandoning a ship. Capped by config. */
+  /** Modules kept back: the one saved when abandoning a ship, salvage, draft spares. Capped. */
   scrapDeck: CardId[];
   /** Items in hand from Loot steps. */
   hand: CardId[];
-  /** Carried-but-unequipped parts, capped so parts can't be hoarded freely. */
+  /** Drafted parts not yet fitted — the setup hold. */
   carriedParts: CardId[];
-
   /**
-   * Out of the fight: shields and cockpit both dry when the last hit landed.
-   * Stays on the board for the post-mortem.
+   * Energy tokens still unspent. The draft is paid for with them; whatever is
+   * left when it ends goes onto the ship as starting ⚡.
    */
+  tokens: number;
+
+  /** Cockpit destroyed. Out of the fight, and of the mission, unless revived. */
   destroyed: boolean;
 }
 
 /** The party as a whole. Splitting the party is tracked per node, not here. */
 export interface PartyState {
   players: PlayerState[];
-  /** Index into players — whose turn it is. */
-  activePlayerIndex: number;
 }

@@ -1,129 +1,150 @@
-import type { EnemyInstance, SlotIndex } from '@engine/types';
-import { ship as shipEngine } from '@engine';
+import { AnimatePresence, motion } from 'motion/react';
+import type { ActionDeck, EnemyInstance, PlayerState, SlotIndex } from '@engine/types';
+import { ACTION_LABEL, ACTION_TEXT } from '@engine';
 import { StatGauge } from '@/components/ds';
+import { ShipGrid } from './ShipGrid';
 import { ModuleTile } from './ModuleTile';
-import { CONTENT } from '@data';
-import { useConfig } from '@/store/configStore';
+import { getCard } from '@data';
+import { cockpitStats, fxKey } from '@/lib/combatView';
 
 interface EnemyPanelProps {
   enemy: EnemyInstance;
-  active?: boolean;
-  targeted?: boolean;
-  downs?: { used: number; total: number; damageThisSet: number; threshold: number };
-  onSelect?: () => void;
-  onSlotClick?: (slot: SlotIndex) => void;
-  targetSlot?: SlotIndex | null;
+  decks: ActionDeck[];
+  /** The enemy holds the turn. */
+  active: boolean;
+  /** Which down it's on, when active. */
+  down: number;
+  /** Who its attacks go to. */
+  aggro: PlayerState | undefined;
+  /** Modules the seat can aim at for the action in hand. */
+  targets: SlotIndex[];
+  /** Where the shot would land if fired now. */
+  aimed: SlotIndex | null;
+  onTarget?: (slot: SlotIndex) => void;
 }
 
 /**
- * An enemy ship on the table. Cockpit shield, threshold and downs are the
- * three numbers a playtester watches: the threshold is what the party has to
- * beat in one set to keep the turn, the downs strip is how close the enemy is
- * to chaining another one, and the cockpit gauge is how close it is to being
- * a wreck — once it reads 0, the next hit that gets through ends it.
+ * The enemy, across the table: its own zone, drawn hostile, so the two sides
+ * of the fight never blur together. Its ship is the same grid as a player's,
+ * drawn the other way up — front facing down at the players. Beside it, its
+ * four action decks lie face up, one per down, so the table always reads the
+ * enemy's next four moves before committing its own.
  */
-export function EnemyPanel({
-  enemy,
-  active,
-  targeted,
-  downs,
-  onSelect,
-  onSlotClick,
-  targetSlot,
-}: EnemyPanelProps) {
-  const config = useConfig();
+export function EnemyPanel({ enemy, decks, active, down, aggro, targets, aimed, onTarget }: EnemyPanelProps) {
   const dead = enemy.ship.destroyed;
-  const used = downs?.used ?? enemy.downsUsed;
-  const total = downs?.total ?? enemy.downCount ?? config.downCount;
-  const partCount = enemy.ship.slots.filter(
-    (s) => s.partId && s.partId !== enemy.ship.cockpitId,
-  ).length;
-  const cockpitCharge = shipEngine.cockpitCharge(CONTENT, enemy.ship);
-  const cockpitCap = shipEngine.cockpitCapacity(CONTENT, enemy.ship);
-  const shields = shipEngine.shieldPool(CONTENT, enemy.ship);
-  const hull = shipEngine.hullGrid(enemy.ship);
+  const cockpit = cockpitStats(enemy.ship);
+  const side = { kind: 'enemy' as const, id: enemy.instanceId };
+  const aiming = targets.length > 0;
 
   return (
-    <div
-      className={`flex flex-none items-stretch gap-5 border-2 bg-surface-panel px-4 py-3 shadow-raised ${
-        active ? 'border-toggle-red-500' : targeted ? 'border-accent-primary' : 'border-border-strong'
-      } ${dead ? 'opacity-50' : ''} ${onSelect ? 'cursor-pointer' : ''}`}
-      onClick={onSelect}
+    <motion.div
+      initial={{ opacity: 0, y: -30 }}
+      animate={{ opacity: dead ? 0.6 : 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+      className={`relative flex flex-none flex-col gap-2 border-2 px-3 py-2.5 shadow-panel transition-colors duration-300 ${
+        active ? 'border-toggle-red-500' : 'border-toggle-red-700'
+      }`}
+      style={{
+        background:
+          'repeating-linear-gradient(135deg, rgb(179 59 46 / 0.10) 0 14px, transparent 14px 28px), var(--crt-glass)',
+        boxShadow: active ? '0 0 0 3px rgb(179 59 46 / 0.35), var(--shadow-panel)' : undefined,
+      }}
     >
-      <div className="flex w-[236px] flex-col gap-2">
-        <div className="flex items-baseline gap-2">
-          <div className="font-display text-[14px] font-bold">{enemy.name.toUpperCase()}</div>
-          {enemy.isBoss && (
-            <span className="font-mono text-[10px] tracking-[0.1em] text-amber-700">BOSS</span>
-          )}
-          {dead && (
-            <span className="font-mono text-[10px] tracking-[0.1em] text-putty-700">WRECK</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 font-mono text-[11px] text-putty-700">
-          <span>{partCount} PARTS</span>
-          <span title="Every charged absorber, cockpit included">SHIELDS {shields}⚡</span>
-          <span className="text-toggle-red-500">THRESHOLD {enemy.convThreshold}</span>
-        </div>
-        <StatGauge
-          label="Cockpit ⚡"
-          value={cockpitCharge}
-          max={cockpitCap}
-          tone="danger"
-          className="w-[220px]"
-        />
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] tracking-label text-text-secondary uppercase">Downs</span>
-          <div className="flex gap-1.5">
-            {Array.from({ length: total }, (_, i) => (
-              <div
-                key={i}
-                className="h-4 w-4 border-2 border-border-strong"
-                style={{ background: i < used ? 'var(--toggle-red-500)' : 'var(--crt-glass)' }}
-              />
-            ))}
-          </div>
-          <span className="font-mono text-[11px] text-putty-700">
-            {used}/{total}
-          </span>
-        </div>
-        {downs && (
-          <div className="font-mono text-[11px] text-putty-700">
-            SET DMG{' '}
-            <span
-              style={{
-                color:
-                  downs.damageThisSet >= downs.threshold
-                    ? 'var(--toggle-red-500)'
-                    : 'var(--n-900)',
-              }}
-            >
-              {downs.damageThisSet}
-            </span>
-            /{downs.threshold} TO CONVERT
-          </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span className="bg-toggle-red-700 px-1.5 py-px font-mono text-[10px] tracking-[0.16em] text-cream-100">HOSTILE</span>
+        <div className="font-display text-[15px] font-bold text-crt-white">{enemy.name.toUpperCase()}</div>
+        {enemy.isBoss && <span className="font-mono text-[10px] tracking-[0.1em] text-amber-300">BOSS</span>}
+        <span className="font-mono text-[11px] text-putty-400">DEPTH {enemy.depth}</span>
+        <StatGauge label="Cockpit ⚡" value={cockpit.energy} max={cockpit.max} tone="danger" className="w-[200px]" />
+        <span className="font-mono text-[11px] text-putty-400" title="Enemy attacks go to the player who attacked last">
+          AGGRO →{' '}
+          <motion.span
+            key={aggro?.id ?? 'none'}
+            initial={{ opacity: 0, x: -6 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="inline-block font-bold"
+            style={{ color: aggro?.accent ?? 'var(--crt-white)' }}
+          >
+            {aggro?.label ?? '—'}
+          </motion.span>
+        </span>
+        {aiming && (
+          <span className="ml-auto animate-pulse font-mono text-[11px] text-amber-300">◎ PICK A TARGET — outlined modules are in reach</span>
         )}
       </div>
 
-      <div className="w-0.5 bg-putty-400" />
-
-      {/* The hull only — an enemy's open positions are nobody's business. */}
-      <div
-        className="grid w-fit gap-1.5"
-        style={{
-          gridTemplateColumns: `repeat(${hull.cols}, 72px)`,
-          gridAutoRows: '100px',
-        }}
-      >
-        {hull.slots.map((slot) => (
-          <ModuleTile
-            key={slot.index}
-            slot={slot}
-            variant="compact"
-            targeted={targetSlot === slot.index}
-            {...(onSlotClick ? { onClick: () => onSlotClick(slot.index) } : {})}
+      <div className="flex flex-wrap items-start justify-center gap-6">
+        <div className="flex flex-col items-center gap-1">
+          <div className="font-mono text-[9px] tracking-[0.24em] text-putty-500">BACK ▲</div>
+          <ShipGrid
+            ship={enemy.ship}
+            facing="down"
+            size="md"
+            renderSlot={(slot) => {
+              const reach = targets.includes(slot.index);
+              return (
+                <ModuleTile
+                  slot={slot}
+                  variant="compact"
+                  fxKey={fxKey(side, slot.index)}
+                  exposed={reach && aimed !== slot.index}
+                  targeted={reach && aimed === slot.index}
+                  dim={aiming && !reach && !slot.destroyed}
+                  {...(reach && onTarget ? { onClick: () => onTarget(slot.index) } : {})}
+                />
+              );
+            }}
           />
-        ))}
+          <div className="font-mono text-[9px] tracking-[0.24em] text-toggle-red-300">▼ FRONT · FACING YOU</div>
+        </div>
+        <ActionDecks decks={decks} active={active} down={down} />
+      </div>
+    </motion.div>
+  );
+}
+
+/** The enemy's next moves: one face-up card per down. A card turned flips in. */
+function ActionDecks({ decks, active, down }: { decks: ActionDeck[]; active: boolean; down: number }) {
+  return (
+    <div className="flex flex-none flex-col gap-1">
+      <div className="font-mono text-[9px] tracking-[0.14em] text-putty-400">ACTION DECKS · FACE UP · ONE PER DOWN</div>
+      <div className="flex gap-1.5" style={{ perspective: 600 }}>
+        {decks.map((deck, i) => {
+          const card = getCard(deck.faceUp);
+          const action = card?.kind === 'action' ? card.action : null;
+          const current = active && i === down;
+          const done = active && i < down;
+          return (
+            <motion.div
+              key={i}
+              animate={{ y: current ? -6 : 0, opacity: done ? 0.45 : 1 }}
+              className={`relative h-[92px] w-[78px] border-2 ${
+                current ? 'border-toggle-red-500 shadow-[0_0_14px_rgb(179_59_46/0.7)]' : 'border-n-900'
+              }`}
+              title={action ? `${card!.name} — ${ACTION_TEXT[action]}` : 'empty deck'}
+            >
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.div
+                  key={`${deck.faceUp}-${deck.discardPile.length}-${deck.drawPile.length}`}
+                  initial={{ rotateY: 90, opacity: 0.4 }}
+                  animate={{ rotateY: 0, opacity: 1 }}
+                  exit={{ rotateY: -90, opacity: 0, transition: { duration: 0.18 } }}
+                  transition={{ duration: 0.3, ease: 'easeOut' }}
+                  className="absolute inset-0 flex flex-col bg-cream-100 px-1.5 py-1"
+                >
+                  <div className="font-mono text-[8px] tracking-[0.12em] text-putty-700">DOWN {i + 1}</div>
+                  <div className="mt-auto font-display text-[10px] leading-tight font-bold tracking-[0.02em] text-toggle-red-700">
+                    {action ? ACTION_LABEL[action].toUpperCase() : '—'}
+                  </div>
+                  <div className="truncate text-[10px] text-putty-700">{card?.name ?? ''}</div>
+                  <div className="font-mono text-[8px] text-putty-600">
+                    {deck.drawPile.length} LEFT · {deck.discardPile.length} OUT
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

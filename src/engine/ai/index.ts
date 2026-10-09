@@ -1,179 +1,168 @@
-import type { Battle, DownAction, EnergyTransfer, SideRef } from '../types/combat';
+import type { Battle, DownAction, RerouteMove } from '../types/combat';
+import type { ActionCard, PartCard } from '../types/card';
 import type { GameConfig } from '../types/config';
-import type { DiceSpec, PartCard } from '../types/card';
 import type { Ship } from '../types/ship';
 import type { Content } from '../content';
-import type { Rng } from '../rng';
-import {
-  actionError,
-  defaultTarget,
-  downsFor,
-  shipOf,
-} from '../combat';
-import {
-  areAdjacent,
-  capacityOf,
-  cockpitCapacity,
-  cockpitCharge,
-  cockpitPower,
-  isAbsorber,
-  liveModules,
-} from '../ship';
-import { activeEffects, attackOf, cardCost, costPerDie, effectParam } from '../cards';
+import { attackOf, costOf, expectedDamage, outputOf, powerCostOf } from '../cards';
 import { isDamageEffect } from '../effects';
-
-/** Does this module put ⚔️ on something when it fires? */
-const shoots = (part: PartCard): boolean =>
-  activeEffects(part).some((e) => isDamageEffect(e.type));
+import { actionError, aggroTarget, enemySide, playerOf } from '../combat';
+import type { Fitted } from '../ship';
+import {
+  addRerouteLeg,
+  cockpitIndex,
+  connected,
+  defaultTargetSlot,
+  isOnline,
+  isProducer,
+  liveSlots,
+  roomIn,
+  runReroute,
+} from '../ship';
 
 /**
- * Enemy decision-making — enough for one side of the table to play itself so
- * a round can be playtested solo.
+ * The enemy's choices.
  *
- * Deliberately greedy and legible: shoot with the biggest legal gun, and when
- * nothing can shoot, spend the down on defence or a top-up. A playtester
- * needs to be able to explain every enemy down after the fact.
+ * An action card names *what* the enemy does with a down — attack, generate
+ * or reroute. Which module fires, where the energy comes from
+ * and how much moves are made here, the same way every time, so a playtester
+ * can read the enemy's next four downs off the face-up cards and predict them.
+ *
+ * Deliberately plain: the tool should lose to a sharp table, not out-think it.
  */
-export function chooseEnemyAction(
+export function planEnemyAction(
   content: Content,
   battle: Battle,
   config: GameConfig,
-  side: SideRef,
-  rng: Rng,
-): DownAction {
-  const ship = shipOf(battle, side);
-  const downs = downsFor(battle.combat, side);
-  if (!ship || !downs) return { type: 'pass' };
+  card: ActionCard,
+): { action: DownAction } | { reason: string } {
+  const ship = battle.combat.enemy.ship;
+  const legal = (action: DownAction) =>
+    actionError(content, battle, config, enemySide(battle.combat), action) === null;
+  const target = aggroTarget(battle);
+  const victim = playerOf(battle, target)?.ship;
 
-  const target = defaultTarget(content, battle, side);
-  const legal = (action: DownAction): boolean =>
-    actionError(content, battle, config, side, action) === null;
+  switch (card.action) {
+    case 'attack': {
+      if (!target || !victim) return { reason: 'nobody left to attack' };
+      // The module most likely to hurt: attack × energy ÷ 6, the rules'
+      // balancing line, read as a choice.
+      const guns = liveSlots(content, ship)
+        .filter((m) => isOnline(m.slot) && attackOf(m.part) > 0)
+        .filter((m) => costOf(attackEffects(m.part)) <= m.slot.energy)
+        .sort(
+          (a, b) =>
+            expectedDamage(attackOf(b.part), b.slot.energy) -
+              expectedDamage(attackOf(a.part), a.slot.energy) ||
+            attackOf(b.part) - attackOf(a.part),
+        );
+      if (guns.length === 0) return { reason: 'no energy to attack' };
+      for (const gun of guns) {
+        // The enemy always goes for the cockpit: a precision weapon has
+        // nothing in its way, anything else hits what stands in front of it.
+        const aim = gun.part.targetsModule ? cockpitIndex(victim) : defaultTargetSlot(content, victim);
+        const action: DownAction = { type: 'attack', slot: gun.slot.index, target, targetSlot: aim };
+        if (legal(action)) return { action };
+      }
+      return { reason: 'no gun can reach' };
+    }
 
-  // 1. Attack with the highest expected damage that is actually legal. The
-  //    cockpit's basic shot is in the running like anything else — it costs no
-  //    ⚡, so it wins by default once the guns run dry.
-  const guns = liveModules(content, ship)
-    .filter((m) => shoots(m.part))
-    .map((m) => {
-      // Dice are bought per effect now, so what the pool can afford is read off
-      // the card's total per-die price rather than one printed cost.
-      const perDie = costPerDie(m.part);
-      const dice = perDie > 0 ? maxAffordableDice(m.slot.energy, perDie) : 1;
-      const action: DownAction = {
-        type: 'activate-module',
-        slot: m.slot.index,
-        ...(target ? { target } : {}),
-        ...(perDie > 0 ? { diceCount: dice } : {}),
-      };
-      const expected = expectedDamage(m.part, dice);
-      return { action, expected };
-    });
+    case 'generate': {
+      const producers = liveSlots(content, ship)
+        .filter((m) => isProducer(m.part) && isOnline(m.slot) && roomIn(content, m.slot) > 0)
+        .sort((a, b) => gain(content, b) - gain(content, a) || generatorFirst(a, b));
+      const pick = producers[0];
+      if (!pick) return { reason: 'every producer is offline or full' };
+      return { action: { type: 'generate', slot: pick.slot.index } };
+    }
 
-  const shots = [
-    ...guns,
-    {
-      action: { type: 'cockpit-attack', ...(target ? { target } : {}) } as DownAction,
-      expected: cockpitPower(content, ship),
-    },
-  ]
-    .filter((g) => legal(g.action))
-    .sort((a, b) => b.expected - a.expected);
-
-  if (shots.length > 0 && shots[0]!.expected > 0) return shots[0]!.action;
-
-  // 2. Nothing to shoot with — prime defensive tech (turrets, mines).
-  const utility = liveModules(content, ship)
-    .filter((m) =>
-      activeEffects(m.part).some(
-        (e) =>
-          e.type === 'negate-next-attack' ||
-          e.type === 'retaliate' ||
-          e.type === 'gain-energy' ||
-          e.type === 'restore-shield',
-      ),
-    )
-    .map((m): DownAction => ({ type: 'activate-module', slot: m.slot.index }))
-    .filter(legal);
-  if (utility.length > 0) return rng.pick(utility);
-
-  // 3. Patch the cockpit shield — the last thing standing between this ship
-  //    and a wreck, and the generator that fills it costs nothing but a down.
-  if (cockpitCharge(content, ship) < cockpitCapacity(content, ship)) {
-    const action: DownAction = { type: 'cockpit-generate' };
-    if (legal(action)) return action;
+    case 'reroute': {
+      const moves = feedMoves(content, ship);
+      if (moves.length === 0) return { reason: 'no spare ⚡ next to a weapon or shield with room' };
+      return { action: { type: 'reroute', moves } };
+    }
   }
-
-  // 4. Pour spare charge into a shield module that has room.
-  const shield = liveModules(content, ship).find(
-    (m) => isAbsorber(m.part) && capacityOf(content, m.slot) > m.slot.energy,
-  );
-  if (shield) {
-    const action: DownAction = { type: 'charge-shield', slot: shield.slot.index, amount: 1 };
-    if (legal(action)) return action;
-  }
-
-  // 5. Reload: one down hands charge along the grid into the dry guns.
-  const transfers = planReroute(content, ship);
-  if (transfers.length > 0) {
-    const action: DownAction = { type: 'reroute-energy', transfers };
-    if (legal(action)) return action;
-  }
-
-  return { type: 'pass' };
 }
+
+/** The damage effects only — what an attack pays for. */
+const attackEffects = (part: PartCard) =>
+  (part.effects ?? []).filter((e) => isDamageEffect(e.type));
+
+const gain = (content: Content, m: Fitted): number =>
+  Math.min(outputOf(m.part), roomIn(content, m.slot));
+
+const generatorFirst = (a: Fitted, b: Fitted): number =>
+  Number(a.part.role === 'COCKPIT') - Number(b.part.role === 'COCKPIT');
 
 /**
- * Plan a reroute pass: for each gun that can't pay for a shot, pull from the
- * fullest charged neighbour that hasn't been drained yet.
- *
- * One hop only. A player can chain a generator through a redistributor into a
- * gun in a single down; the enemy doesn't bother, and that gap is deliberate —
- * the tool should lose to a sharp table, not out-optimise it.
+ * The enemy's reroute: charge out of generators — the cockpit only when no
+ * generator can spare any — into the weapons they touch, hardest-hitting
+ * first, then into the shields they touch. A source always keeps 1⚡: draining
+ * it to 0 would knock it offline and leave it one hit from destroyed. Every
+ * leg is checked against the reroute rules as it's added, so the plan is one
+ * the engine will play.
  */
-function planReroute(content: Content, ship: Ship): EnergyTransfer[] {
-  const modules = liveModules(content, ship);
-  const dryGuns = modules
-    .filter((m) => shoots(m.part) && m.slot.energy < cardCost(m.part))
-    .sort((a, b) => attackOf(b.part) - attackOf(a.part));
+function feedMoves(content: Content, ship: Ship): RerouteMove[] {
+  const live = liveSlots(content, ship);
+  const targets = [
+    ...live
+      .filter((m) => m.part.role === 'WPN' && attackOf(m.part) > 0)
+      .sort((a, b) => attackOf(b.part) - attackOf(a.part) || a.slot.energy - b.slot.energy),
+    ...live.filter((m) => m.part.role === 'SHD'),
+  ];
+  const sources = live
+    .filter((m) => m.part.role === 'GEN' || m.part.role === 'COCKPIT')
+    .sort((a, b) => generatorFirst(a, b) || b.slot.energy - a.slot.energy);
 
-  const drained = new Set<number>();
-  const transfers: EnergyTransfer[] = [];
-
-  for (const gun of dryGuns) {
-    if (capacityOf(content, gun.slot) - gun.slot.energy <= 0) continue;
-    const source = modules
-      .filter((m) => m.slot.energy > 0 && !drained.has(m.slot.index))
-      .filter((m) => m.part.role !== 'WPN')
-      .filter((m) => areAdjacent(ship, m.slot.index, gun.slot.index))
-      .sort((a, b) => b.slot.energy - a.slot.energy)[0];
-    if (!source) continue;
-    drained.add(source.slot.index);
-    transfers.push({ from: source.slot.index, to: gun.slot.index, amount: source.slot.energy });
+  let moves: RerouteMove[] = [];
+  for (const to of targets) {
+    for (const from of sources) {
+      if (!connected(ship, from.slot.index, to.slot.index)) continue;
+      const run = runReroute(content, ship, moves);
+      const now = run.ship.slots;
+      const spare = Math.min(run.sendable[from.slot.index] ?? 0, (now[from.slot.index]?.energy ?? 0) - 1);
+      const room = roomIn(content, now[to.slot.index]);
+      const amount = Math.min(spare, room);
+      if (amount < 1) continue;
+      moves = addRerouteLeg(moves, { from: from.slot.index, to: to.slot.index, amount });
+    }
   }
-  return transfers;
+  return moves;
 }
 
-function maxAffordableDice(energy: number, perDie: number): number {
-  if (perDie <= 0) return 1;
-  return Math.max(1, Math.floor(energy / perDie));
-}
+// ------------------------------------------------------------------ draft
 
-/** Rough expected value, only ever compared against other modules' guesses. */
-function expectedDamage(part: PartCard, diceCount: number): number {
-  return activeEffects(part)
-    .filter((e) => isDamageEffect(e.type))
-    .reduce((sum, e) => sum + effectParam(e, 'power') + expectedRoll(e.dice, diceCount), 0);
-}
-
-/** What an effect's dice are worth on average, on top of its printed number. */
-function expectedRoll(dice: DiceSpec | undefined, requested: number): number {
-  if (!dice) return 0;
-  const count = dice.count === 'variable' ? Math.max(1, requested) : dice.count;
-  const sides = Number(dice.die.slice(1));
-  const { hitUnder, hitOver, perHit } = dice;
-  if (hitUnder === undefined && hitOver === undefined) return count * ((sides + 1) / 2);
-  const chance =
-    (hitUnder !== undefined ? hitUnder / sides : 0) +
-    (hitOver !== undefined ? (sides - hitOver + 1) / sides : 0);
-  return count * chance * (perHit ?? 1);
+/**
+ * What a seat would take off the draft table when nobody is choosing for it —
+ * the tool's "draft the rest" button. A cockpit with the most room; then the
+ * first missing piece of a working ship (a weapon, a generator, a shield),
+ * cheapest first; and once it has those, it passes — every token it doesn't
+ * spend goes on the ship as starting ⚡.
+ */
+export function autoDraftPick(
+  table: PartCard[],
+  owned: PartCard[],
+  affordable: (part: PartCard) => boolean,
+  room: (part: PartCard) => number,
+): PartCard | null {
+  const options = table.filter(affordable);
+  if (options.length === 0) return null;
+  if (options.every((p) => p.role === 'COCKPIT')) {
+    return options.slice().sort((a, b) => room(b) - room(a) || b.rarity - a.rarity)[0] ?? null;
+  }
+  const has = (role: PartCard['role']) => owned.some((p) => p.role === role);
+  for (const role of ['WPN', 'GEN', 'SHD'] as const) {
+    if (has(role)) continue;
+    const pick = options
+      .filter((p) => p.role === role)
+      .sort(
+        (a, b) =>
+          // A "weapon" with no attack (Mines) doesn't make a ship that can shoot.
+          Number(attackOf(b) > 0) - Number(attackOf(a) > 0) ||
+          powerCostOf(a) - powerCostOf(b) ||
+          b.rarity - a.rarity ||
+          attackOf(b) + outputOf(b) - (attackOf(a) + outputOf(a)),
+      )[0];
+    if (pick) return pick;
+  }
+  return null;
 }

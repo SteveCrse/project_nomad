@@ -7,26 +7,25 @@ export type * from './board';
 export type * from './game';
 
 export type {
+  ActionCard,
   Card,
   CardKind,
   PartCard,
   ItemCard,
   EventCard,
+  EnemyActionType,
   ModuleRole,
   CardEffect,
   EffectTiming,
   EffectType,
+  PlacementKind,
+  PlacementRule,
   Specialization,
   Rarity,
   DieKind,
   DiceSpec,
 } from './card';
-export { isPart, isItem, isEvent, isCockpit } from './card';
+export { ENEMY_ACTIONS_ALL, isAction, isPart, isItem, isEvent, isCockpit, isModule } from './card';
 
-export type { GameConfig } from './config';
-export {
-  DEFAULT_CONFIG,
-  effectiveThreshold,
-  playerThreshold,
-  partsForSpawn,
-} from './config';
+export type { DownedRule, GameConfig, ShipSizeRule } from './config';
+export { DEFAULT_CONFIG, enemyModuleCount } from './config';

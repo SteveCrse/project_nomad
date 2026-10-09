@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ENEMIES } from '@data';
+import type { GameConfig } from '@engine/types';
 import { Toggle } from '@/components/ds';
 import { RARITY_COLOR } from '@/lib/palette';
 import { useConfigStore } from '@/store/configStore';
@@ -8,6 +8,7 @@ import {
   type BooleanConfigKey,
   type ConfigField,
   type NumericField,
+  type SelectField,
 } from '@/store/configFields';
 import { useUiStore } from '@/store/uiStore';
 
@@ -54,14 +55,10 @@ export function ConfigSidebar() {
             {section.fields.map((field) => (
               <FieldRow key={field.key} field={field} />
             ))}
-            {section.id === 'combat' && <EnemyThresholds />}
+            {section.note && <Hint>{section.note}</Hint>}
             {section.id === 'board' && <RarityBar />}
           </div>
         ))}
-
-        <Divider />
-        <SectionTitle>Log</SectionTitle>
-        <CombatLogPlaceholder />
       </div>
 
       <Footer />
@@ -82,10 +79,45 @@ function Divider() {
 }
 
 function FieldRow({ field }: { field: ConfigField }) {
-  return field.kind === 'boolean' ? (
-    <BooleanRow fieldKey={field.key} label={field.label} hint={field.hint} />
-  ) : (
-    <NumericRow field={field} />
+  if (field.kind === 'boolean') {
+    return <BooleanRow fieldKey={field.key} label={field.label} hint={field.hint} />;
+  }
+  if (field.kind === 'select') return <SelectRow field={field} />;
+  return <NumericRow field={field} />;
+}
+
+/**
+ * One of the rules' open questions, as its named options. Each option says
+ * what it means underneath, since the point is to compare them.
+ */
+function SelectRow({ field }: { field: SelectField }) {
+  const value = useConfigStore((s) => s.config[field.key]) as string;
+  const setSelect = useConfigStore((s) => s.setSelect);
+  const current = field.options.find((o) => o.value === value);
+  return (
+    <div className="pb-1">
+      <div className="py-[3px] text-[12px]">{field.label}</div>
+      <div className="flex gap-1">
+        {field.options.map((option) => (
+          <button
+            key={option.value}
+            onClick={() => setSelect(field.key, option.value as GameConfig[typeof field.key])}
+            title={option.hint}
+            aria-pressed={option.value === value}
+            className={[
+              'flex-1 cursor-pointer border py-1 text-center text-[10px] tracking-[0.08em]',
+              option.value === value
+                ? 'border-console-accent text-console-accent'
+                : 'border-console-border text-console-dim hover:border-console-accent',
+            ].join(' ')}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <Hint>{current?.hint ?? field.hint}</Hint>
+      {field.hint && current && <Hint>{field.hint}</Hint>}
+    </div>
   );
 }
 
@@ -180,63 +212,6 @@ function StepButton({
   );
 }
 
-/**
- * Per-enemy conversion threshold overrides. Blank = fall back to the stat
- * block's authored value, shown greyed so it's obvious which are overridden.
- */
-function EnemyThresholds() {
-  const overrides = useConfigStore((s) => s.config.enemyConvThresholds);
-  const setEnemyThreshold = useConfigStore((s) => s.setEnemyThreshold);
-
-  return (
-    <div className="pt-1.5">
-      <div className="pb-1 text-[10px] tracking-console text-console-dim">conv_threshold · per enemy</div>
-      {ENEMIES.map((enemy) => {
-        const override = overrides[enemy.id];
-        const value = override ?? enemy.convThreshold;
-        const isOverridden = override !== undefined;
-        return (
-          <div key={enemy.id} className="flex items-center gap-2 py-[3px]">
-            <span
-              className="flex-1 truncate text-[11px]"
-              title={`${enemy.name}${enemy.isBoss ? ' (boss)' : ''} · ${enemy.partsBase} parts`}
-            >
-              {enemy.id}
-            </span>
-            <StepButton
-              onClick={() => setEnemyThreshold(enemy.id, Math.max(1, value - 1))}
-              label={`decrease ${enemy.id} threshold`}
-            >
-              −
-            </StepButton>
-            <span
-              className="w-[34px] text-center text-[13px]"
-              style={{ color: isOverridden ? 'var(--console-accent)' : 'var(--console-dim)' }}
-            >
-              {value}
-            </span>
-            <StepButton
-              onClick={() => setEnemyThreshold(enemy.id, value + 1)}
-              label={`increase ${enemy.id} threshold`}
-            >
-              +
-            </StepButton>
-            <button
-              onClick={() => setEnemyThreshold(enemy.id, null)}
-              disabled={!isOverridden}
-              aria-label={`reset ${enemy.id} threshold`}
-              className="w-5 cursor-pointer border border-console-border text-center text-[11px] disabled:cursor-default disabled:opacity-30"
-            >
-              ↺
-            </button>
-          </div>
-        );
-      })}
-      <Hint>↺ clears the override and falls back to the stat block</Hint>
-    </div>
-  );
-}
-
 /** Which rarity tiers are currently in the bag. */
 function RarityBar() {
   const maxRarity = useConfigStore((s) => s.config.maxRarityNow);
@@ -257,26 +232,6 @@ function RarityBar() {
       <div className="text-[10px] text-console-faint">
         C · U · R · UR · L — tiers above max are out of the bag
       </div>
-    </div>
-  );
-}
-
-/** Placeholder until combat resolution exists to write real entries. */
-function CombatLogPlaceholder() {
-  const downCount = useConfigStore((s) => s.config.downCount);
-  return (
-    <div className="text-[11px] leading-[1.5] text-console-dim">
-      <div>[r4] P2 cast 3🎲 → 1,1,4</div>
-      <div>
-        [r4] Laser Array dealt <span className="text-toggle-red-300">20⚔️</span>
-      </div>
-      <div>
-        [r4] enemy down 1/{downCount}
-      </div>
-      <div>
-        [r3] P3 cockpit shield 1/5 — <span className="text-toggle-red-300">critical</span>
-      </div>
-      <div className="pt-1 text-console-faint">awaiting engine/combat</div>
     </div>
   );
 }
