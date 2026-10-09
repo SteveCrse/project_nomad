@@ -7,7 +7,7 @@ import type { Content } from '../content';
 import type { Rng } from '../rng';
 import { ACTION_LABEL } from '../cards';
 import { buildActionDecks } from '../deck';
-import { isOnline, liveSlots } from '../ship';
+import { liveSlots } from '../ship';
 import { playerSide, enemySide, playerOf, livingParticipants, shipOf, sideName, logged, emit, withShip } from './sides';
 import { resolveDown } from './resolve';
 
@@ -21,7 +21,6 @@ function upkeep(content: Content, battle: Battle, side: SideRef): Battle {
   const ship = shipOf(battle, side);
   if (!ship) return battle;
   const drain = liveSlots(content, ship)
-    .filter((m) => isOnline(m.slot))
     .reduce((sum, m) => sum + (m.part.drainPerTurn ?? 0), 0);
   if (drain <= 0) return battle;
   let drained = 0;

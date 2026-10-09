@@ -103,7 +103,7 @@ export function hitSlot(content: Content, ship: Ship, index: SlotIndex, strength
   const current = next.slots[index]!;
   const lost = Math.min(current.energy, loss);
   next = withSlot(next, index, { energy: current.energy - lost });
-  if (current.energy - lost <= 0) notes.push(`${part.name} is offline — one more hit destroys it`);
+  if (current.energy - lost <= 0) notes.push(`${part.name} is at 0⚡ — one more hit destroys it`);
   return { ...none, ship: next, lost, softened };
 }
 

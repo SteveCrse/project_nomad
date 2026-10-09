@@ -417,7 +417,7 @@ export function cardWarnings(card: Card): string[] {
 
   if (card.kind === 'part') {
     const max = card.energyCapacity ?? 0;
-    if (max < 1) out.push('holds no ⚡ — every module starts with 1, and 0 is offline');
+    if (max < 1) out.push('holds no ⚡ — every module starts with 1, and it can never spend any');
     const cost = costOf(activeEffects(card));
     if (cost > max) out.push(`an ability costs ${cost}⚡ out of a ${max}⚡ max — it can never fire`);
     if ((card.minSpend ?? 1) > (card.maxSpend ?? max)) {

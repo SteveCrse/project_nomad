@@ -107,7 +107,7 @@ export function combatControls(
           onSlotClick: (slot) => act.take({ type: 'generate', slot }),
           drag: null,
         },
-        prompt: producers.length ? 'Pick a generator or the cockpit — its output lands on itself.' : 'No producer can generate: offline, or full.',
+        prompt: producers.length ? 'Pick a generator or the cockpit — its output lands on itself.' : 'No producer can generate: all full.',
       };
     }
 

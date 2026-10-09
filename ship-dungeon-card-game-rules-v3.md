@@ -27,7 +27,8 @@ cockpit; the same rules apply to players and enemies.
   sides. For enemies it's flipped: their front faces the players.
 - Cockpits have higher base energy and attack than regular modules.
 - A cockpit can always attack and generate, so a player is never left without
-  an action. A cockpit with no energy on it can still generate.
+  an action. A cockpit with no energy on it can still generate (as can any
+  generator — see Energy & Attack Roll).
 - **Weapons** may not be placed in front of the cockpit — only to its sides or
   rear.
 - **Shields** may be placed in front of the cockpit, or in front of weapons or
@@ -69,7 +70,8 @@ test tool as switches on top of that:
 Energy is both a module's **hit chance** and its **HP**.
 
 - Energy is produced only by the cockpit or generator modules. A generate
-  action adds the producer's output to the producer's module.
+  action adds the producer's output to the producer's module. Producing
+  energy doesn't spend any, so a producer can generate even at 0 energy.
 - A player's modules start with the energy placed on them after the draft (see
   Player Setup); every enemy module starts with 1 energy.
 - Each module has a maximum energy it can hold printed on its card.
@@ -119,8 +121,8 @@ many modules as they want, with two caveats:
 **Dice:** rolling is a visible player action. Every roll's outcome is shown
 before its effect is applied (e.g. "Rolled a 3 — No hit!").
 
-**EMP card:** drains a target module to 0 energy without destroying it. It stays
-offline until recharged and can still be looted.
+**EMP card:** drains a target module to 0 energy without destroying it. It can still be
+looted.
 
 ## Enemy Combat
 The enemy plays its turn through 4 action decks, one per down, and follows the
@@ -226,10 +228,12 @@ are the questions the next design session should close.
    down.
 3. **What does a hit remove?** Energy equal to its attack strength, never less
    than 1. A hit never spills into the module behind.
-4. **What does 0 energy mean?** Offline, for every module: it can't attack,
-   generate or be used — except that a cockpit can still generate.
-   A cockpit whose card prints no attack or output fires and generates for 1. It still blocks
-   (a shield) and can still be recharged by a reroute. One more hit destroys it.
+4. **What does 0 energy mean?** Only that the module has no energy to spend.
+   It can't do anything that costs energy (an attack, or an ability with an
+   energy cost), but it can still do everything that doesn't: generate, block
+   (a shield), apply its passives, be recharged by a reroute. One more hit
+   destroys it. A cockpit whose card prints no attack or output fires and
+   generates for 1.
 5. **Starting energy outside the draft.** The draft decides a player's
    starting energy; everything else that comes into play — every enemy module,
    a ship flown on an authored loadout (draft off), a taken-over cockpit, a

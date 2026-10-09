@@ -50,8 +50,8 @@ Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
    module's energy is its hit chance *and* its HP: an attack rolls a d6 and hits
    at or under the ⚡ on the module firing. The dice come up on screen — click
    to roll, read the result, *Continue*, and only then does the shot fly. A hit
-   takes ⚡ off the target equal to its attack (at least 1); at 0 a module is
-   offline, and the next hit destroys it. A **reroute** moves ⚡ between modules
+   takes ⚡ off the target equal to its attack (at least 1); at 0 a module has
+   nothing to spend, and the next hit destroys it. A **reroute** moves ⚡ between modules
    that touch — as much as you like, from as many modules as you like, each
    token one step, nothing over its max — click a source then a neighbour per
    token, or drag; confirm and it's one down. Destroying a module with the
@@ -160,17 +160,12 @@ reroute; they're worth re-running before they're relied on.
 Engine-level runs (auto-drafted ships, a simple greedy bot per seat, 10 seeds
 per variant) — findings for the rules doc, not bugs:
 
-- **A ship can go dead in the water.** Only producers make ⚡, and an offline
-  producer can't generate. A ship whose cockpit and generators all sit at 0 can
-  only come back if something still charged reroutes into them — otherwise it
-  never acts again. The enemy hits it the same way; with nothing to roll
-  against, both sides can stall.
 - **`attack_spends_energy` stalls fights.** Spending the energy placed on every
   attack drains ships to 0 faster than generate can refill them, and most
   sweeps never finished a fight. The default (energy is only hit chance and HP)
   plays through.
 - **Enemy action decks spend a lot of downs turning cards.** With one card of
-  each action per deck, an enemy with no weapon online discards its way through
+  each action per deck, an enemy with no charged weapon discards its way through
   Attack and Reroute before anything resolves. That's the rule as written;
   worth deciding whether "can't" should be rarer.
 - **Fewer seats is much harder.** In the last sweep 4 seats won 6 runs in 10,

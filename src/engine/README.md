@@ -74,9 +74,9 @@ also its price in tokens) against `powerRating`.
 
 - **Energy is hit chance and HP.** An attack rolls a d6 against the ⚡ on the
   module firing it; at or under hits. A hit takes `max(1, attack)` ⚡ off the
-  module it lands on (`ship.hitSlot`), never spilling past it. At 0 a module is
-  offline — it can't attack, generate or be used — and the next hit destroys
-  it. Destroying the cockpit destroys the ship.
+  module it lands on (`ship.hitSlot`), never spilling past it. At 0 a module can't do
+  anything that spends ⚡ (attack, a costed ability) but can still do the rest
+  — generate, block, passives — and the next hit destroys it. Destroying the cockpit destroys the ship.
 - **Targeting.** A shield covers its column: nothing behind it can be reached
   while it stands (`exposedSlots`), and a column with no shield is open all the
   way back. A `damage-module` effect ignores the shields. The enemy always aims

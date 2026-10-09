@@ -23,7 +23,7 @@ import { FirstDownBadge } from './FirstDownBadge';
 /**
  * When a printed line happens, as a chip.
  *
- * ACT costs a down; PAS is on while the module is online; EVT resolves the
+ * ACT costs a down; PAS is on while the module stands; EVT resolves the
  * moment the card is drawn; LAY is where the module may sit; ENM is what the
  * enemy does with the card face up.
  */

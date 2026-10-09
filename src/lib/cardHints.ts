@@ -29,7 +29,7 @@ const KIND_WORD: Record<Card['kind'], string> = {
 
 const TIMING_RULE: Record<PrintedTiming, string> = {
   active: 'An ACT line costs a down to fire.',
-  passive: 'A PAS line is on the whole time the module is online — it costs nothing and can’t be fired.',
+  passive: 'A PAS line is on the whole time the module stands — it costs nothing and can’t be fired.',
   event: 'An EVT line resolves the moment the card is drawn on a step; the card is then done.',
   layout: 'A LAY line is a placement limit: where this module may sit on the grid — in front of, behind or next to what.',
   enemy: 'What the enemy does when this card is face up on the down it’s playing.',
@@ -98,7 +98,7 @@ export function energyHint(card: PartCard): CardHint {
     title: 'Max energy',
     body:
       `Energy is both hit chance and HP: an attack rolls a d6 and hits at or under the ⚡ on the module, ` +
-      `and every hit taken knocks ⚡ off. At 0 it’s offline, and one more hit destroys it. ` +
+      `and every hit taken knocks ⚡ off. At 0 it can’t spend any, and one more hit destroys it. ` +
       `${card.name} holds up to ${max}⚡` +
       (attack > 0
         ? ` — fully charged it hits ${Math.min(max, 6)} in 6, for ${expectedDamage(attack, max).toFixed(1)}⚔ expected per shot.`

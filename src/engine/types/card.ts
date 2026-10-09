@@ -31,7 +31,7 @@ export type Rarity = 1 | 2 | 3 | 4 | 5;
 /**
  * When an effect happens.
  *   active  — a down fires it
- *   passive — always on while the module is online
+ *   passive — always on while the module stands
  *   event   — resolves when the card is drawn on a step
  */
 export type EffectTiming = 'active' | 'passive' | 'event';
@@ -73,7 +73,7 @@ export type EffectType =
   | 'negate-next-attack'
   | 'retaliate'
   | 'manual'
-  // ---- passive: always on while the module is online ----
+  // ---- passive: always on while the module stands ----
   | 'damage-reduction'
   | 'drain'
   | 'free-reroute'

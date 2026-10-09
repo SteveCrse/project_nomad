@@ -3,8 +3,8 @@ import type { PartId, ShipId, SlotIndex } from './ids';
 /**
  * One module on a ship's grid.
  *
- * Energy is the module's hit chance *and* its HP. At 0 it's offline — it can't
- * act, but it's still there, still blocks if it's a shield, and one more hit
+ * Energy is the module's hit chance *and* its HP. At 0 it can't spend any —
+ * no attacks, no costed abilities — but it still does everything else, still blocks if it's a shield, and one more hit
  * destroys it. A destroyed module keeps its cell until the fight is over so
  * targets don't shuffle mid-combat; it's gone afterwards.
  */

@@ -67,7 +67,7 @@ const SIZE: Record<
  *
  * Energy is the module's hit chance and its HP, so the chits are the number
  * that matters: how likely its next shot is to land, and how many hits it can
- * still take. A module at 0 reads OFFLINE (one more hit destroys it); a
+ * still take. A module at 0 reads EMPTY (one more hit destroys it); a
  * destroyed one crumples and stays on the grid, dashed, until the fight is
  * over.
  */
@@ -137,7 +137,7 @@ export function ModuleTile({
   const legendary = part.rarity >= 5;
   const isCockpit = part.role === 'COCKPIT';
   const dead = !!slot.destroyed;
-  const offline = !preview && !dead && energy <= 0;
+  const empty = !preview && !dead && energy <= 0;
   const attack = attackOf(part);
   const output = outputOf(part);
 
@@ -172,19 +172,19 @@ export function ModuleTile({
     >
       <div
         className={`flex-none truncate px-1 py-px text-center font-mono font-bold tracking-[0.08em] uppercase transition-colors duration-300 ${size.band} ${
-          legendary && !dead && !offline ? 'holo-band' : ''
+          legendary && !dead && !empty ? 'holo-band' : ''
         }`}
         style={
           dead
             ? { background: 'var(--putty-500)', color: 'var(--putty-800)' }
-            : offline
+            : empty
               ? { background: 'var(--toggle-red-700)', color: 'var(--cream-100)' }
               : legendary
                 ? { color: 'var(--cream-100)' }
                 : { background: rarityColor(part.rarity), color: rarityInk(part.rarity) }
         }
       >
-        {dead ? 'DESTROYED' : offline ? 'OFFLINE' : `${rarityShort(part.rarity)} · ${isCockpit ? 'CPIT' : part.role}`}
+        {dead ? 'DESTROYED' : empty ? 'EMPTY' : `${rarityShort(part.rarity)} · ${isCockpit ? 'CPIT' : part.role}`}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col justify-between gap-px px-1 py-[3px]">

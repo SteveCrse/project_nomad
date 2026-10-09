@@ -131,7 +131,7 @@ export function resolveAbility(
       next = withShip(next, far.side, setEnergy(far.ship, aim, 0));
       next = emit(next, { kind: 'drain', target: { side: far.side, slot: aim }, amount: had });
       attacked = true;
-      lines.push(`${ctx.name} fires ${ctx.card.name}: ${sideName(next, far.side)}’s ${target} drained to 0⚡ — offline, not destroyed.`);
+      lines.push(`${ctx.name} fires ${ctx.card.name}: ${sideName(next, far.side)}’s ${target} drained to 0⚡ — not destroyed.`);
       break;
     }
 

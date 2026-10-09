@@ -6,7 +6,7 @@ import type { Content } from '../content';
 import { partOf } from '../content';
 import { abilityEffects, activeEffects, attackOf, costOf, spendRange } from '../cards';
 import { isDamageEffect } from '../effects';
-import { canTarget, defaultTargetSlot, isOnline, isProducer, rerouteError, roomIn } from '../ship';
+import { canTarget, defaultTargetSlot, isProducer, rerouteError, roomIn } from '../ship';
 import { sameSide, playerOf, shipOf, opposingShip } from './sides';
 
 // ---------------------------------------------------------------- legality
@@ -38,13 +38,12 @@ export function actionError(
   if (!ship || ship.destroyed) return 'no ship';
   const player = side.kind === 'player' ? playerOf(battle, side.id) : undefined;
 
-  /** The module in a slot of the acting ship, checked online. */
+  /** The module in a slot of the acting ship, checked still standing. */
   const own = (slot: SlotIndex): { part: PartCard; error: string | null } | null => {
     const at = ship.slots[slot];
     const part = partOf(content, at?.partId);
     if (!at || !part) return null;
     if (at.destroyed) return { part, error: `${part.name} is destroyed` };
-    if (!isOnline(at)) return { part, error: `${part.name} is offline — 0⚡` };
     return { part, error: null };
   };
 
@@ -79,9 +78,8 @@ export function actionError(
       const module = own(action.slot);
       if (!module) return 'empty slot';
       if (!isProducer(module.part)) return `${module.part.name} doesn’t generate`;
-      // A cockpit can always generate — even with no ⚡ on it.
-      const offlineCockpit = module.part.role === 'COCKPIT' && !ship.slots[action.slot]!.destroyed;
-      if (module.error && !offlineCockpit) return module.error;
+      // Producing ⚡ spends none, so a producer can generate even with no ⚡ on it.
+      if (module.error) return module.error;
       if (roomIn(content, ship.slots[action.slot]) <= 0) return `${module.part.name} is full`;
       return null;
     }

@@ -13,14 +13,6 @@ import type { Rng } from '../rng';
  * a card id — so new content stays a data edit.
  */
 
-/**
- * Online: still there and holding ⚡. A module at 0 is offline — it can't
- * attack, generate or be used until something reroutes charge back into it —
- * but it still blocks if it's a shield, and one more hit destroys it.
- */
-export const isOnline = (slot: ShipSlot | undefined): boolean =>
-  !!slot && !slot.destroyed && slot.energy > 0;
-
 /** The most ⚡ a slot's module can hold. */
 export const maxEnergyOf = (content: Content, slot: ShipSlot | undefined): number =>
   Math.max(0, partOf(content, slot?.partId)?.energyCapacity ?? 0);
@@ -188,9 +180,9 @@ export function defaultTargetSlot(content: Content, ship: Ship): SlotIndex {
 
 // -------------------------------------------------------------- passives
 
-/** Any online module that lets charge move without spending a down. */
+/** Any standing module that lets charge move without spending a down. */
 export const hasFreeReroute = (content: Content, ship: Ship): boolean =>
-  liveSlots(content, ship).some((m) => isOnline(m.slot) && !!m.part.freeReroute);
+  liveSlots(content, ship).some((m) => !!m.part.freeReroute);
 
 /** Scrap cap raised by fitted modules — counted while they're on the ship at all. */
 export const scrapCapBonus = (content: Content, ship: Ship): number =>

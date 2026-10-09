@@ -33,7 +33,7 @@ export interface EffectParamDef {
 export interface EffectDef {
   type: EffectType;
   label: string;
-  /** Active effects cost a down to fire; passives are on while the module is online. */
+  /** Active effects cost a down to fire; passives are on while the module stands. */
   timing: EffectTiming;
   /** One line for the picker: what it does in play. */
   summary: string;
@@ -111,10 +111,10 @@ export const EFFECTS: Record<EffectType, EffectDef> = {
     label: 'EMP',
     timing: 'active',
     summary:
-      'Drain one enemy module to 0⚡ without destroying it. It stays offline until recharged, and can still be looted.',
+      'Drain one enemy module to 0⚡ without destroying it. It can still be looted.',
     kinds: ['part', 'item'],
     params: [],
-    template: 'Drain one enemy module to 0⚡ — offline, not destroyed.',
+    template: 'Drain one enemy module to 0⚡ — not destroyed.',
   },
   'restore-shield': {
     type: 'restore-shield',

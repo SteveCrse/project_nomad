@@ -11,7 +11,7 @@
  *
  * Every attack is a d6 against the energy on the module firing it, and every
  * hit takes energy off the module it lands on — energy is hit chance and HP at
- * once. A module at 0 is offline; one more hit destroys it; destroying the
+ * once. A module at 0 has nothing to spend; one more hit destroys it; destroying the
  * cockpit destroys the ship.
  *
  * Everything that happens is also recorded as a `TableEvent` — every die

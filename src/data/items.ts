@@ -15,8 +15,8 @@ export const ITEMS: ItemCard[] = [
     role: 'WPN',
     rarity: 2,
     amount: 3,
-    // The rules' EMP card: an enemy module drained to 0 — offline, not
-    // destroyed, so it can still be looted.
+    // The rules' EMP card: an enemy module drained to 0 — not destroyed,
+    // so it can still be looted.
     effects: [{ type: 'emp' }],
   },
   {

@@ -11,7 +11,6 @@ import {
   cockpitIndex,
   connected,
   defaultTargetSlot,
-  isOnline,
   isProducer,
   liveSlots,
   roomIn,
@@ -47,7 +46,7 @@ export function planEnemyAction(
       // attack × spend ÷ 6, the rules' balancing line, read as a choice.
       const spendOf = (m: Fitted) => spendRange(m.part, m.slot.energy);
       const guns = liveSlots(content, ship)
-        .filter((m) => isOnline(m.slot) && attackOf(m.part) > 0)
+        .filter((m) => attackOf(m.part) > 0)
         .filter((m) => spendOf(m).max >= spendOf(m).min)
         .sort(
           (a, b) =>
@@ -68,13 +67,13 @@ export function planEnemyAction(
     }
 
     case 'generate': {
-      // A cockpit can generate with no ⚡ on it; a generator has to be online.
+      // A producer can generate with no ⚡ on it.
       const producers = liveSlots(content, ship)
-        .filter((m) => isProducer(m.part) && (isOnline(m.slot) || m.part.role === 'COCKPIT'))
+        .filter((m) => isProducer(m.part))
         .filter((m) => roomIn(content, m.slot) > 0)
         .sort((a, b) => gain(content, b) - gain(content, a) || generatorFirst(a, b));
       const pick = producers[0];
-      if (!pick) return { reason: 'every producer is offline or full' };
+      if (!pick) return { reason: 'every producer is full' };
       return { action: { type: 'generate', slot: pick.slot.index } };
     }
 
@@ -96,7 +95,7 @@ const generatorFirst = (a: Fitted, b: Fitted): number =>
  * The enemy's reroute: charge out of generators — the cockpit only when no
  * generator can spare any — into the weapons they touch, hardest-hitting
  * first, then into the shields they touch. A source keeps 1⚡ when it can —
- * draining it to 0 knocks it offline — but when that leaves nothing to move,
+ * at 0 the next hit destroys it — but when that leaves nothing to move,
  * a generator gives its last ⚡ too. The cockpit always keeps 1.
  * Every leg is checked against the reroute rules as it's added, so the plan is
  * one the engine will play.
@@ -110,7 +109,7 @@ function planFeed(content: Content, ship: Ship, generatorKeeps: number): Reroute
   const live = liveSlots(content, ship);
   const targets = [
     ...live
-      .filter((m) => m.part.role === 'WPN' && attackOf(m.part) > 0)
+      .filter((m) => m.part.role === 'WPN')
       .sort((a, b) => attackOf(b.part) - attackOf(a.part) || a.slot.energy - b.slot.energy),
     ...live.filter((m) => m.part.role === 'SHD'),
   ];
