@@ -40,7 +40,7 @@ export interface HitReport {
   lost: number;
   /** The module was already at 0 — this hit destroyed it. */
   destroyed: boolean;
-  /** The destroyed module carried the 1st-down icon, or was the cockpit. */
+  /** The destroyed module earns a 1st down: it carried the icon, was the cockpit, or every module counts. */
   firstDown: boolean;
   negated: boolean;
   notes: string[];
@@ -54,9 +54,16 @@ export interface HitReport {
  * Energy is HP: a hit takes ⚡ off the module equal to its strength, never less
  * than 1, and never spills into the module behind. A module already at 0 is
  * destroyed by the next hit, whatever its strength. Destroying the cockpit
- * destroys the ship.
+ * destroys the ship. `anyFirstDown` is the `firstDownOnAnyModule` switch:
+ * every destroyed module earns a 1st down, not just the marked ones.
  */
-export function hitSlot(content: Content, ship: Ship, index: SlotIndex, strength: number): HitReport {
+export function hitSlot(
+  content: Content,
+  ship: Ship,
+  index: SlotIndex,
+  strength: number,
+  anyFirstDown = false,
+): HitReport {
   const notes: string[] = [];
   const target = ship.slots[index];
   const part = partOf(content, target?.partId);
@@ -80,7 +87,7 @@ export function hitSlot(content: Content, ship: Ship, index: SlotIndex, strength
       ship: { ...withSlot(ship, index, { destroyed: true }), destroyed: ship.destroyed || cockpit },
       destroyed: true,
       // Downing a ship is a 1st down too, icon or not.
-      firstDown: !!part.firstDown || cockpit,
+      firstDown: anyFirstDown || !!part.firstDown || cockpit,
     };
   }
 

@@ -56,11 +56,12 @@ export function strike(
   target: SideRef,
   slot: SlotIndex,
   strength: number,
+  anyFirstDown: boolean,
 ): { battle: Battle; firstDown: boolean; line: string; notes: string[] } {
   const ship = shipOf(battle, target);
   if (!ship) return { battle, firstDown: false, line: 'no target', notes: [] };
   const retaliate = ship.flags.retaliate;
-  const report = hitSlot(content, ship, slot, strength);
+  const report = hitSlot(content, ship, slot, strength, anyFirstDown);
   let next = emitHit(withShip(battle, target, report.ship), target, slot, report, moduleName(content, ship, slot));
   const notes = report.notes.filter((n) => !n.endsWith('destroyed'));
 
@@ -72,7 +73,7 @@ export function strike(
     next = withShip(next, target, { ...after, flags: { ...after.flags, retaliate: 0 } });
     if (victim) {
       const at = defaultTargetSlot(content, victim);
-      const back = hitSlot(content, victim, at, retaliate);
+      const back = hitSlot(content, victim, at, retaliate, anyFirstDown);
       next = emitHit(withShip(next, attacker, back.ship), attacker, at, back, moduleName(content, victim, at));
       notes.push(`retaliation: ${retaliate}⚔ back — ${describeHit(content, victim, back, at)}`);
     }
@@ -93,6 +94,7 @@ export function resolveAbility(
     targetSlot: SlotIndex | undefined;
     target: PlayerId | undefined;
     manualDamage: number;
+    anyFirstDown: boolean;
     rng: Rng;
   },
 ): { battle: Battle; firstDown: boolean; lines: string[]; attacked: boolean } {
@@ -116,7 +118,7 @@ export function resolveAbility(
       const roll = rollDice(effect.dice, ctx.rng);
       const strength = Math.max(0, effectParam(effect, 'power') + roll.bonus);
       if (effect.dice) next = emitDice(next, ctx.side, `${ctx.card.name} — its own dice`, effect.dice, roll, `${strength}⚔`);
-      const hit = strike(content, next, ctx.side, far.side, aim, strength);
+      const hit = strike(content, next, ctx.side, far.side, aim, strength, ctx.anyFirstDown);
       next = hit.battle;
       firstDown ||= hit.firstDown;
       attacked = true;
@@ -159,7 +161,7 @@ export function resolveAbility(
 
     case 'manual': {
       if (ctx.manualDamage > 0 && far) {
-        const hit = strike(content, next, ctx.side, far.side, aim, ctx.manualDamage);
+        const hit = strike(content, next, ctx.side, far.side, aim, ctx.manualDamage, ctx.anyFirstDown);
         next = hit.battle;
         firstDown ||= hit.firstDown;
         attacked = true;

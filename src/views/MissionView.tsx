@@ -104,6 +104,9 @@ const NODE_STYLE: Record<string, { label: string; color: string }> = {
   boss: { label: 'BOSS', color: 'var(--n-900)' },
 };
 
+/** The board's pitch, in px: a tile, and the gaps the paths run through. */
+const TILE = { w: 118, h: 92, gapX: 40, gapY: 12 };
+
 function MapBoard({ state }: { state: GameState }) {
   const moveTo = useGameStore((s) => s.moveTo);
   const config = useConfig();
@@ -114,13 +117,55 @@ function MapBoard({ state }: { state: GameState }) {
   const mover = state.awaitingMove[0];
   const options = mover ? board.optionsFor(state.mission, mover).map((n) => n.id) : [];
   const canMove = state.phase === 'map' && !!mover;
+  const from = mover ? state.mission.positions[mover] : undefined;
+
+  // Tiles sit on a fixed pitch, each column centred, so a path is a straight
+  // line from one tile's edge to the next column's — the same picture as
+  // tiles and connectors laid out on a table.
+  const tallest = Math.max(1, ...columns.map((c) => c.length));
+  const height = tallest * TILE.h + (tallest - 1) * TILE.gapY;
+  const width = columns.length * TILE.w + (columns.length - 1) * TILE.gapX;
+  const place = (node: BoardNode) => {
+    const column = columns[node.column] ?? [];
+    const row = Math.max(0, column.indexOf(node));
+    const top = (height - (column.length * TILE.h + (column.length - 1) * TILE.gapY)) / 2;
+    return { x: node.column * (TILE.w + TILE.gapX), y: top + row * (TILE.h + TILE.gapY) };
+  };
+  const paths = state.mission.nodes.flatMap((node) =>
+    node.next.flatMap((id) => {
+      const to = board.nodeById(state.mission, id);
+      if (!to) return [];
+      const a = place(node);
+      const b = place(to);
+      return [{ id: `${node.id}>${id}`, x1: a.x + TILE.w, y1: a.y + TILE.h / 2, x2: b.x, y2: b.y + TILE.h / 2, live: canMove && node.id === from }];
+    }),
+  );
 
   return (
     <div className="min-h-0 flex-1 overflow-auto border-2 border-border-strong bg-surface-panel p-4 shadow-raised">
       <LayoutGroup>
-      <div className="flex min-w-max items-stretch gap-3" key={`${state.seed}:${state.sector}`}>
+      <div className="relative" style={{ width, height }} key={`${state.seed}:${state.sector}`}>
+        <svg className="pointer-events-none absolute inset-0" width={width} height={height} aria-hidden>
+          {paths.map((p) => (
+            <motion.line
+              key={p.id}
+              x1={p.x1}
+              y1={p.y1}
+              x2={p.x2}
+              y2={p.y2}
+              strokeLinecap="square"
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: 1,
+                stroke: p.live ? 'var(--accent-primary)' : 'var(--putty-500)',
+                strokeWidth: p.live ? 4 : 2,
+              }}
+              transition={{ duration: 0.25 }}
+            />
+          ))}
+        </svg>
         {columns.map((column, col) => (
-          <div key={col} className="flex flex-col justify-center gap-3">
+          <div key={col} className="contents">
             {column.map((node, row) => {
               const style = NODE_STYLE[node.type] ?? NODE_STYLE.empty!;
               const here = board.playersAt(state.mission, node.id);
@@ -138,8 +183,9 @@ function MapBoard({ state }: { state: GameState }) {
                   aria-label={`${node.id} ${style.label}${node.bossId ? ` ${node.bossId}` : ''}${
                     reachable && canMove ? ' — reachable' : ''
                   }`}
+                  style={{ left: place(node).x, top: place(node).y, width: TILE.w, height: TILE.h }}
                   className={[
-                    'flex w-[118px] cursor-pointer flex-col gap-1 border-2 px-2 py-2 text-left',
+                    'absolute flex cursor-pointer flex-col gap-1 overflow-hidden border-2 px-2 py-2 text-left',
                     'disabled:cursor-default',
                     reachable && canMove
                       ? 'attention border-accent-primary bg-putty-100 shadow-raised'
@@ -177,7 +223,7 @@ function MapBoard({ state }: { state: GameState }) {
                     </div>
                   )}
                   {(node.markers?.length ?? 0) > 0 && (
-                    <div className="font-mono text-[9px] text-role-rds">
+                    <div className="truncate font-mono text-[9px] text-role-rds">
                       {node.markers!.join(' · ')}
                     </div>
                   )}

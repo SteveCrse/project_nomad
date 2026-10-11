@@ -105,7 +105,7 @@ export function resolveEvent(content: Content, state: GameState, config: GameCon
       const player = playerIn(next, id);
       if (!player || player.destroyed) continue;
       const at = defaultTargetSlot(content, player.ship);
-      const hit = hitSlot(content, player.ship, at, card.damage);
+      const hit = hitSlot(content, player.ship, at, card.damage, config.firstDownOnAnyModule);
       next = pushEvents(next, [
         {
           kind: 'hit',

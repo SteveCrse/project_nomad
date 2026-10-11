@@ -159,6 +159,12 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
         hint: 'hold enemies to the same size limit as players',
       },
       {
+        kind: 'boolean',
+        key: 'firstDownOnAnyModule',
+        label: 'first_down_any_module',
+        hint: 'on: every destroyed module earns a 1st down · off (rules): only modules marked with the 1st-down icon — a cockpit always does',
+      },
+      {
         kind: 'select',
         key: 'downedPlayer',
         label: 'downed_player',
@@ -199,7 +205,7 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
         kind: 'boolean',
         key: 'lootOneModule',
         label: 'loot_one_module',
-        hint: 'from the ideas list — a kill may pay one module instead of the ship',
+        hint: 'on: after a kill, a seat may keep its own ship and strip one surviving module off the wreck into its scrap deck, instead of taking the ship over · off (rules): take the ship over or leave it',
       },
     ],
   },

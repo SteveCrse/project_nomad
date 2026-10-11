@@ -63,6 +63,11 @@ export interface GameConfig {
   enemyModulesPerPlayer: number;
   /** Hold enemy ships to the same size limit as the players' ships. */
   enemySizeCapped: boolean;
+  /**
+   * Every destroyed module earns a 1st down. Off (rules): only modules marked
+   * with the 1st-down icon do — and a cockpit, either way.
+   */
+  firstDownOnAnyModule: boolean;
   /** Open question: what a seat does after its cockpit is destroyed. */
   downedPlayer: DownedRule;
   /** What a downed seat gets back when its fight is won. */
@@ -77,7 +82,11 @@ export interface GameConfig {
   handSize: number;
   /** Item cards drawn per Loot step. */
   lootPerNode: number;
-  /** From the ideas list: a kill may also pay out one surviving module instead of the ship. */
+  /**
+   * From the ideas list: after a kill a seat may keep its own ship and strip
+   * one surviving module off the wreck into its scrap deck, instead of taking
+   * the ship over.
+   */
   lootOneModule: boolean;
 
   // ---- board / rarity ----
@@ -111,6 +120,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   enemyModulesPerDepth: 1,
   enemyModulesPerPlayer: 1,
   enemySizeCapped: false,
+  firstDownOnAnyModule: false,
   downedPlayer: 'out',
   downedAfterWin: 'stay',
   reviveLosesDestroyed: true,

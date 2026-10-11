@@ -81,26 +81,24 @@ export function generateMission(
     columns.push(nodes);
   }
 
-  // Wire each column to the next: every node gets at least one exit, and
-  // every node in the next column gets at least one entrance.
+  // Wire each column to the next the way a table would with the tiles laid
+  // out: join the top tiles, then work down — each next path steps down on
+  // both sides, or on one side only (a split or a merge) — until the bottom
+  // tiles are joined. Every tile gets a way in and a way out, and no two
+  // paths ever cross.
   for (let col = 0; col < columns.length - 1; col++) {
     const here = columns[col]!;
     const there = columns[col + 1]!;
-    const covered = new Set<NodeId>();
-
-    for (const node of here) {
-      const exits = Math.min(there.length, rng.int(1, Math.min(2, there.length)));
-      const start = rng.int(0, there.length - 1);
-      for (let i = 0; i < exits; i++) {
-        const target = there[(start + i) % there.length]!;
-        if (!node.next.includes(target.id)) node.next.push(target.id);
-        covered.add(target.id);
-      }
-    }
-    for (const target of there) {
-      if (covered.has(target.id)) continue;
-      const from = here[rng.int(0, here.length - 1)]!;
-      from.next.push(target.id);
+    let i = 0;
+    let j = 0;
+    here[0]!.next.push(there[0]!.id);
+    while (i < here.length - 1 || j < there.length - 1) {
+      const canHere = i < here.length - 1;
+      const canThere = j < there.length - 1;
+      const step = canHere && canThere ? rng.pickWeighted(['both', 'here', 'there'], [2, 1, 1]) : canHere ? 'here' : 'there';
+      if (step !== 'there') i += 1;
+      if (step !== 'here') j += 1;
+      here[i]!.next.push(there[j]!.id);
     }
   }
 

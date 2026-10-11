@@ -95,7 +95,7 @@ export function resolveDown(
         next = emitDice(next, side, `${part.name} — its own dice`, effect.dice, extra, `+${extra.bonus}⚔`);
       }
       const strength = attackOf(part) + bonus;
-      const hit = strike(content, next, side, far.side, aim, strength);
+      const hit = strike(content, next, side, far.side, aim, strength, config.firstDownOnAnyModule);
       next = hit.battle;
       firstDown = hit.firstDown;
       lines.push(
@@ -168,6 +168,7 @@ export function resolveDown(
           targetSlot: action.targetSlot,
           target: action.target,
           manualDamage: action.manualDamage ?? 0,
+          anyFirstDown: config.firstDownOnAnyModule,
           rng,
         });
         next = out.battle;
@@ -193,6 +194,7 @@ export function resolveDown(
           targetSlot: action.targetSlot,
           target: undefined,
           manualDamage: action.manualDamage ?? 0,
+          anyFirstDown: config.firstDownOnAnyModule,
           rng,
         });
         next = out.battle;

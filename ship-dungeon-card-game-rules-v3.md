@@ -321,3 +321,17 @@ are the questions the next design session should close.
 23. **Where the arranger puts things** (enemies, the boss, a draft hold): guns
     beside the cockpit, shields over what's worth covering — the cockpit first —
     then generators touching what they feed, everything else behind.
+
+**Added after playtests**
+
+24. **Which destroyed modules earn a 1st down?** The rules: the ones marked
+    with the 1st-down icon, and a cockpit. `first_down_any_module` switches to
+    every destroyed module earning one — for both sides, since the enemy plays
+    by the same rule.
+25. **How do steps connect?** The tool lays the steps out in columns and joins
+    each column to the next the way a table could with tiles and connectors:
+    join the two top tiles, then work down — each next path steps down on both
+    sides, or on one side only (a split or a merge) — until the two bottom
+    tiles are joined. Every step has a way in and a way out, and no two paths
+    cross. Open: whether the table builds the route this way, or the tiles
+    themselves print their exits.
