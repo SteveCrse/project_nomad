@@ -79,7 +79,7 @@ export function planEnemyAction(
 
     case 'reroute': {
       const moves = feedMoves(content, ship);
-      if (moves.length === 0) return { reason: 'no spare ⚡ next to a weapon or shield with room' };
+      if (moves.length === 0) return { reason: 'no spare ⚡ next to a weapon, cockpit or shield with room' };
       return { action: { type: 'reroute', moves } };
     }
   }
@@ -94,7 +94,8 @@ const generatorFirst = (a: Fitted, b: Fitted): number =>
 /**
  * The enemy's reroute: charge out of generators — the cockpit only when no
  * generator can spare any — into the weapons they touch, hardest-hitting
- * first, then into the shields they touch. A source keeps 1⚡ when it can —
+ * first, the cockpit counted among them since it can always fire, then into
+ * the shields they touch. A source keeps 1⚡ when it can —
  * at 0 the next hit destroys it — but when that leaves nothing to move, it
  * gives its last ⚡ too, cockpit included.
  * Every leg is checked against the reroute rules as it's added, so the plan is
@@ -109,7 +110,7 @@ function planFeed(content: Content, ship: Ship, keep: number): RerouteMove[] {
   const live = liveSlots(content, ship);
   const targets = [
     ...live
-      .filter((m) => m.part.role === 'WPN')
+      .filter((m) => m.part.role === 'WPN' || m.part.role === 'COCKPIT')
       .sort((a, b) => attackOf(b.part) - attackOf(a.part) || a.slot.energy - b.slot.energy),
     ...live.filter((m) => m.part.role === 'SHD'),
   ];

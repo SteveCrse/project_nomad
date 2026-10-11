@@ -260,7 +260,8 @@ are the questions the next design session should close.
 10. **Enemy choices the action card doesn't make.** Attack: the module with the
     best attack × energy ÷ 6, spending all it may. Generate: the producer that
     gains the most. Reroute: out of generators (else the cockpit) into every
-    weapon they touch, hardest-hitting first, then into the shields they touch,
+    weapon they touch, hardest-hitting first — the cockpit counts as one, since
+    it can always fire — then into the shields they touch,
     leaving 1 energy behind — unless that leaves nothing to move, then the
     source gives its last token too, the cockpit included. The enemy never uses module abilities.
 11. **Items have no energy to roll against,** so an item's attack hits
