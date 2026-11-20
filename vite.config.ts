@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath, URL } from 'node:url';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 export default defineConfig(({ mode }) => {
   // The access password is hashed here, at build time, so only its SHA-256
   // reaches the bundle. Not VITE_-prefixed, so the plain value never leaks.
@@ -17,7 +19,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     define: { __ACCESS_HASH__: JSON.stringify(accessHash) },
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), cloudflare()],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

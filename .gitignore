@@ -108,3 +108,10 @@ x86/
 
 # Publish Web Output
 *.[Pp]ublish.xml
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
+.cloudflare/

@@ -3,7 +3,7 @@ import { Button } from '@/components/ds';
 
 /**
  * A soft lock over the whole tool, so someone who stumbles onto the deployed
- * site (or scrapes Netlify subdomains) doesn't walk straight in. It is not
+ * site (or scrapes workers.dev subdomains) doesn't walk straight in. It is not
  * real security: the check runs in the browser and the bundle is public.
  *
  * The password comes from the `ACCESS_PASSWORD` env var at build time, and
