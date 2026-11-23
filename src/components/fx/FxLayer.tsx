@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { RunEvent, SlotRef } from '@engine/types';
 import { getCard } from '@data';
 import { FLIGHT_MS, useGameStore, type Flight } from '@/store/gameStore';
+import { chitsBetween, chitsFromSupply, chitsToSupply, moduleToDiscard, tableMounted } from './tableFx';
 
 /**
  * The table's effects layer.
@@ -27,7 +28,7 @@ type Item =
   | { id: number; kind: 'flash'; rect: DOMRect; color: string }
   | { id: number; kind: 'burst'; at: Point; color: string }
   | { id: number; kind: 'orb'; from: Point; to: Point; delay: number }
-  | { id: number; kind: 'banner'; text: string; color: string }
+  | { id: number; kind: 'banner'; text: string; color: string; bad?: boolean }
   | { id: number; kind: 'toast'; text: string; tone: 'enemy' | 'info' | 'damage' };
 
 /** How long each kind stays on screen, in ms. */
@@ -98,7 +99,7 @@ export function FxLayer() {
 
   return createPortal(
     <div className="pointer-events-none fixed inset-0 z-[90] overflow-hidden">
-      <AnimatePresence>{flight && <Shot key={keyOf(flight.from) + keyOf(flight.to)} flight={flight} onLand={add} />}</AnimatePresence>
+      <AnimatePresence>{flight && !tableMounted() && <Shot key={keyOf(flight.from) + keyOf(flight.to)} flight={flight} onLand={add} />}</AnimatePresence>
       <AnimatePresence>
         {items.map((item) => (
           <FxItem key={item.id} item={item} />
@@ -137,8 +138,57 @@ type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 type NewItem = Without<Item, 'id'>;
 type Add = (item: NewItem, life?: number) => void;
 
+/**
+ * One event, on the tabletop: only physical things move. Markers fly to and
+ * from the supply, a destroyed module leaves for the discard, and the calls
+ * (whose turn, a 1st down) go to the panel under the table.
+ */
+function playOnTable(event: RunEvent, add: Add) {
+  switch (event.kind) {
+    case 'hit': {
+      const el = find(event.target);
+      if (!el) return;
+      el.animate(
+        [{ translate: '0 0' }, { translate: '-6px 0' }, { translate: '5px 0' }, { translate: '-4px 0' }, { translate: '3px 0' }, { translate: '0 0' }],
+        { duration: 380, easing: 'ease-out' },
+      );
+      if (event.destroyed) moduleToDiscard(keyOf(event.target));
+      else if (!event.negated) chitsToSupply(keyOf(event.target), event.lost);
+      return;
+    }
+    case 'charge':
+      chitsFromSupply(keyOf(event.target), event.amount);
+      return;
+    case 'drain':
+      chitsToSupply(keyOf(event.target), event.amount);
+      return;
+    case 'reroute':
+      // A seat's own reroute was dragged marker by marker; the enemy's plays out here.
+      if (event.side.kind !== 'enemy') return;
+      event.moves.forEach((move, i) =>
+        window.setTimeout(
+          () => chitsBetween(keyOf({ side: event.side, slot: move.from }), keyOf({ side: event.side, slot: move.to }), move.amount),
+          i * 140,
+        ),
+      );
+      return;
+    case 'turn':
+      add({ kind: 'banner', text: event.label.toUpperCase(), color: '', bad: event.side.kind === 'enemy' });
+      return;
+    case 'first-down':
+      add({ kind: 'banner', text: event.side.kind === 'enemy' ? 'ENEMY 1ST DOWN' : '1ST DOWN', color: '', bad: event.side.kind === 'enemy' });
+      return;
+    case 'outcome':
+      add({ kind: 'banner', text: event.outcome === 'victory' ? 'SHIP DOWN' : 'DEFEAT', color: '', bad: event.outcome !== 'victory' }, 2000);
+      return;
+    default:
+      return;
+  }
+}
+
 /** One event, as the table sees it. */
 function play(event: RunEvent, add: Add) {
+  if (tableMounted()) return playOnTable(event, add);
   switch (event.kind) {
     case 'hit': {
       const el = find(event.target);
@@ -318,7 +368,10 @@ function FxItem({ item }: { item: Item }) {
           transition={{ duration: 0.5, delay: item.delay, ease: 'easeInOut' }}
         />
       );
-    case 'banner':
+    case 'banner': {
+      // On the tabletop the call belongs to the panel, not over the table.
+      const dock = tableMounted() ? document.getElementById('tt-flash') : null;
+      if (dock) return createPortal(<div className={`tt-flash${item.bad ? ' bad' : ''}`}>{item.text}</div>, dock);
       return (
         <motion.div
           className="absolute top-[38%] left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center"
@@ -335,6 +388,7 @@ function FxItem({ item }: { item: Item }) {
           </div>
         </motion.div>
       );
+    }
     case 'toast':
       return null; // stacked separately
   }
