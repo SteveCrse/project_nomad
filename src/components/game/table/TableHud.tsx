@@ -9,10 +9,11 @@ import { cardAims, type TablePlay } from './play';
 import type { Camera } from './useCamera';
 
 /**
- * The screen's own panel, under the table: whose turn and which down, what's
- * happening and what was rolled, the buttons for the down in hand, and the
- * view controls with the crew. Nothing here is a component of the game — it's
- * everything the table would otherwise have to say out loud.
+ * The screen's own panel, down the left side of the table (the config panel
+ * is its twin on the right): whose turn and which down, what's happening and
+ * what was rolled, the buttons for the down in hand, and the view controls
+ * with the crew. Nothing here is a component of the game — it's everything
+ * the table would otherwise have to say out loud.
  */
 export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) {
   const { state, config, fight, side, staged, mode, busy } = play;
@@ -29,6 +30,8 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
   const toggleTweaks = useUiStore((s) => s.toggleTweaks);
   const tweaksOpen = useUiStore((s) => s.tweaksOpen);
   const setViewSeat = useUiStore((s) => s.setViewSeat);
+  const open = useUiStore((s) => s.hudOpen);
+  const toggleHud = useUiStore((s) => s.toggleHud);
   const game = useGameStore();
   const [fullLog, setFullLog] = useState(false);
   const { build, loot } = play;
@@ -312,10 +315,15 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
       !!shipEngine.bestCell(CONTENT, holder.ship, cardId);
 
     if (build.drafting && setup) {
-      if (inHand?.kind === 'table') {
+      // A card is drafted by carrying it to the seat; the button only says it stays there.
+      const set = build.placed;
+      if (set) {
         acts.push(
-          <button key="take" className="tt-btn pri" title={setup.round === 0 ? undefined : 'It lies beside the ship until it is fitted'} onClick={() => { game.draftCard(inHand.cardId); build.pick(null); }}>
-            Take {name(inHand.cardId)}
+          <button key="draft" className="tt-btn pri pulse" title={set.where === 'rack' ? 'It lies beside the ship until it is fitted' : undefined} onClick={build.draftPlaced}>
+            Draft {name(set.cardId)}
+          </button>,
+          <button key="back" className="tt-btn" onClick={build.unplace}>
+            Carry it back
           </button>,
         );
       }
@@ -333,7 +341,7 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
           </button>,
         );
       }
-      if (inHand) {
+      if (inHand && !(set && inHand.kind === 'table')) {
         acts.push(
           <button key="down" className="tt-btn" onClick={() => build.pick(null)}>
             Put it back
@@ -491,8 +499,23 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
     }
   }
 
+  if (!open) {
+    return (
+      <button className="tt-hud-tab" aria-label="Show the game panel" aria-expanded={false} onClick={toggleHud}>
+        <span>››</span>
+        <span className="v">TABLE</span>
+      </button>
+    );
+  }
+
   return (
     <div className="tt-hud" aria-label="Game controls">
+      <div className="tt-hud-head">
+        <span>TABLE · PANEL</span>
+        <button aria-expanded onClick={toggleHud}>
+          ‹‹ HIDE
+        </button>
+      </div>
       <div className="tt-hud-box">{turnBox}</div>
       <div className="tt-hud-box" aria-live="polite">
         <div className="tt-hud-k" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
@@ -564,7 +587,6 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
           })}
         </div>
       </div>
-      <div id="tt-flash" />
     </div>
   );
 }
@@ -646,10 +668,13 @@ function headline(play: TablePlay, landed: number): string {
       if (!setup) return '';
       if (held?.kind === 'token') return 'A token in hand. Click the modules it goes on.';
       if (held) return `${heldName} in hand. ${setup.round === 0 && !setup.complete ? 'Put it at your seat.' : 'Outlined cells are where it may go.'}`;
+      if (build.placed) {
+        return `${getCard(build.placed.cardId)?.name ?? 'The card'} is set down at ${label(build.placed.player)}'s seat. Draft it to keep it there, move it, or carry it back to the middle.`;
+      }
       if (setup.complete) return 'The draft is over. Rearrange the ships, and put the leftover tokens on modules as starting energy: drag them from each seat’s pile.';
       if (!build.drafter) return 'Dealing…';
-      if (setup.round === 0) return `${label(build.drafter)} takes a cockpit from the middle of the table.`;
-      return `${label(build.drafter)} buys a module from the middle and carries it to the ship, or passes. Tokens are paid into the supply.`;
+      if (setup.round === 0) return `${label(build.drafter)} takes a cockpit: drag one from the middle of the table onto the ship grid.`;
+      return `${label(build.drafter)} buys a module: drag one from the middle onto the ship, or beside it, or pass. Tokens are paid into the supply.`;
     }
     case 'victory':
       return 'Mission won.';

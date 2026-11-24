@@ -17,12 +17,12 @@ import type { CardId, PlayerId, SlotIndex } from '@engine/types';
  */
 
 export type DragPayload =
-  /** A face-up card of the draft spread. */
-  | { kind: 'table'; cardId: CardId }
+  /** A face-up card of the draft spread. `at` is where it lies there, which tells copies of a card apart. */
+  | { kind: 'table'; cardId: CardId; at: number }
   /** A drafted card lying beside a seat's ship, not fitted yet. */
-  | { kind: 'hold'; player: PlayerId; cardId: CardId }
+  | { kind: 'hold'; player: PlayerId; cardId: CardId; at: number }
   /** A card of a seat's scrap deck, laid out at a rebuild. */
-  | { kind: 'scrap'; player: PlayerId; cardId: CardId }
+  | { kind: 'scrap'; player: PlayerId; cardId: CardId; at: number }
   /** A module on a seat's ship. */
   | { kind: 'grid'; player: PlayerId; slot: SlotIndex; cardId: CardId }
   /** A leftover energy token, off a seat's pile. */

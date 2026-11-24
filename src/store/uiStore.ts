@@ -81,6 +81,9 @@ function saveTweaks(tweaks: TableTweaks): void {
 interface UiStore {
   tab: TabId;
   configOpen: boolean;
+  /** The table's own panel, down its left side. */
+  hudOpen: boolean;
+  toggleHud: () => void;
   /** 0 = all rarities. */
   rarityFilter: number;
 
@@ -151,6 +154,8 @@ interface UiStore {
 export const useUiStore = create<UiStore>((set) => ({
   tab: 'table',
   configOpen: true,
+  hudOpen: true,
+  toggleHud: () => set((s) => ({ hudOpen: !s.hudOpen })),
   rarityFilter: 0,
   deckMode: 'gallery',
   deckKind: null,

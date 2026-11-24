@@ -32,6 +32,8 @@ export interface ShipBuild {
   /** What picking a marker off this module carries; null when none of them may leave. */
   liftChit: (slot: ShipSlot) => DragPayload | null;
   onPick: (slot: ShipSlot) => void;
+  /** A card set down on an open cell of this ship, not drafted yet. */
+  placed?: { cell: Cell; cardId: CardId; payload: DragPayload; inHand: boolean; onPick: () => void } | null;
 }
 
 /** Keeps a pointer-down on something draggable from also panning the table. */
@@ -193,6 +195,11 @@ export function TableShip({
       const slot = live.get(`${x},${y}`);
       const wreck = gone.get(`${x},${y}`);
       const style = { gridRow: row(y), gridColumn: col(x) };
+      const set = build?.placed;
+      if (!slot && set && set.cell.x === x && set.cell.y === y) {
+        cells.push(<PlacedCard key="placed" set={set} style={style} />);
+        continue;
+      }
       if (!slot && build && open.has(`${x},${y}`)) {
         cells.push(<OpenCell key={`o${x},${y}`} id={`cell:${side.id}:${x},${y}`} cell={{ x, y }} build={build} style={style} />);
         continue;
@@ -293,6 +300,23 @@ function ModuleCard({
           />
         );
       }}
+    />
+  );
+}
+
+/** A card carried over from the draft and set down: it can still be picked up and moved, or carried back. */
+export function PlacedCard({ set, style }: { set: NonNullable<ShipBuild['placed']>; style?: React.CSSProperties }) {
+  return (
+    <TableCard
+      cardId={set.cardId}
+      cls={`can tt-drag placed${set.inHand ? ' sel' : ''}`}
+      style={style}
+      title="Set down, not drafted yet. Drag it somewhere else, or back to the middle."
+      onClick={(e) => {
+        e.stopPropagation();
+        set.onPick();
+      }}
+      {...draggable(set.payload, cardGhost(set.cardId))}
     />
   );
 }

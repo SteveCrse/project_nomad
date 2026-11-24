@@ -3,7 +3,7 @@
  *
  * The table holds only physical components — cards, tiles, minis, energy
  * markers, the die. Everything a screen adds (controls, downs, log, crew,
- * highlights) lives in the panel below it or is drawn in --ui blue, which is
+ * highlights) lives in the panel beside it or is drawn in --ui blue, which is
  * deliberately outside the game's palette so it never reads as printed.
  * Tweaks land as data-tt-* attributes on <html>, so the effects layer (which
  * lives outside the table) follows them too.
@@ -32,12 +32,12 @@ html[data-tt-surface='night'] { --tt-table: #1a1e14; --tt-table-2: #161a11; }
 html[data-tt-size='s'] { --tt-k: 0.5; }
 html[data-tt-size='l'] { --tt-k: 0.7; }
 
-.tt { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; color: var(--hud-ink); font-family: var(--font-body); font-size: 15px; }
+.tt { display: flex; min-height: 0; flex: 1; flex-direction: row; gap: 16px; color: var(--hud-ink); font-family: var(--font-body); font-size: 15px; }
 .tt button { font: inherit; cursor: pointer; }
 .tt button:focus-visible, .tt [tabindex]:focus-visible { outline: 2px solid var(--ui); outline-offset: 2px; }
 
 /* ---------- stage + table ---------- */
-.tt-stage { position: relative; min-height: 300px; flex: 1; overflow: hidden; perspective: 2400px; border-radius: 16px; touch-action: none; cursor: grab; background: #0c0e0b; }
+.tt-stage { position: relative; min-height: 300px; min-width: 0; flex: 1; overflow: hidden; perspective: 2400px; border-radius: 16px; touch-action: none; cursor: grab; background: #0c0e0b; }
 .tt-stage.panning { cursor: grabbing; }
 .tt-cam { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.3, 0.7, 0.3, 1); }
 .tt-cam.live { transition: none; }
@@ -174,11 +174,15 @@ html[data-tt-chit='hex'] .tt-chit { border-radius: 0; clip-path: polygon(25% 3%,
 @keyframes tt-land { from { opacity: 0; transform: scale(1.6); } }
 
 /* enemy action decks */
-.tt-adecks { display: grid; grid-template-columns: repeat(2, var(--tt-cw)); gap: 22px 18px; perspective: 700px; }
-.tt-adeck { position: relative; }
+.tt-adecks { display: grid; grid-auto-flow: column; grid-auto-columns: var(--tt-cw); gap: 18px; perspective: 700px; }
+.tt-adeck { position: relative; display: grid; grid-template-rows: var(--tt-ch) var(--tt-ch); gap: 12px; }
+.tt-adeck-pile { position: relative; }
+.tt-adeck-pile .tt-back, .tt-adeck-pile .tt-guide { position: absolute; inset: 0; }
+.tt-adeck-pile .tt-back.l1 { transform: translate(3px, 3px); filter: brightness(0.7); }
+.tt-adeck-pile .tt-back.l2 { transform: translate(6px, 6px); filter: brightness(0.5); }
 @keyframes tt-flip { from { transform: rotateY(-90deg); } }
 .tt-adeck.now .tt-card { outline-color: var(--ui); }
-.tt-adeck .tt-back { width: var(--tt-cw); height: var(--tt-ch); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(179 59 46 / 0.6), 2px 2px 0 var(--n-700), 4px 4px 0 var(--n-800); color: var(--toggle-red-300); }
+.tt-adeck .tt-back { width: var(--tt-cw); height: var(--tt-ch); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(179 59 46 / 0.6); color: var(--toggle-red-300); }
 .tt-ui-num { position: absolute; top: -10px; left: -8px; z-index: 2; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--ui); color: #fff; font: 700 11px/1 var(--font-mono); }
 
 /* middle of the table: where the die lands and events are revealed */
@@ -242,13 +246,24 @@ html[data-tt-hand='row'] .tt-hand .tt-card { transform-origin: 50% 50%; }
 .tt-fxg.tt-chit { width: auto; height: auto; }
 
 /* ---------- screen panel (extradiegetic) ---------- */
+/* Down the left edge of the screen, the way the config panel is down the right: flush, full height, hideable. */
 .tt-hud {
-  position: relative; flex: none; display: grid; gap: 10px 22px;
-  grid-template-columns: 210px minmax(260px, 1fr) minmax(220px, 360px) 200px;
-  padding: 14px; border-radius: 14px; background: var(--hud); box-shadow: 0 0 0 1px var(--hud-line);
+  position: relative; flex: none; display: flex; flex-direction: column; gap: 18px; width: 300px; box-sizing: border-box;
+  margin: -20px 0 -20px -20px; padding: 0 14px 18px; overflow-y: auto; background: var(--hud); border-right: 2px solid #000;
 }
-@media (max-width: 1280px) { .tt-hud { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 720px) { .tt-hud { grid-template-columns: 1fr; } }
+.tt-hud-head {
+  position: sticky; top: 0; z-index: 2; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 -14px; padding: 10px 12px; background: #0a0c0a; border-bottom: 1px solid var(--hud-line);
+  font: 400 11px/1 var(--font-mono); letter-spacing: 0.16em; color: var(--ui);
+}
+.tt-hud-head button { border: 1px solid var(--hud-line); background: none; padding: 3px 6px; color: var(--hud-dim); font: 400 10px/1 var(--font-mono) !important; }
+.tt-hud-head button:hover { border-color: var(--ui); color: var(--ui); }
+.tt-hud-tab {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 28px; margin: -20px 0 -20px -20px; padding: 12px 0 0;
+  border: 0; border-right: 2px solid #000; background: var(--hud); color: var(--ui); font: 400 11px/1 var(--font-mono) !important;
+}
+.tt-hud-tab .v { font-size: 10px; letter-spacing: 0.18em; writing-mode: vertical-rl; }
+@media (max-width: 720px) { .tt-hud { width: 240px; } }
 .tt-hud-box { display: grid; gap: 8px; align-content: start; min-width: 0; }
 .tt-hud-k { font: 700 11px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--hud-dim); }
 .tt-turn { font: 800 18px/1.1 var(--font-display); }
@@ -266,7 +281,7 @@ html[data-tt-hand='row'] .tt-hand .tt-card { transform-origin: 50% 50%; }
 .tt-roll-line .hit { color: var(--ui-ok); }
 .tt-roll-line .miss { color: var(--ui-tgt); }
 .tt-log { margin: 0; padding: 0; list-style: none; font: 400 12px/1.5 var(--font-mono); color: var(--hud-dim); }
-.tt-log.full { max-height: 150px; overflow-y: auto; }
+.tt-log.full { max-height: 260px; overflow-y: auto; }
 .tt-log li:first-child { color: #c6cbb7; }
 .tt-acts { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; align-items: center; }
 .tt-btn {
@@ -292,7 +307,7 @@ html[data-tt-hand='row'] .tt-hand .tt-card { transform-origin: 50% 50%; }
 .tt-mate.out { opacity: 0.5; }
 .tt-mate .tag { font: 700 10px/1 var(--font-mono); color: var(--hud-dim); }
 .tt-mate .tag.aggro { color: var(--ui-tgt); }
-#tt-flash { position: absolute; left: 50%; top: 0; width: 0; height: 0; z-index: 5; }
+#tt-flash { position: absolute; left: 50%; bottom: 46px; width: 0; height: 0; z-index: 25; }
 .tt-flash { position: absolute; left: 0; top: 0; transform: translate(-50%, -60%); padding: 10px 26px; border-radius: 10px; white-space: nowrap;
   background: var(--ui); color: #fff; font: 800 26px/1 var(--font-display); letter-spacing: 0.02em; box-shadow: 0 10px 30px rgb(0 0 0 / 0.5); pointer-events: none;
   animation: tt-flash 1.5s ease-out both; }
@@ -328,6 +343,13 @@ html[data-tt-grid='off'] .tt-open.lit, html[data-tt-grid='off'] .tt-open.over { 
 
 /* the middle of the table, when cards are dealt into it */
 .tt-spread { display: grid; gap: 14px; justify-content: center; align-content: center; min-width: calc(var(--tt-cw) * 3 + 28px); min-height: calc(var(--tt-ch) * 2 + 14px); padding: 14px 10px; }
+
+.tt-spread { border-radius: 14px; outline: 3px solid transparent; outline-offset: 2px; transition: outline-color 0.15s; }
+.tt-spread.lit { outline: 3px dashed var(--ui-ok); cursor: pointer; }
+.tt-spread.over { outline: 3px solid var(--ui-ok); }
+/* a card of the spread set down at a seat, not drafted yet: its place in the middle stays open */
+.tt-card.away { visibility: hidden; }
+.tt-card.placed { outline: 3px dashed var(--ui); outline-offset: 3px; animation: none; }
 
 /* a seat's things */
 .tt-seat-in { border-radius: 14px; outline: 3px solid transparent; outline-offset: 10px; transition: outline-color 0.15s; }
