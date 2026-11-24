@@ -20,15 +20,16 @@ React 19 + Zustand + Tailwind 4 + Vite, TypeScript. No test suite; verify with `
 | Content (cards, parts, bosses…) | `src/data/*.ts` | injected through `engine/content.ts`; engine never imports `src/data` |
 | State | `src/store/` | `gameStore` (run), `configStore` (+ `configFields.ts` form schema), `deckStore` (editor), `uiStore` |
 | Derived view logic | `src/lib/` | `combatView`, `combatControls`, `cardHints`, `palette` |
-| Screens | `src/views/` | `TableView` (play), `MissionView` (map), `ShipBuilderView` (+ `views/shipBuilder/`: `DraftPanel`, `GridEditor`, `Rack`, `RebuildBar`, `SelectedPanel`), `CardBrowserView` |
-| Play UI (tabletop) | `src/components/game/table/` | `Tabletop` (table, seats, centre, hand), `TableShip`, `TableDie`, `TableHud` (panel under the table), `TweakDrawer`, `useCamera`, `play.ts` (engine ↔ clicks); look: `src/styles/tabletop.css`; reference mockup: `docs/mockups/tabletop.html` |
-| Shared game UI | `src/components/game/` | `PromptOverlay`, `CardTile`, `ModuleTile`, `ShipGrid`, `LogPanel` |
+| Screens | `src/views/` | `TableView` (the whole game, on the tabletop), `CardBrowserView` (deck editor). There is no separate map, builder or prompt screen |
+| Play UI (tabletop) | `src/components/game/table/` | `Tabletop` (table, seats with purse/rack/berth, centre with draft and loot spreads, mission strip, hand, card flights), `TableShip` (ship grid, `PartFace`, build-mode drop cells), `TableDie`, `TableHud` (panel under the table: every phase's buttons and headline), `TweakDrawer`, `useCamera`, `play.ts` (combat: engine ↔ clicks), `build.ts` (draft, layout, tokens, rebuild: what may be dropped where); look: `src/styles/tabletop.css`; reference mockup: `docs/mockups/tabletop.html` |
+| Shared game UI | `src/components/game/` | `CardTile` (a full printed card: the editor, and the table's read-a-card peek) |
 | Animation | `src/components/fx/` | `FxLayer`, `tableFx` (marker/card flights on the tabletop), `DiceOverlay` (off the table tab), `drag` |
 | Deck editor UI | `src/components/editor/` | `DeckTable`, `CardPanel`, `inputs` |
 | Design system | `src/components/ds/`, `src/styles/tokens.css`, `src/index.css` | |
 
 ## Working conventions
 
+- The tool is the physical game table. Anything that happens physically in the real game (dealing, taking a card, paying or placing tokens, moving a mini, stripping a wreck) happens on the table, by dragging or clicking the component itself. The panel under the table is only for what has no physical counterpart (declaring an attack, passing, ending a turn) and for tool shortcuts. No pop-ups, no extra screens.
 - Every state change is animated; every roll is clicked and shown before it applies; turns end on a button.
 - Engine steps are pure `(state, …) → state`. Keep UI logic out of `src/engine/`.
 

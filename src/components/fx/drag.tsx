@@ -2,8 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { create } from 'zustand';
-import type { CardId, SlotIndex } from '@engine/types';
-import { departFrom } from '@/lib/fly';
+import type { CardId, PlayerId, SlotIndex } from '@engine/types';
 
 /**
  * Drag and drop, by pointer.
@@ -18,14 +17,20 @@ import { departFrom } from '@/lib/fly';
  */
 
 export type DragPayload =
+  /** A face-up card of the draft spread. */
   | { kind: 'table'; cardId: CardId }
-  | { kind: 'hold'; cardId: CardId }
-  | { kind: 'scrap'; cardId: CardId }
-  | { kind: 'grid'; slot: SlotIndex; cardId: CardId }
-  /** A leftover energy token, off the pool. */
-  | { kind: 'token' }
-  /** ⚡ off a module, in a reroute. */
-  | { kind: 'reroute'; slot: SlotIndex };
+  /** A drafted card lying beside a seat's ship, not fitted yet. */
+  | { kind: 'hold'; player: PlayerId; cardId: CardId }
+  /** A card of a seat's scrap deck, laid out at a rebuild. */
+  | { kind: 'scrap'; player: PlayerId; cardId: CardId }
+  /** A module on a seat's ship. */
+  | { kind: 'grid'; player: PlayerId; slot: SlotIndex; cardId: CardId }
+  /** A leftover energy token, off a seat's pile. */
+  | { kind: 'token'; player: PlayerId }
+  /** A token placed as starting ⚡, on its way back to the pile. */
+  | { kind: 'untoken'; player: PlayerId; slot: SlotIndex }
+  /** The Item cards a Loot step turned up, handed to a seat. */
+  | { kind: 'reward' };
 
 interface Point {
   x: number;
@@ -148,11 +153,6 @@ export function dragSource(
         const id = zoneAt(pointer, payload);
         const zone = id ? zones.get(id)?.current : undefined;
         if (zone && drag.origin) {
-          // Whatever the drop makes flies in from where the ghost was let go.
-          const left = pointer.x - drag.grip.x;
-          const top = pointer.y - drag.grip.y;
-          const landed = new DOMRect(left, top, drag.origin.width, drag.origin.height);
-          if ('cardId' in payload) departFrom(`card:${payload.cardId}`, landed);
           useDragStore.setState(IDLE);
           zone.onDrop(payload);
           return;

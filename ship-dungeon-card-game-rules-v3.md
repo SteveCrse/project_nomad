@@ -355,3 +355,24 @@ are the questions the next design session should close.
     1st down (see 24), but no cockpit card is marked with the icon, so the
     tabletop prints `1ST` only on the modules that carry it. Open: whether
     cockpit cards should print it too.
+
+**Added with the whole game on the table**
+
+29. **Where does a drafted card go, and the tokens that paid for it?** The
+    draft is dealt face up into the middle of the table. A seat carries its
+    card to its ship; a module it doesn't fit straight away lies face up beside
+    the ship until it does. The tokens paid go into the shared energy supply.
+    Open: whether an unfitted card is open information, and whether a card can
+    be bought only to be kept back for the scrap deck.
+30. **Who takes the loot of a Loot step?** The Item cards are laid face up in
+    the middle and one living seat takes all of them (cards over its hand size
+    are discarded). Open: whether loot is split, drafted round the table, or
+    belongs to the seat that moved there.
+31. **How is the boss taken in pieces?** Its wreck stays where it was shot
+    down and seats take cards straight off it, one each round the table, until
+    everyone passes or is full. A regular wreck stays on the table the same way
+    until a seat takes it over or the party leaves it.
+32. **When may the others rebuild?** At a rebuild every seat's scrap deck is
+    laid face up beside its ship and all seats build at once. Open: whether
+    scrap decks are open information outside a rebuild (the tool keeps them
+    face down then).

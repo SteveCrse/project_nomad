@@ -2,15 +2,13 @@ import { create } from 'zustand';
 import type { CardId, CardKind, PlayerId, RerouteMove, SlotIndex } from '@engine/types';
 import { ship as shipEngine } from '@engine';
 
-export type TabId = 'mission' | 'table' | 'builder' | 'cards';
+export type TabId = 'table' | 'cards';
 
 /** How the Cards tab shows the deck: as printed cards, or as a spreadsheet. */
 export type DeckMode = 'gallery' | 'sheet';
 
 export const TABS: { id: TabId; label: string }[] = [
-  { id: 'mission', label: 'Mission' },
   { id: 'table', label: 'Table' },
-  { id: 'builder', label: 'Ship Builder' },
   { id: 'cards', label: 'Cards' },
 ];
 
@@ -40,6 +38,8 @@ export interface TableTweaks {
   tilt: 'on' | 'off';
   /** Turn the table so the seat on the clock sits at the bottom. */
   follow: 'on' | 'off';
+  /** Rest the pointer on a card to hold it up and read it. */
+  peek: 'on' | 'off';
 }
 
 export const TWEAK_DEFAULTS: TableTweaks = {
@@ -51,6 +51,7 @@ export const TWEAK_DEFAULTS: TableTweaks = {
   grid: 'on',
   tilt: 'on',
   follow: 'on',
+  peek: 'on',
 };
 
 const TWEAK_KEY = 'nomad-table-tweaks-v1';
@@ -95,11 +96,6 @@ interface UiStore {
   deckColumnWidths: Record<string, number>;
   /** Card open in the editor panel. */
   editingCardId: CardId | null;
-  /** Whose ship the builder is editing. */
-  builderPlayerId: PlayerId;
-  selectedPartId: CardId | null;
-  /** Follow the run's phase when it changes views on its own. */
-  autoFollow: boolean;
 
   // ---- combat ----
   /** The action the seat on the clock is building, or null between actions. */
@@ -118,7 +114,10 @@ interface UiStore {
   tableNote: string | null;
   /** Rolls of the step in hand whose dice have landed on the table. */
   rollsLanded: number;
+  /** The seat the table is turned to while nobody is on the clock. */
+  viewSeat: PlayerId | null;
 
+  setViewSeat: (id: PlayerId | null) => void;
   setTweak: <K extends keyof TableTweaks>(key: K, value: TableTweaks[K]) => void;
   resetTweaks: () => void;
   toggleTweaks: (open?: boolean) => void;
@@ -136,10 +135,7 @@ interface UiStore {
   /** Drop one column back to its default width, or all of them. */
   resetDeckColumn: (key?: string) => void;
   editCard: (id: CardId | null) => void;
-  setBuilderPlayer: (id: PlayerId) => void;
-  selectPart: (id: CardId | null) => void;
   setManualDamage: (n: number) => void;
-  setAutoFollow: (on: boolean) => void;
   setCombatMode: (mode: CombatMode | null) => void;
   /** Reroute: pick (or let go of) the module ⚡ comes out of. */
   pickRerouteSource: (slot: SlotIndex | null) => void;
@@ -153,7 +149,7 @@ interface UiStore {
 }
 
 export const useUiStore = create<UiStore>((set) => ({
-  tab: 'mission',
+  tab: 'table',
   configOpen: true,
   rarityFilter: 0,
   deckMode: 'gallery',
@@ -161,9 +157,6 @@ export const useUiStore = create<UiStore>((set) => ({
   deckSearch: '',
   deckColumnWidths: {},
   editingCardId: null,
-  builderPlayerId: 'p1',
-  selectedPartId: null,
-  autoFollow: true,
 
   combatMode: null,
   manualDamage: 0,
@@ -174,7 +167,9 @@ export const useUiStore = create<UiStore>((set) => ({
   tableSel: null,
   tableNote: null,
   rollsLanded: 0,
+  viewSeat: null,
 
+  setViewSeat: (viewSeat) => set({ viewSeat }),
   setTweak: (key, value) =>
     set((s) => {
       const tweaks = { ...s.tweaks, [key]: value };
@@ -205,10 +200,7 @@ export const useUiStore = create<UiStore>((set) => ({
         : {},
     })),
   editCard: (editingCardId) => set({ editingCardId }),
-  setBuilderPlayer: (builderPlayerId) => set({ builderPlayerId }),
-  selectPart: (selectedPartId) => set({ selectedPartId }),
   setManualDamage: (manualDamage) => set({ manualDamage: Math.max(0, manualDamage) }),
-  setAutoFollow: (autoFollow) => set({ autoFollow }),
   setCombatMode: (combatMode) => set({ combatMode }),
   pickRerouteSource: (from) =>
     set((s) => (s.combatMode?.kind === 'reroute' ? { combatMode: { ...s.combatMode, from, amount: undefined } } : s)),

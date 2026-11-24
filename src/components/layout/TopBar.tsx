@@ -10,6 +10,7 @@ export function TopBar() {
   const toggleConfig = useUiStore((s) => s.toggleConfig);
   const state = useGame();
   const seed = useGameStore((s) => s.seed);
+  const newRun = useGameStore((s) => s.newRun);
 
   const side = state?.combat ? combat.currentSide(state.combat) : undefined;
   const battle = state?.combat ? { party: state.party, combat: state.combat } : null;
@@ -31,6 +32,14 @@ export function TopBar() {
           <Readout label="ROUND" value={state?.combat?.round ?? 0} />
           <Readout label="TURN" value={turn.toUpperCase()} />
         </div>
+
+        <button
+          onClick={() => newRun()}
+          title="Clear the table and set up a new game from the current config"
+          className="cursor-pointer border border-border-strong bg-crt-glass px-3 py-1.5 font-mono text-[11px] tracking-[0.1em] text-crt-white hover:bg-crt-glass-raised"
+        >
+          NEW RUN
+        </button>
 
         <button
           onClick={toggleConfig}

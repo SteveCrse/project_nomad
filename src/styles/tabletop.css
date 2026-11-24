@@ -345,3 +345,56 @@ html[data-tt-hand='row'] .tt-icard { transform-origin: 50% 50%; }
 @media (prefers-reduced-motion: reduce) {
   .tt *, .tt *::before, .tt *::after, .tt-fxg { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- the whole game on the table: draft, tokens, racks, spreads ---------- */
+.tt-bare { display: grid; place-items: center; cursor: default; }
+.tt-bare-box { display: grid; gap: 12px; justify-items: center; max-width: 420px; text-align: center; }
+
+/* a card off a ship, face up */
+.tt-module.off { filter: saturate(0.4) brightness(0.85); cursor: not-allowed; }
+.tt-module.tt-drag { cursor: grab; touch-action: none; }
+.tt-module.take { outline: 3px dashed var(--ui-ok); cursor: pointer; }
+.tt-module.take:hover { outline-style: solid; transform: translateY(-3px); }
+
+/* an open cell a card may be put on */
+.tt-open { transition: background-color 0.15s, border-color 0.15s, transform 0.15s; }
+.tt-open.lit { border: 2.5px dashed var(--ui-ok); background: rgb(56 211 159 / 0.14); cursor: pointer; }
+.tt-open.over { border: 2.5px solid var(--ui-ok); background: rgb(56 211 159 / 0.3); transform: scale(1.04); }
+html[data-tt-grid='off'] .tt-open.lit, html[data-tt-grid='off'] .tt-open.over { display: block; }
+
+/* the middle of the table, when cards are dealt into it */
+.tt-spread { display: grid; gap: 14px; justify-content: center; align-content: center; min-width: calc(var(--tt-cw) * 3 + 28px); min-height: calc(var(--tt-ch) * 2 + 14px); padding: 14px 10px; }
+.tt-icard.flat { position: relative; bottom: auto; transform: none; transform-origin: 50% 50%; cursor: grab; touch-action: none; animation: tt-deal 0.32s ease-out backwards; }
+.tt-icard.flat:hover { transform: translateY(-3px); }
+
+/* a seat's things */
+.tt-seat-in { border-radius: 14px; outline: 3px solid transparent; outline-offset: 10px; transition: outline-color 0.15s; }
+.tt-seat-in.lit { outline: 3px dashed var(--ui-ok); }
+.tt-seat-in.over { outline: 3px solid var(--ui-ok); }
+.tt-purse { position: relative; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; width: 68px; min-height: 40px; padding: 6px; border-radius: 8px; outline: 1.5px dashed var(--ui-soft); outline-offset: 0; }
+.tt-purse.lit, .tt-purse.sel { outline: 2.5px dashed var(--ui-ok); }
+.tt-purse.over { outline: 2.5px solid var(--ui-ok); }
+.tt-purse.sel { cursor: pointer; }
+html[data-tt-grid='off'] .tt-purse { outline-color: transparent; }
+.tt-rack { position: relative; display: grid; grid-template-columns: repeat(2, var(--tt-cw)); grid-auto-rows: var(--tt-ch); gap: var(--tt-gap); padding: 8px; border-radius: 10px; outline: 1.5px dashed var(--ui-soft); min-height: var(--tt-ch); }
+.tt-rack.lit { outline: 2.5px dashed var(--ui-ok); cursor: pointer; }
+.tt-rack.over { outline: 2.5px solid var(--ui-ok); background: rgb(56 211 159 / 0.14); }
+.tt-rack-empty { grid-column: 1 / -1; }
+html[data-tt-grid='off'] .tt-rack { outline-color: transparent; }
+.tt-ui-tag { position: absolute; top: -9px; left: 10px; z-index: 2; padding: 2px 7px; border-radius: 99px; background: var(--ui); color: #fff; font: 700 10px/1.2 var(--font-body); letter-spacing: 0.14em; white-space: nowrap; opacity: 0.85; }
+html[data-tt-grid='off'] .tt-ui-tag { display: none; }
+
+/* things waiting to be handled */
+.tt-deck.next { cursor: pointer; outline: 2.5px solid var(--ui); outline-offset: 5px; border-radius: 8px; }
+button.tt-ecard { border: 0; padding: 0; text-align: left; font: inherit; cursor: pointer; outline: 2.5px solid var(--ui); outline-offset: 5px; }
+.tt-marker { position: absolute; right: -6px; top: -6px; width: 14px; height: 14px; border-radius: 50%; background: var(--steel-700); box-shadow: 0 2px 0 rgb(0 0 0 / 0.4), inset 0 0 0 2px var(--cream-100); }
+
+/* a card held up to read */
+.tt-peek { color: var(--n-900); position: absolute; left: 14px; top: 14px; z-index: 30; pointer-events: none; filter: drop-shadow(0 12px 24px rgb(0 0 0 / 0.55)); animation: tt-peek 0.16s ease-out; }
+@keyframes tt-peek { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+
+button.tt-mate { border: 0; width: 100%; text-align: left; color: inherit; cursor: pointer; }
+button.tt-mate:hover { background: #242b21; }
+
+/* a card in the air never takes the pointer: what's under it has to */
+.tt-ghost, .tt-ghost * { pointer-events: none !important; animation: none !important; }

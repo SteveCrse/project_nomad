@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { GameState } from '@engine/types';
-import { ACTION_TEXT, combat, hitChance, spendRange } from '@engine';
-import { getCard, getPart } from '@data';
-import { reviveOptions } from '@/lib/combatView';
+import { ACTION_TEXT, combat, hitChance, ship as shipEngine, spendRange } from '@engine';
+import { CONTENT, getCard, getPart } from '@data';
+import { reviveOptions, scrapCapacityFor } from '@/lib/combatView';
 import { useGameStore, type RollEvent } from '@/store/gameStore';
 import { useUiStore } from '@/store/uiStore';
 import { cardAims, type TablePlay } from './play';
@@ -28,8 +28,12 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
   const setManualDamage = useUiStore((s) => s.setManualDamage);
   const toggleTweaks = useUiStore((s) => s.toggleTweaks);
   const tweaksOpen = useUiStore((s) => s.tweaksOpen);
-  const setTab = useUiStore((s) => s.setTab);
+  const setViewSeat = useUiStore((s) => s.setViewSeat);
+  const game = useGameStore();
   const [fullLog, setFullLog] = useState(false);
+  const { build, loot } = play;
+  const setup = state.setup;
+  const prompt = state.prompt;
 
   const enemy = side?.kind === 'enemy';
   const battle = fight ? { party: state.party, combat: fight } : null;
@@ -94,6 +98,31 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
               : `${after(fight.turn.id)} goes next. Out of downs: the enemy's turn.`}
           </p>
         )}
+      </>
+    );
+  } else if (build.drafting && setup) {
+    turnBox = (
+      <>
+        <div className="tt-hud-k">Setup · sector {state.sector}</div>
+        <div className="tt-turn">
+          {setup.complete ? 'Starting energy' : setup.round === 0 ? 'Cockpit round' : `Module round ${setup.round} of ${config.draftRounds}`}
+        </div>
+        {!setup.complete && (
+          <div className="tt-pips">
+            {setup.order.map((id) => (
+              <div key={id} className={`tt-pip${id === build.drafter ? ' now' : setup.picked.includes(id) ? ' used' : ''}`}>
+                {label(id)}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="tt-note">
+          {setup.complete
+            ? 'Tokens nobody spent go on the modules as starting energy. Any left over when the mission starts are lost.'
+            : setup.round === 0
+              ? 'Cockpits are free. Pick order reverses every round.'
+              : 'A module costs 1 to 3 tokens. Every token kept is starting energy.'}
+        </p>
       </>
     );
   } else {
@@ -272,22 +301,191 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
       );
     }
   } else if (!fight || fight.outcome) {
-    if (state.phase === 'setup') {
+    const name = (cardId: string | undefined) => getCard(cardId ?? '')?.name ?? 'the card';
+    const seatOf = (id: string | null | undefined) => state.party.players.find((p) => p.id === id);
+    const inHand = build.inHand;
+    const holder = inHand && 'player' in inHand ? seatOf(inHand.player) : undefined;
+    // "Wherever it fits best": the engine picks the cell.
+    const fits = (cardId: string) =>
+      !!holder &&
+      shipEngine.hasRoomFor(CONTENT, holder.ship, cardId, config.shipSizeRule) &&
+      !!shipEngine.bestCell(CONTENT, holder.ship, cardId);
+
+    if (build.drafting && setup) {
+      if (inHand?.kind === 'table') {
+        acts.push(
+          <button key="take" className="tt-btn pri" title={setup.round === 0 ? undefined : 'It lies beside the ship until it is fitted'} onClick={() => { game.draftCard(inHand.cardId); build.pick(null); }}>
+            Take {name(inHand.cardId)}
+          </button>,
+        );
+      }
+      if (inHand?.kind === 'hold' && holder) {
+        acts.push(
+          <button key="fit" className="tt-btn pri" disabled={!fits(inHand.cardId)} title={fits(inHand.cardId) ? undefined : 'Nowhere on the ship it may go'} onClick={() => { game.assemblePart(holder.id, inHand.cardId, null); build.pick(null); }}>
+            Fit {name(inHand.cardId)} where it fits best
+          </button>,
+        );
+      }
+      if (inHand?.kind === 'grid' && holder) {
+        acts.push(
+          <button key="pull" className="tt-btn" onClick={() => { game.returnPart(holder.id, inHand.slot); build.pick(null); }}>
+            Take {name(inHand.cardId)} off the ship
+          </button>,
+        );
+      }
+      if (inHand) {
+        acts.push(
+          <button key="down" className="tt-btn" onClick={() => build.pick(null)}>
+            Put it back
+          </button>,
+        );
+      }
+      if (build.drafter && setup.round > 0 && !setup.complete) {
+        acts.push(
+          <button key="pass" className="tt-btn" title="Skip this round and keep the tokens for starting energy" onClick={game.passDraft}>
+            {label(build.drafter)} passes
+          </button>,
+        );
+      }
+      if (!setup.complete) {
+        acts.push(
+          <button key="auto" className="tt-btn" title="The tool picks for every seat until the draft is over" onClick={game.draftAll}>
+            Draft the rest
+          </button>,
+        );
+      }
+      const unplaced = setup.complete ? state.party.players.reduce((n, p) => n + p.tokens, 0) : 0;
+      if (unplaced > 0) {
+        acts.push(
+          <button key="spread" className="tt-btn" title="The tool puts every seat's leftover tokens on its ship" onClick={() => state.party.players.forEach((p) => p.tokens > 0 && game.autoEnergy(p.id))}>
+            Spread the tokens
+          </button>,
+        );
+      }
+      const canStart = setup.complete || setup.round > 0;
       acts.push(
-        <button key="builder" className="tt-btn pri" onClick={() => setTab('builder')}>
-          Open the ship builder
+        <button
+          key="start"
+          className={`tt-btn${setup.complete ? ' pri' : ''}${setup.complete && unplaced === 0 ? ' pulse' : ''}`}
+          disabled={!canStart}
+          title={!canStart ? 'Every seat needs a cockpit first' : unplaced > 0 ? `${unplaced} token(s) not placed yet: they are lost if the mission starts now` : 'Cards still in the middle go back to their deck'}
+          onClick={game.startMission}
+        >
+          Start the mission{unplaced > 0 ? ` (${unplaced} tokens unplaced)` : ''}
         </button>,
       );
-    } else if (state.phase === 'victory' || state.phase === 'defeat' || state.phase === 'rearrange') {
+    } else if (prompt?.kind === 'event') {
       acts.push(
-        <button key="mission" className="tt-btn pri" onClick={() => setTab(state.phase === 'rearrange' ? 'builder' : 'mission')}>
-          {state.phase === 'rearrange' ? 'Open the ship builder' : 'Open the mission view'}
+        <button key="event" className="tt-btn pri pulse" onClick={game.resolveEvent}>
+          Carry out the event
         </button>,
       );
-    } else {
+    } else if (prompt?.kind === 'reward') {
+      for (const p of state.party.players.filter((x) => !x.destroyed)) {
+        acts.push(
+          <button key={`loot-${p.id}`} className="tt-btn pri" title={`Hand ${p.hand.length} of ${config.handSize}. Cards over hand size are discarded.`} onClick={() => game.claimReward(p.id)}>
+            {p.label} takes the loot
+          </button>,
+        );
+      }
+    } else if (prompt?.kind === 'loot') {
+      const claimant = seatOf(loot.who);
+      const full = claimant ? claimant.scrapDeck.length >= scrapCapacityFor(claimant, config) : true;
+      if (prompt.claimants.length > 1) {
+        acts.push(
+          <div className="tt-spend" key="who">
+            {prompt.claimants.map((id) => (
+              <button key={id} className={`tt-btn sm${id === loot.who ? ' pri' : ''}`} aria-pressed={id === loot.who} onClick={() => loot.setWho(id)}>
+                {label(id)}
+              </button>
+            ))}
+            <span className="odds">claims the wreck</span>
+          </div>,
+        );
+      }
+      const kept = !full && claimant && loot.keep !== null ? getPart(claimant.ship.slots[loot.keep]?.partId)?.name : undefined;
+      acts.push(
+        <button key="ship" className="tt-btn pri" disabled={!claimant} onClick={() => game.resolveLoot(loot.who, { option: 'take-ship', keepFromOldShip: full ? null : loot.keep })}>
+          Take the ship over, keep {kept ?? 'nothing'}
+        </button>,
+      );
+      if (config.lootOneModule) {
+        const stripped = loot.take !== null ? getPart(prompt.wreck.ship.slots[loot.take]?.partId)?.name : undefined;
+        acts.push(
+          <button key="module" className="tt-btn" disabled={!claimant || loot.take === null || full} title={full ? 'The scrap deck is full' : undefined} onClick={() => loot.take !== null && game.resolveLoot(loot.who, { option: 'take-module', takeSlot: loot.take })}>
+            {stripped ? `Strip ${stripped} only` : 'Strip one module only'}
+          </button>,
+        );
+      }
+      acts.push(
+        <button key="leave" className="tt-btn" onClick={() => game.resolveLoot(null, { option: 'leave' })}>
+          Leave the wreck
+        </button>,
+      );
+    } else if (prompt?.kind === 'salvage') {
+      const taker = prompt.claimants[prompt.turn]!;
+      acts.push(
+        <button key="pass" className="tt-btn" onClick={() => game.salvage(taker, null)}>
+          {label(taker)} passes
+        </button>,
+      );
+    } else if (prompt?.kind === 'checkpoint') {
+      acts.push(
+        <button key="on" className="tt-btn pri pulse" onClick={game.closePrompt}>
+          Push on
+        </button>,
+      );
+    } else if (prompt?.kind === 'rearrange') {
+      if (inHand?.kind === 'scrap' && holder) {
+        const cockpit = getPart(inHand.cardId)?.role === 'COCKPIT';
+        acts.push(
+          <button key="fit" className="tt-btn pri" disabled={!cockpit && !fits(inHand.cardId)} title={cockpit ? 'The old cockpit goes into the scrap deck in its place' : undefined} onClick={() => { game.fitFromScrap(holder.id, inHand.cardId, null); build.pick(null); }}>
+            {cockpit ? `Install ${name(inHand.cardId)} as cockpit` : `Fit ${name(inHand.cardId)} where it fits best`}
+          </button>,
+        );
+      }
+      if (inHand?.kind === 'grid' && holder) {
+        acts.push(
+          <button key="stow" className="tt-btn" onClick={() => { game.stowToScrap(holder.id, inHand.slot); build.pick(null); }}>
+            Stow {name(inHand.cardId)} in the scrap deck
+          </button>,
+        );
+      }
+      if (inHand) {
+        acts.push(
+          <button key="down" className="tt-btn" onClick={() => build.pick(null)}>
+            Put it back
+          </button>,
+        );
+      }
+      acts.push(
+        <button key="done" className="tt-btn pri" onClick={game.closePrompt}>
+          {prompt.reason === 'mission-end' ? 'Ships are built: end the mission' : 'Ships are built: push on'}
+        </button>,
+      );
+    } else if (state.phase === 'victory') {
+      acts.push(
+        <button key="next" className="tt-btn pri pulse" onClick={game.nextMission}>
+          Fly to the next sector
+        </button>,
+      );
+    } else if (state.phase === 'defeat') {
+      acts.push(
+        <button key="new" className="tt-btn pri" onClick={() => game.newRun()}>
+          Set up a new game
+        </button>,
+      );
+    } else if (state.phase === 'map') {
+      if (state.party.players.length > 1) {
+        acts.push(
+          <button key="split" className="tt-btn" title="Split up: higher risk, higher reward. Each seat moves its own mini." onClick={() => game.setSplit(!state.split)}>
+            {state.split ? 'Regroup' : 'Split up'}
+          </button>,
+        );
+      }
       acts.push(
         <span key="none" className="tt-note">
-          {state.phase === 'map' ? 'Moves are made on the mission board.' : 'Waiting on the prompt.'}
+          {state.split ? 'The party is split: every seat moves on its own.' : 'The party moves together.'}
         </span>,
       );
     }
@@ -349,14 +547,19 @@ export function TableHud({ play, camera }: { play: TablePlay; camera: Camera }) 
             const aggro = !!fight && !fight.outcome && play.aggro === p.id;
             const active = side?.kind === 'player' && side.id === p.id;
             return (
-              <div key={p.id} className={`tt-mate${active ? ' active' : ''}${p.destroyed ? ' out' : ''}`}>
+              <button
+                key={p.id}
+                className={`tt-mate${active || (!fight && play.activeSeat === p.id) ? ' active' : ''}${p.destroyed ? ' out' : ''}`}
+                title="Turn the table to this seat"
+                onClick={() => setViewSeat(p.id)}
+              >
                 <span className="dot" style={{ background: p.accent }} />
                 <span>{p.label}</span>
                 <span className={`tag${aggro ? ' aggro' : ''}`}>
                   {aggro ? 'AGGRO · ' : ''}
-                  {p.destroyed ? 'DOWN' : `${energy}⚡`}
+                  {p.destroyed ? 'DOWN' : build.drafting ? `${p.tokens} TOKENS` : `${energy}⚡`}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -403,6 +606,16 @@ function headline(play: TablePlay, landed: number): string {
     const last = staged.rolls[staged.rolls.length - 1];
     return last ? `Rolled ${last.dice.length > 1 ? last.dice.join(' + ') : `a ${last.dice[0]}`}. ${last.outcome}${last.success === null ? '' : '!'}` : 'Rolled.';
   }
+  const { build } = play;
+  const prompt = state.prompt;
+  const held = build.inHand;
+  const heldName = held && 'cardId' in held ? (getCard(held.cardId)?.name ?? 'The card') : null;
+  if (prompt?.kind === 'loot') {
+    return `${prompt.wreck.name} is down. ${label(play.loot.who)} may abandon ship and take it over: click the one module of the old ship to keep for the scrap deck. Destroyed modules are gone.`;
+  }
+  if (prompt?.kind === 'salvage') {
+    return `${prompt.wreck.name} is down. It is taken in pieces: ${label(prompt.claimants[prompt.turn])} takes a card off the wreck into the scrap deck, or passes.`;
+  }
   if (fight?.outcome) return fight.outcome === 'victory' ? 'Enemy ship down. Salvage what survived.' : 'Every cockpit is destroyed.';
   if (fight && side?.kind === 'enemy') {
     const card = getCard(fight.actionDecks[fight.down]?.faceUp);
@@ -418,16 +631,30 @@ function headline(play: TablePlay, landed: number): string {
     if (play.sel) return `${play.sel.part.name} picked up. Choose what it does.`;
     return 'Select one of your modules to act, or drag energy between connected modules to reroute.';
   }
-  if (state.prompt) return 'Something is waiting to be resolved.';
+  if (prompt?.kind === 'event') return 'An event is turned over. Read it, carry it out, then discard it: click the card.';
+  if (prompt?.kind === 'reward') return 'Loot is on the table. Carry it to the seat that takes it.';
+  if (prompt?.kind === 'checkpoint') return `Rarity checkpoint: the next stack of rarer cards is shuffled into the decks. Rarity is now up to ${prompt.newMaxRarity}.`;
+  if (prompt?.kind === 'rearrange') {
+    if (held) return `${heldName} in hand. Outlined cells are where it may go.`;
+    return `${prompt.reason === 'mission-end' ? 'Mission complete.' : 'Rearrangement point.'} Rebuild the ships: drag modules around, onto the scrap deck and off it. A cockpit from the scrap deck goes onto the old one.`;
+  }
   switch (state.phase) {
     case 'map':
-      return `${label(state.awaitingMove[0])}: pick the next step on the mission board. Reachable tiles are outlined.`;
-    case 'setup':
-      return 'Draft and lay out the ships before the mission starts.';
+      return `${state.split ? label(state.awaitingMove[0]) : 'The party'}: move to the next step on the mission board. Reachable tiles are outlined.`;
+    case 'setup': {
+      const setup = state.setup;
+      if (!setup) return '';
+      if (held?.kind === 'token') return 'A token in hand. Click the modules it goes on.';
+      if (held) return `${heldName} in hand. ${setup.round === 0 && !setup.complete ? 'Put it at your seat.' : 'Outlined cells are where it may go.'}`;
+      if (setup.complete) return 'The draft is over. Rearrange the ships, and put the leftover tokens on modules as starting energy: drag them from each seat’s pile.';
+      if (!build.drafter) return 'Dealing…';
+      if (setup.round === 0) return `${label(build.drafter)} takes a cockpit from the middle of the table.`;
+      return `${label(build.drafter)} buys a module from the middle and carries it to the ship, or passes. Tokens are paid into the supply.`;
+    }
     case 'victory':
       return 'Mission won.';
     case 'defeat':
-      return 'Mission lost.';
+      return 'Mission lost. Every cockpit is destroyed.';
     default:
       return '';
   }

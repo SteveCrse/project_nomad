@@ -193,17 +193,6 @@ export function aggroOf(state: GameState) {
 export const scrapCapacityFor = (player: PlayerState, config: GameConfig): number =>
   config.scrapCap + shipEngine.scrapCapBonus(CONTENT, player.ship);
 
-/** The cockpit's numbers, for gauges. */
-export function cockpitStats(ship: Ship) {
-  const cockpit = shipEngine.cockpitOf(CONTENT, ship);
-  return {
-    energy: cockpit?.slot.energy ?? 0,
-    max: cockpit?.part.energyCapacity ?? 0,
-    destroyed: !!cockpit?.slot.destroyed,
-    part: cockpit?.part,
-  };
-}
-
 /** The size readout for a ship under the rule in play. */
 export function sizeReadout(ship: Ship, config: GameConfig) {
   const used = shipEngine.sizeUsed(CONTENT, ship, config.shipSizeRule);

@@ -111,7 +111,7 @@ export function useCamera(
     };
     const down = (e: PointerEvent) => {
       const el = e.target as Element;
-      if (el.closest('.tt-chit.drag')) return;
+      if (el.closest('.tt-chit.drag, .tt-drag')) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];

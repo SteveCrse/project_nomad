@@ -10,6 +10,7 @@ const OPTIONS: { [K in keyof TableTweaks]: { label: string; opts: [TableTweaks[K
   grid: { label: 'Screen guides (empty cells, front, seat names)', opts: [['on', 'Show'], ['off', 'Hide']] },
   tilt: { label: 'Camera', opts: [['off', 'Top-down'], ['on', 'Seated']] },
   follow: { label: 'Turn the table to the active player', opts: [['on', 'Yes'], ['off', 'No']] },
+  peek: { label: 'Hold a card up to read it when the pointer rests on it', opts: [['on', 'Yes'], ['off', 'No']] },
 };
 
 /** How the table looks and moves. Applies live; remembered in this browser. */

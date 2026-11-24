@@ -94,6 +94,9 @@ export const chitsFromSupply = (key: string, n: number): void => stream(bank(), 
 /** Markers from one module to another: a reroute the table didn't drag itself. */
 export const chitsBetween = (from: string, to: string, n: number): void => stream(socketsOf(from), socketsOf(to), n, 70);
 
+/** Markers between any two places on the table: a seat's tokens paid into the supply. */
+export const chitsBetweenEls = (from: Element | null, to: Element | null, n: number): void => stream(from, to, n, 70);
+
 const BACK = 'N.O.M.A.D.';
 
 /** A destroyed module leaves its ship for the discard. */
