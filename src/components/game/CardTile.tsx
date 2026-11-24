@@ -17,7 +17,6 @@ import {
   statsHint,
   type CardHint,
 } from '@/lib/cardHints';
-import { EnergyChits } from './EnergyChits';
 import { FirstDownBadge } from './FirstDownBadge';
 
 /**
@@ -40,16 +39,32 @@ export const TIMING_CHIP: Record<PrintedTiming, { label: string; color: string }
  *
  * The header band is the rarity: its colour *and* its wording ("RARE WEAPON
  * MODULE"), so tier, role and deck all read off one line — and a legendary's
- * band runs a foil sweep. A part prints its max ⚡ as chits (hit chance and HP
- * at once), a 1st-down icon if destroying it earns one, and a footer of the
- * numbers combat reads. The number of copies in the deck is deck data, not
+ * band runs a foil sweep. A part prints a socket per ⚡ it can hold (hit chance
+ * and HP at once), a 1st-down icon if destroying it earns one, and a footer of
+ * the numbers combat reads. The number of copies in the deck is deck data, not
  * card data, and isn't printed at all.
  *
  * With `explain` on, every element answers what it is: the gallery is where a
  * card is read for the first time, so hovering any part of it says both the
  * general rule and this card's version of it.
+ *
+ * This is the only drawing of a card there is. On the table the same tile
+ * lies on a ship, in a spread or in a hand, and the energy markers put on a
+ * module sit on its printed sockets: `energy` says how many, `marker` draws
+ * the one on socket `i`.
  */
-export function CardTile({ card, explain }: { card: Card; explain?: boolean }) {
+export function CardTile({
+  card,
+  explain,
+  energy = 0,
+  marker,
+}: {
+  card: Card;
+  explain?: boolean;
+  /** Markers on the card right now; more than it prints sockets for still get a place. */
+  energy?: number;
+  marker?: (i: number) => React.ReactNode;
+}) {
   const [hint, setHint] = useState<{ hint: CardHint; x: number; y: number } | null>(null);
 
   const role: ModuleRole = card.kind === 'event' || card.kind === 'action' ? 'OTH' : card.role;
@@ -116,11 +131,19 @@ export function CardTile({ card, explain }: { card: Card; explain?: boolean }) {
           )}
         </div>
 
-        {/* Max ⚡ as the chits that sit on it at the table: hit chance and HP. */}
+        {/* A socket per ⚡ the module can hold: where its markers go at the table. */}
         {part && (
-          <div {...region(footerHint(part))} className={`flex items-center gap-1.5 ${lit}`}>
+          <div
+            {...region(footerHint(part))}
+            className={`tt-sockets ${Math.max(part.energyCapacity, energy) > 12 ? 'dense' : ''} ${lit}`}
+            title={`Holds up to ${part.energyCapacity}⚡`}
+          >
             <span className="flex-none font-mono text-[9px] tracking-[0.1em] text-putty-600">⚡ MAX</span>
-            <EnergyChits energy={0} capacity={part.energyCapacity} chit={8} max={14} preview />
+            {Array.from({ length: Math.max(part.energyCapacity, energy) }, (_, i) => (
+              <span key={i} className="tt-sock">
+                {i < energy && marker?.(i)}
+              </span>
+            ))}
           </div>
         )}
 

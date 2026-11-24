@@ -20,15 +20,17 @@
   --hud-dim: #8b957c;
   --tt-table: #cbbf9f;
   --tt-table-2: #c2b593;
-  --tt-cw: 104px;
-  --tt-ch: 118px;
+  /* A card is printed 214 × 302 (CardTile); the table looks at it from --tt-k away. */
+  --tt-k: 0.6;
+  --tt-cw: calc(214px * var(--tt-k));
+  --tt-ch: calc(302px * var(--tt-k));
   --tt-gap: 8px;
 }
 html[data-tt-surface='felt'] { --tt-table: #2e4a3b; --tt-table-2: #294334; }
 html[data-tt-surface='walnut'] { --tt-table: #5b3d29; --tt-table-2: #4f3423; }
 html[data-tt-surface='night'] { --tt-table: #1a1e14; --tt-table-2: #161a11; }
-html[data-tt-size='s'] { --tt-cw: 92px; --tt-ch: 106px; }
-html[data-tt-size='l'] { --tt-cw: 116px; --tt-ch: 130px; }
+html[data-tt-size='s'] { --tt-k: 0.5; }
+html[data-tt-size='l'] { --tt-k: 0.7; }
 
 .tt { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; color: var(--hud-ink); font-family: var(--font-body); font-size: 15px; }
 .tt button { font: inherit; cursor: pointer; }
@@ -116,58 +118,54 @@ html[data-tt-surface='felt'] .tt-track-svg path, html[data-tt-surface='walnut'] 
 .tt-seat-cell.right { grid-area: right; }
 .tt-seat-in { display: grid; grid-template-columns: auto auto auto; gap: 26px; align-items: center; position: absolute; left: 50%; top: 50%; width: max-content; }
 .tt-seat-side { display: grid; gap: 22px; justify-items: center; }
-.tt-held { position: relative; width: 70px; height: 70px; }
-.tt-held .tt-back { position: absolute; width: 44px; height: 62px; bottom: 0; left: 12px; font-size: 6px; transform-origin: 50% 120%; }
+.tt-held { position: relative; width: calc(var(--tt-cw) + 36px); height: var(--tt-ch); }
+.tt-held .tt-back { position: absolute; width: var(--tt-cw); height: var(--tt-ch); bottom: 0; left: 18px; transform-origin: 50% 120%; }
 .tt-seat-tag { position: absolute; left: 50%; bottom: -14px; transform: translateX(-50%); padding: 3px 9px; border-radius: 99px; background: var(--ui); color: #fff; font: 700 12px/1 var(--font-body); letter-spacing: 0.1em; white-space: nowrap; }
 .tt-seat-tag.on { background: var(--ui-ok); color: var(--n-900); }
 .tt-ship-wrap { position: relative; padding: 14px 10px; }
 .tt-ship { display: grid; gap: var(--tt-gap); position: relative; }
 
-/* module card */
-.tt-module {
-  position: relative; border-radius: 8px; background: var(--cream-100); color: var(--n-900);
-  box-shadow: 0 0 0 1.5px var(--n-900), 3px 4px 0 rgb(0 0 0 / 0.28);
-  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; user-select: none; min-width: 0; min-height: 0; overflow: visible;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, outline-color 0.18s, opacity 0.18s;
+/* a card on the table: the printed card (CardTile), seen from the table's distance */
+.tt-card {
+  position: relative; flex: none; box-sizing: border-box; width: calc(214px * var(--tt-k)); height: calc(302px * var(--tt-k)); color: var(--n-900); text-align: left; user-select: none;
+  transition: transform 0.18s ease, outline-color 0.18s, opacity 0.18s, filter 0.18s, left 0.22s;
   outline: 3px solid transparent; outline-offset: 4px;
   animation: tt-deal 0.32s ease-out backwards;
 }
+.tt-card-face { position: absolute; left: 0; top: 0; width: 214px; height: 302px; transform: scale(var(--tt-k)); transform-origin: 0 0; }
 @keyframes tt-deal { from { transform: translateY(-14px) scale(0.86) rotate(-4deg); opacity: 0; } }
-.tt-module.can { cursor: pointer; }
-.tt-module.can:hover { transform: translateY(-2px); }
-.tt-module .tt-band { display: flex; justify-content: space-between; align-items: center; height: 17px; padding: 0 6px; border-radius: 7px 7px 0 0; color: var(--cream-100); font: 700 10px/1 var(--font-body); letter-spacing: 0.14em; }
-.tt-module .tt-name { padding: 4px 6px 0; font: 700 13px/1.02 var(--font-body); text-transform: uppercase; letter-spacing: 0.02em; min-height: 26px; overflow: hidden; }
-.tt-module .tt-sockets { display: flex; flex-wrap: wrap; align-content: center; gap: 4px; padding: 2px 6px; }
-.tt-module .tt-stats { display: flex; flex-wrap: wrap; gap: 2px 7px; padding: 0 6px 5px; font: 700 10px/1 var(--font-mono); color: var(--putty-700); white-space: nowrap; }
-.tt-module .tt-stats span { white-space: nowrap; }
-.tt-module .tt-stats b { color: var(--n-900); }
-.tt-module.role-COCKPIT { background: var(--n-800); color: var(--crt-white); box-shadow: 0 0 0 1.5px var(--n-950), 0 0 0 4px var(--crt-green-700), 3px 5px 0 4px rgb(0 0 0 / 0.25); }
-.tt-module.role-COCKPIT .tt-stats { color: var(--n-400); }
-.tt-module.role-COCKPIT .tt-stats b { color: var(--crt-green-500); }
-.tt-module.role-COCKPIT .tt-band { color: var(--crt-green-500); background: var(--crt-glass) !important; }
-.tt-first { display: inline-grid; place-items: center; height: 13px; padding: 0 4px; border-radius: 3px; background: var(--amber-300); color: var(--n-900); font: 800 8.5px/1 var(--font-display); letter-spacing: 0; }
-.tt-sock { width: 17px; height: 17px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgb(20 23 15 / 0.25); display: grid; place-items: center; }
-.tt-sockets.dense { gap: 2px; }
-.tt-sockets.dense .tt-sock { width: 14px; height: 14px; }
-.role-COCKPIT .tt-sock { box-shadow: inset 0 0 0 1.5px rgb(159 217 160 / 0.25); }
+.tt-card.flip { animation: tt-flip 0.34s ease-out backwards; }
+.tt-card.can { cursor: pointer; }
+.tt-card.can:hover { transform: translateY(-2px); }
+/* the sockets a module prints for its energy, and the markers on them */
+.tt-sockets { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.tt-sock { flex: none; width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgb(20 23 15 / 0.25); display: grid; place-items: center; }
+.tt-sockets.dense { gap: 3px; }
+.tt-sockets.dense .tt-sock { width: 16px; height: 16px; }
 /* screen-only states on cards */
-.tt-module.sel { transform: translateY(-4px); outline-color: var(--ui); z-index: 4; }
-.tt-module.attacker { outline-color: var(--ui); }
-.tt-module.tgt { outline: 3px dashed var(--ui-tgt); animation: tt-blink 1s steps(2) infinite; cursor: pointer; }
-.tt-module.targeted { outline: 3px solid var(--ui-tgt); }
+.tt-card.sel { transform: translateY(-4px); outline-color: var(--ui); z-index: 4; }
+.tt-card.attacker { outline-color: var(--ui); }
+.tt-card.next { outline: 2.5px solid var(--ui); outline-offset: 5px; }
+.tt-card.tgt { outline: 3px dashed var(--ui-tgt); animation: tt-blink 1s steps(2) infinite; cursor: pointer; }
+.tt-card.targeted { outline: 3px solid var(--ui-tgt); }
 @keyframes tt-blink { 50% { outline-color: transparent; } }
-.tt-module.drop-ok { outline: 3px dashed var(--ui-ok); }
-.tt-module.drop-hover { outline-style: solid; transform: translateY(-4px) scale(1.03); }
-.tt-module.drop-no { opacity: 0.6; }
+.tt-card.drop-ok { outline: 3px dashed var(--ui-ok); }
+.tt-card.drop-hover { outline-style: solid; transform: translateY(-4px) scale(1.03); }
+.tt-card.drop-no { opacity: 0.6; }
+.tt-card.off { filter: saturate(0.4) brightness(0.85); cursor: not-allowed; }
+.tt-card.tt-drag { cursor: grab; touch-action: none; }
+.tt-card.take { outline: 3px dashed var(--ui-ok); cursor: pointer; }
+.tt-card.take:hover { outline-style: solid; transform: translateY(-3px); }
 
-/* energy marker */
+/* energy marker: one size wherever it lies, so a marker on a card (printed scale) matches one in the supply */
 .tt-chit {
-  width: 14px; height: 14px; position: relative; display: block; touch-action: none; border-radius: 3px; box-sizing: border-box;
+  width: calc(20px * var(--tt-k)); height: calc(20px * var(--tt-k)); position: relative; display: block; touch-action: none; border-radius: 3px; box-sizing: border-box;
   background: linear-gradient(135deg, #c8f2c4 0 38%, #6cc27a 38% 68%, #3f8550 68%); box-shadow: 0 2px 0 #24522f, 0 2px 3px rgb(0 0 0 / 0.3);
 }
 html[data-tt-chit='disc'] .tt-chit { border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffe8b0, var(--amber-500) 55%, var(--amber-700)); box-shadow: 0 1.5px 0 #6d4a16, 0 2px 3px rgb(0 0 0 / 0.35); }
-html[data-tt-chit='hex'] .tt-chit { border-radius: 0; clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); width: 16px; background: linear-gradient(160deg, #a9e8a9, var(--crt-green-700)); box-shadow: none; }
-.tt-sockets.dense .tt-chit { width: 11px; height: 11px; }
+html[data-tt-chit='hex'] .tt-chit { border-radius: 0; clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); background: linear-gradient(160deg, #a9e8a9, var(--crt-green-700)); box-shadow: none; }
+.tt-sock .tt-chit { width: 20px; height: 20px; }
+.tt-sockets.dense .tt-chit { width: 13px; height: 13px; }
 .tt-chit.drag { cursor: grab; }
 .tt-chit.drag:hover { transform: translateY(-1px) scale(1.12); }
 .tt-chit.arrived { outline: 2px solid var(--ui-ok); outline-offset: 1px; }
@@ -176,24 +174,11 @@ html[data-tt-chit='hex'] .tt-chit { border-radius: 0; clip-path: polygon(25% 3%,
 @keyframes tt-land { from { opacity: 0; transform: scale(1.6); } }
 
 /* enemy action decks */
-.tt-adecks { display: grid; grid-template-columns: repeat(2, 86px); gap: 22px 18px; perspective: 700px; }
+.tt-adecks { display: grid; grid-template-columns: repeat(2, var(--tt-cw)); gap: 22px 18px; perspective: 700px; }
 .tt-adeck { position: relative; }
-.tt-acard {
-  position: relative; width: 86px; height: 120px; border-radius: 8px; background: var(--crt-glass); color: var(--crt-green-500);
-  box-shadow: 0 0 0 1.5px var(--n-950), 2px 2px 0 var(--n-700), 4px 4px 0 var(--n-800), 6px 6px 0 rgb(0 0 0 / 0.35);
-  display: grid; grid-template-rows: auto 1fr auto; padding: 8px 7px; box-sizing: border-box; text-align: center;
-  outline: 3px solid transparent; outline-offset: 5px; animation: tt-flip 0.34s ease-out;
-}
 @keyframes tt-flip { from { transform: rotateY(-90deg); } }
-.tt-acard::after { content: ''; position: absolute; inset: 0; border-radius: 8px; pointer-events: none; background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.25) 0 1px, transparent 1px 3px); }
-.tt-acard .k { font: 700 9px/1 var(--font-mono); color: var(--n-400); letter-spacing: 0.1em; }
-.tt-acard .glyph { display: grid; place-items: center; font: 800 30px/1 var(--font-display); }
-.tt-acard .nm { font: 700 13px/1.05 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--crt-white); }
-.tt-acard.attack .glyph { color: var(--toggle-red-300); }
-.tt-acard.generate .glyph { color: var(--crt-green-500); }
-.tt-acard.reroute .glyph { color: var(--amber-300); }
-.tt-adeck.now .tt-acard { outline-color: var(--ui); }
-.tt-adeck .tt-back { width: 86px; height: 120px; box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(179 59 46 / 0.6), 2px 2px 0 var(--n-700), 4px 4px 0 var(--n-800); color: var(--toggle-red-300); }
+.tt-adeck.now .tt-card { outline-color: var(--ui); }
+.tt-adeck .tt-back { width: var(--tt-cw); height: var(--tt-ch); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(179 59 46 / 0.6), 2px 2px 0 var(--n-700), 4px 4px 0 var(--n-800); color: var(--toggle-red-300); }
 .tt-ui-num { position: absolute; top: -10px; left: -8px; z-index: 2; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--ui); color: #fff; font: 700 11px/1 var(--font-mono); }
 
 /* middle of the table: where the die lands and events are revealed */
@@ -219,53 +204,38 @@ html[data-tt-die='crt'] .tt-die { --die-bg: #1e2318; --die-pip: #9fd9a0; }
 .tt-die-zone.await .tt-die-ring { opacity: 1; animation: tt-spin 6s linear infinite; }
 html[data-tt-grid='off'] .tt-die-ring { display: none; }
 @keyframes tt-spin { to { transform: rotate(1turn); } }
-.tt-reveal-spot { position: relative; width: 120px; height: 150px; }
+.tt-reveal-spot { position: relative; width: var(--tt-cw); height: var(--tt-ch); }
 
 /* cards: backs, event */
 .tt-back {
   border-radius: 8px; background: var(--n-800); position: relative; overflow: hidden; color: var(--crt-green-500); box-sizing: border-box;
   background-image: linear-gradient(rgb(159 217 160 / 0.08) 1px, transparent 1px), linear-gradient(90deg, rgb(159 217 160 / 0.08) 1px, transparent 1px);
   background-size: 9px 9px; box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(159 217 160 / 0.35);
-  display: grid; place-content: center; text-align: center; gap: 4px; font: 800 10px/1 var(--font-display); letter-spacing: 0.06em;
+  display: grid; place-content: center; text-align: center; gap: 4px; font: 800 12px/1 var(--font-display); letter-spacing: 0.06em;
 }
-.tt-back small { font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.14em; opacity: 0.8; }
+.tt-back small { font: 700 10px/1 var(--font-mono); letter-spacing: 0.14em; opacity: 0.8; }
 .tt-back.items { color: var(--amber-300); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(217 154 62 / 0.6); }
 .tt-back.events { color: var(--steel-500); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(155 160 143 / 0.6); }
 .tt-back.rare { color: #9cc0dd; box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(94 124 150 / 0.9); }
 .tt-back.cockpits { color: var(--crt-green-300); }
 .tt-back.scrap { color: var(--cream-200); }
-.tt-ecard { position: absolute; inset: 0; border-radius: 9px; background: var(--cream-100); color: var(--n-900); box-shadow: 0 0 0 1.5px var(--n-900), 3px 5px 0 rgb(0 0 0 / 0.28); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; animation: tt-flip 0.3s ease-out 0.5s backwards; }
-.tt-ecard .tt-band { padding: 5px 8px; background: var(--steel-700); color: var(--cream-100); font: 700 10px/1 var(--font-body); letter-spacing: 0.16em; }
-.tt-ecard h4 { margin: 7px 8px 0; font: 800 11.5px/1.05 var(--font-display); }
-.tt-ecard p { margin: 5px 8px; font: 500 10.5px/1.2 var(--font-body); overflow: hidden; }
-
-.tt-decks { display: grid; grid-template-columns: repeat(3, 84px); gap: 22px 16px; justify-content: center; }
-.tt-deck { position: relative; width: 84px; height: 118px; }
+.tt-decks { display: grid; grid-template-columns: repeat(2, var(--tt-cw)); gap: 18px 16px; justify-content: center; }
+.tt-deck { position: relative; width: var(--tt-cw); height: var(--tt-ch); }
 .tt-deck .tt-back, .tt-deck .tt-guide { position: absolute; inset: 0; }
 .tt-deck .tt-back.l1 { transform: translate(3px, 3px); filter: brightness(0.7); }
 .tt-deck .tt-back.l2 { transform: translate(6px, 6px); filter: brightness(0.5); }
 
 .tt-bank { position: relative; width: 120px; height: 90px; }
 .tt-bank .tt-chit { position: absolute; }
-.tt-scrap { position: relative; width: 64px; height: 90px; }
-.tt-scrap .tt-back, .tt-scrap .tt-guide { position: absolute; inset: 0; font-size: 7.5px; }
+.tt-scrap { position: relative; width: var(--tt-cw); height: var(--tt-ch); }
+.tt-scrap .tt-back, .tt-scrap .tt-guide { position: absolute; inset: 0; }
 
 /* the active player's hand: held in front of the screen, not on the table */
-.tt-hand { position: absolute; right: 18px; bottom: -40px; width: 440px; height: 200px; pointer-events: none; z-index: 20; }
+.tt-hand { position: absolute; right: 18px; bottom: -56px; width: 520px; height: 260px; pointer-events: none; z-index: 20; }
 @media (max-width: 900px) { .tt-hand { transform: scale(0.6); transform-origin: 100% 100%; } }
-.tt-icard {
-  position: absolute; bottom: 0; width: 122px; height: 170px; border-radius: 9px; box-sizing: border-box; padding: 0; border: 0; text-align: left; pointer-events: auto;
-  background: var(--cream-100); color: var(--n-900); box-shadow: 0 0 0 1.5px var(--n-900), 3px 5px 10px rgb(0 0 0 / 0.35);
-  transform-origin: 50% 120%; transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), outline-color 0.2s, left 0.22s; display: grid; grid-template-rows: auto auto 1fr auto;
-  outline: 3px solid transparent; outline-offset: 4px; overflow: hidden;
-}
-.tt-icard .tt-band { height: 20px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-radius: 8px 8px 0 0; background: var(--amber-500); font: 700 10px/1 var(--font-body); letter-spacing: 0.16em; }
-.tt-icard .nm { padding: 7px 8px 0; font: 800 12px/1.1 var(--font-display); }
-.tt-icard .tx { padding: 6px 8px; font: 500 12.5px/1.2 var(--font-body); overflow: hidden; }
-.tt-icard .ft { padding: 0 8px 7px; font: 700 9px/1 var(--font-mono); color: var(--putty-700); }
-.tt-icard.sel { outline-color: var(--ui); }
-.tt-icard.off { filter: saturate(0.5) brightness(0.9); }
-html[data-tt-hand='row'] .tt-icard { transform-origin: 50% 50%; }
+.tt-hand .tt-card { --tt-k: 0.75; position: absolute; bottom: 0; pointer-events: auto; transform-origin: 50% 120%; animation: none; filter: drop-shadow(3px 5px 8px rgb(0 0 0 / 0.35)); }
+.tt-hand .tt-card.off { filter: saturate(0.5) brightness(0.9); }
+html[data-tt-hand='row'] .tt-hand .tt-card { transform-origin: 50% 50%; }
 
 #tt-fx { position: fixed; inset: 0; pointer-events: none; z-index: 95; }
 .tt-fxg { position: fixed; pointer-events: none; z-index: 96; }
@@ -350,12 +320,6 @@ html[data-tt-hand='row'] .tt-icard { transform-origin: 50% 50%; }
 .tt-bare { display: grid; place-items: center; cursor: default; }
 .tt-bare-box { display: grid; gap: 12px; justify-items: center; max-width: 420px; text-align: center; }
 
-/* a card off a ship, face up */
-.tt-module.off { filter: saturate(0.4) brightness(0.85); cursor: not-allowed; }
-.tt-module.tt-drag { cursor: grab; touch-action: none; }
-.tt-module.take { outline: 3px dashed var(--ui-ok); cursor: pointer; }
-.tt-module.take:hover { outline-style: solid; transform: translateY(-3px); }
-
 /* an open cell a card may be put on */
 .tt-open { transition: background-color 0.15s, border-color 0.15s, transform 0.15s; }
 .tt-open.lit { border: 2.5px dashed var(--ui-ok); background: rgb(56 211 159 / 0.14); cursor: pointer; }
@@ -364,8 +328,6 @@ html[data-tt-grid='off'] .tt-open.lit, html[data-tt-grid='off'] .tt-open.over { 
 
 /* the middle of the table, when cards are dealt into it */
 .tt-spread { display: grid; gap: 14px; justify-content: center; align-content: center; min-width: calc(var(--tt-cw) * 3 + 28px); min-height: calc(var(--tt-ch) * 2 + 14px); padding: 14px 10px; }
-.tt-icard.flat { position: relative; bottom: auto; transform: none; transform-origin: 50% 50%; cursor: grab; touch-action: none; animation: tt-deal 0.32s ease-out backwards; }
-.tt-icard.flat:hover { transform: translateY(-3px); }
 
 /* a seat's things */
 .tt-seat-in { border-radius: 14px; outline: 3px solid transparent; outline-offset: 10px; transition: outline-color 0.15s; }
@@ -386,7 +348,6 @@ html[data-tt-grid='off'] .tt-ui-tag { display: none; }
 
 /* things waiting to be handled */
 .tt-deck.next { cursor: pointer; outline: 2.5px solid var(--ui); outline-offset: 5px; border-radius: 8px; }
-button.tt-ecard { border: 0; padding: 0; text-align: left; font: inherit; cursor: pointer; outline: 2.5px solid var(--ui); outline-offset: 5px; }
 .tt-marker { position: absolute; right: -6px; top: -6px; width: 14px; height: 14px; border-radius: 50%; background: var(--steel-700); box-shadow: 0 2px 0 rgb(0 0 0 / 0.4), inset 0 0 0 2px var(--cream-100); }
 
 /* a card held up to read */
@@ -398,3 +359,4 @@ button.tt-mate:hover { background: #242b21; }
 
 /* a card in the air never takes the pointer: what's under it has to */
 .tt-ghost, .tt-ghost * { pointer-events: none !important; animation: none !important; }
+.tt-fxg.tt-back { font-size: 0; }
