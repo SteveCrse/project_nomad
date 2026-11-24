@@ -1,28 +1,28 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BoardNode, Card, CardId, EnemyInstance, GameState, PlayerState, Ship } from '@engine/types';
-import { ACTION_LABEL, board, enemyModuleCount, game, printedText, ship as shipEngine } from '@engine';
+import { board, enemyModuleCount, game, ship as shipEngine } from '@engine';
 import { BOSSES_BY_ID, CONTENT, getCard } from '@data';
 import { CardTile } from '@/components/game/CardTile';
 import { useDropZone } from '@/components/fx/drag';
 import { cardFlight, chitsBetweenEls } from '@/components/fx/tableFx';
 import { handOptions, sizeReadout } from '@/lib/combatView';
-import { cardTitleLine } from '@/lib/palette';
 import { useGameStore } from '@/store/gameStore';
 import { useUiStore, type TableTweaks } from '@/store/uiStore';
 import { SEAT_ANGLE, seatOf, seatsFor, useTablePlay, type SeatPos, type TablePlay } from './play';
+import { TableCard } from './TableCard';
 import { TableDie } from './TableDie';
 import { TableHud } from './TableHud';
-import { Ghost, PartFace, TableShip, cardGhost, draggable, shipExtent, type ShipBuild } from './TableShip';
+import { TableShip, cardGhost, draggable, shipExtent, type ShipBuild } from './TableShip';
 import { TweakDrawer } from './TweakDrawer';
 import { useCamera } from './useCamera';
 
-/** A module card's footprint per card-size tweak, in px — the same numbers the stylesheet sets. */
-const CARD: Record<TableTweaks['size'], { w: number; h: number }> = { s: { w: 92, h: 106 }, m: { w: 104, h: 118 }, l: { w: 116, h: 130 } };
+/** How far the table stands back from a printed card (214 × 302) per card-size tweak — the same numbers the stylesheet sets. */
+const SCALE: Record<TableTweaks['size'], number> = { s: 0.5, m: 0.6, l: 0.7 };
 const GAP = 8;
 
 const shipBox = (cols: number, rows: number, size: TableTweaks['size']) => ({
-  w: cols * CARD[size].w + (cols - 1) * GAP + 20,
-  h: rows * CARD[size].h + (rows - 1) * GAP + 28,
+  w: cols * 214 * SCALE[size] + (cols - 1) * GAP + 20,
+  h: rows * 302 * SCALE[size] + (rows - 1) * GAP + 28,
 });
 
 /**
@@ -334,7 +334,7 @@ function Rack({ player, play }: { player: PlayerState; play: TablePlay }) {
         const payload = { kind, player: player.id, cardId } as const;
         const sel = (inHand?.kind === 'hold' || inHand?.kind === 'scrap') && inHand.player === player.id && inHand.cardId === cardId;
         return (
-          <PartFace
+          <TableCard
             key={`${cardId}-${i}`}
             cardId={cardId}
             cls={`can tt-drag${sel ? ' sel' : ''}`}
@@ -435,11 +435,16 @@ function Center({ play, size }: { play: TablePlay; size: TableTweaks['size'] }) 
         <div className="tt-mid-col">
           <div className="tt-reveal-spot" id="tt-reveal">
             {event && (
-              <button className="tt-ecard" key={event.id} data-peek={event.id} title="Carry out the event, then discard it" onClick={resolveEvent}>
-                <div className="tt-band">EVENT</div>
-                <h4>{event.name}</h4>
-                <p>{printedText(event)}</p>
-              </button>
+              <TableCard
+                key={event.id}
+                cardId={event.id}
+                cls="can next flip"
+                role="button"
+                tabIndex={0}
+                title="Carry out the event, then discard it"
+                onClick={resolveEvent}
+                onKeyDown={(e) => e.key === 'Enter' && resolveEvent()}
+              />
             )}
           </div>
           <TableDie />
@@ -490,23 +495,12 @@ function Center({ play, size }: { play: TablePlay; size: TableTweaks['size'] }) 
 
         <div className="tt-adecks">
           {(fight?.actionDecks ?? Array.from({ length: play.config.downCount }, () => null)).map((deck, i) => {
-            const card = deck ? getCard(deck.faceUp) : undefined;
-            const action = card?.kind === 'action' ? card.action : null;
             const now = play.side?.kind === 'enemy' && fight?.down === i;
             return (
               <div key={i} className={`tt-adeck${now ? ' now' : ''}`}>
                 <span className="tt-ui-num">{i + 1}</span>
-                {action && deck ? (
-                  <div
-                    key={`${deck.faceUp}-${deck.drawPile.length}-${deck.discardPile.length}`}
-                    className={`tt-acard ${action}`}
-                    data-peek={deck.faceUp}
-                    title={card ? `${card.name} — ${printedText(card)}` : undefined}
-                  >
-                    <div className="k">ENEMY ACTION</div>
-                    <div className="glyph">{GLYPH[action]}</div>
-                    <div className="nm">{card?.name ?? ACTION_LABEL[action]}</div>
-                  </div>
+                {deck?.faceUp && getCard(deck.faceUp) ? (
+                  <TableCard key={`${deck.faceUp}-${deck.drawPile.length}-${deck.discardPile.length}`} cardId={deck.faceUp} cls="flip" />
                 ) : (
                   <div className="tt-back">
                     N.O.M.A.D.<small>ACTION</small>
@@ -553,11 +547,11 @@ function DraftSpread({ play }: { play: TablePlay }) {
         const error = build.draftError(cardId);
         const payload = error ? null : ({ kind: 'table', cardId } as const);
         return (
-          <PartFace
+          <TableCard
             key={`${round}:${cardId}:${after(i)}`}
             cardId={cardId}
             cls={`${error ? 'off' : 'can tt-drag'}${inHand?.kind === 'table' && inHand.cardId === cardId ? ' sel' : ''}`}
-            style={{ width: 'var(--tt-cw)', height: 'var(--tt-ch)', animationDelay: `${i * 70}ms` }}
+            style={{ animationDelay: `${i * 70}ms` }}
             {...(error ? { title: `Can't take it: ${error}` } : {})}
             onClick={() => payload && build.pick(payload)}
             {...draggable(payload, cardGhost(cardId))}
@@ -571,54 +565,20 @@ function DraftSpread({ play }: { play: TablePlay }) {
 /** The Item cards a Loot step turned up, face up in the middle until a seat takes them. */
 function RewardSpread({ cardIds }: { cardIds: CardId[] }) {
   return (
-    <div className="tt-spread items" aria-label="Loot" style={{ gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, cardIds.length))}, auto)` }}>
-      {cardIds.map((id, i) => {
-        const card = getCard(id);
-        if (!card) return null;
-        return (
-          <div
-            key={`${id}-${i}`}
-            className="tt-icard flat tt-drag"
-            data-peek={id}
-            style={{ animationDelay: `${i * 90}ms` }}
-            title="Carry it to the seat that takes the loot"
-            {...draggable({ kind: 'reward' }, () => (
-              <Ghost w="122px" h="170px">
-                <ItemFace card={card} cls="tt-icard flat" />
-              </Ghost>
-            ))}
-          >
-            <ItemFace card={card} />
-          </div>
-        );
-      })}
+    <div className="tt-spread items" aria-label="Loot" style={{ gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, cardIds.length))}, var(--tt-cw))` }}>
+      {cardIds.map((id, i) => (
+        <TableCard
+          key={`${id}-${i}`}
+          cardId={id}
+          cls="can tt-drag"
+          style={{ animationDelay: `${i * 90}ms` }}
+          title="Carry it to the seat that takes the loot"
+          {...draggable({ kind: 'reward' }, cardGhost(id))}
+        />
+      ))}
     </div>
   );
 }
-
-/** What an Item card prints. */
-function ItemFace({ card, cls }: { card: Card; cls?: string }) {
-  const face = (
-    <>
-      <div className="tt-band">
-        <span>ITEM</span>
-        <span>◆</span>
-      </div>
-      <div className="nm">{card.name}</div>
-      <div className="tx">{printedText(card)}</div>
-      <div className="ft">{cardTitleLine(card).toUpperCase()}</div>
-    </>
-  );
-  return cls ? (
-    <div className={cls} style={{ width: '100%', height: '100%' }}>
-      {face}
-    </div>
-  ) : (
-    face
-  );
-}
-
-const GLYPH = { attack: '⨯', generate: '+', reroute: '⇄' } as const;
 
 function Deck({
   kind,
@@ -756,6 +716,9 @@ function MissionStrip({ play }: { play: TablePlay }) {
 
 /* ------------------------------------------------------------------- hand */
 
+/** A card in the hand is held closer than one on the table: 0.75 of its printed width. */
+const HAND_W = 214 * 0.75;
+
 /** The active seat's hand, held up in front of the screen rather than laid on the table. */
 function Hand({ play, fan }: { play: TablePlay; fan: boolean }) {
   const { state, side, acting, mode, busy } = play;
@@ -769,37 +732,37 @@ function Hand({ play, fan }: { play: TablePlay; fan: boolean }) {
   const picked = mode?.kind === 'item' ? mode.cardId : null;
   const live = !!acting && acting.id === holder.id && !busy && !play.fight?.turnOver && (!mode || mode.kind === 'item');
   const n = holder.hand.length;
-  const W = 440;
-  const step = n > 1 ? Math.min(fan ? 80 : 132, (W - (fan ? 172 : 126)) / (n - 1)) : 0;
-  const start = (W - (122 + step * (n - 1))) / 2;
+  const W = 520;
+  const step = n > 1 ? Math.min(fan ? 104 : 170, (W - (fan ? 210 : 164)) / (n - 1)) : 0;
+  const start = (W - (HAND_W + step * (n - 1))) / 2;
   const selIndex = picked ? holder.hand.indexOf(picked) : -1;
 
   return (
     <div className="tt-hand" aria-label="Cards in hand">
       {holder.hand.map((id, i) => {
-        const card = getCard(id);
-        if (!card) return null;
         const option = options.find((o) => o.cardId === id)?.option;
         const sel = i === selIndex;
+        const use = () => {
+          if (!live) return;
+          select(null);
+          setMode(sel ? null : { kind: 'item', cardId: id });
+        };
         const mid = (n - 1) / 2;
         const transform = fan
           ? `translateY(${Math.abs(i - mid) * 7 - (sel ? 40 : 0)}px) rotate(${sel ? 0 : (i - mid) * 7}deg)`
           : `translateY(${sel ? -26 : 0}px)`;
         return (
-          <button
+          <TableCard
             key={`${id}-${i}`}
-            className={`tt-icard${sel ? ' sel' : ''}${live && option?.error ? ' off' : ''}`}
+            cardId={id}
+            cls={`can${sel ? ' sel' : ''}${live && option?.error ? ' off' : ''}`}
             style={{ left: start + i * step, transform, zIndex: sel ? 20 : i + 1 }}
             title={option?.error ?? undefined}
-            data-peek={id}
-            onClick={() => {
-              if (!live) return;
-              select(null);
-              setMode(sel ? null : { kind: 'item', cardId: id });
-            }}
-          >
-            <ItemFace card={card} />
-          </button>
+            role="button"
+            tabIndex={0}
+            onClick={use}
+            onKeyDown={(e) => e.key === 'Enter' && use()}
+          />
         );
       })}
     </div>

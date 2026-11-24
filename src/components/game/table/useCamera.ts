@@ -159,7 +159,7 @@ export function useCamera(
       e.preventDefault();
     };
     const dbl = (e: MouseEvent) => {
-      if (!(e.target as Element).closest('button, .tt-module, .tt-icard, .tt-die')) fit();
+      if (!(e.target as Element).closest('button, .tt-card, .tt-die')) fit();
     };
     const key = (e: KeyboardEvent) => {
       const el = e.target as Element | null;

@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Cell, CardId, Ship, ShipSlot, SideRef, SlotIndex } from '@engine/types';
-import { attackOf, outputOf, powerCostOf, printedText, ship as shipEngine } from '@engine';
+import { ship as shipEngine } from '@engine';
 import { getPart } from '@data';
 import { dragSource, useDropZone, type DragPayload } from '@/components/fx/drag';
 import { heldChit } from '@/components/fx/tableFx';
 import { fxKey } from '@/lib/combatView';
-import { ROLE_COLOR } from '@/lib/palette';
+import { TableCard } from './TableCard';
 
 /** Dragging markers between a ship's modules. */
 export interface ChitDrag {
@@ -70,7 +70,7 @@ export function Ghost({ w, h, children }: { w: string; h: string; children: Reac
 
 export const cardGhost = (cardId: CardId) => () => (
   <Ghost w="var(--tt-cw)" h="var(--tt-ch)">
-    <PartFace cardId={cardId} style={{ width: '100%', height: '100%' }} />
+    <TableCard cardId={cardId} />
   </Ghost>
 );
 const chitGhost = () => <span className="tt-chit" style={{ width: '100%', height: '100%' }} />;
@@ -152,14 +152,14 @@ export function TableShip({
     const chit = e.currentTarget;
     const held = heldChit(chit);
     chit.classList.add('lifted');
-    const cards = [...shipEl.querySelectorAll<HTMLElement>('.tt-module')];
+    const cards = [...shipEl.querySelectorAll<HTMLElement>('.tt-card')];
     for (const el of cards) {
       const to = Number(el.dataset.slot);
       if (to !== from) el.classList.add(d.error(from, to) ? 'drop-no' : 'drop-ok');
     }
     let over: HTMLElement | null = null;
     const under = (x: number, y: number) => {
-      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.tt-module');
+      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.tt-card');
       return el && shipEl.contains(el) ? el : null;
     };
     const move = (ev: PointerEvent) => {
@@ -233,7 +233,7 @@ export function TableShip({
   );
 }
 
-/** One module card, as printed: role band, name, a socket per ⚡ it can hold, its numbers. */
+/** One module card on its cell, with its energy markers on its sockets. */
 function ModuleCard({
   slot,
   slotKey,
@@ -263,9 +263,6 @@ function ModuleCard({
     before.current = slot.energy;
   });
   if (!part) return <div className="tt-guide" style={style} />;
-  const atk = attackOf(part);
-  const gen = outputOf(part);
-  const cap = Math.max(part.energyCapacity, slot.energy);
   // With a reroute in hand, what arrived sits last and stays put.
   const arrived = sendable === null ? 0 : Math.max(0, slot.energy - sendable);
   const lifted = build?.lift(slot) ?? null;
@@ -275,56 +272,28 @@ function ModuleCard({
   const lit = zone.over ? ' drop-ok drop-hover' : zone.active || takes ? ' drop-ok' : '';
 
   return (
-    <div
+    <TableCard
       {...zone.props}
-      className={`tt-module role-${part.role} ${cls}${lit}${lifted ? ' tt-drag' : ''}`}
+      cardId={slot.partId}
+      cls={`${cls}${lit}${lifted ? ' tt-drag' : ''}`}
       style={style}
       data-slot-key={slotKey}
       data-slot={slot.index}
-      data-peek={slot.partId}
-      title={`${part.name} — ${printedText(part)}`}
       onClick={takes && build?.inHand ? () => build.slotDrop(build.inHand!, slot) : onClick}
       {...draggable(lifted, cardGhost(slot.partId))}
-    >
-      <div className="tt-band" style={{ background: ROLE_COLOR[part.role] }}>
-        <span>{part.role}</span>
-        {part.firstDown && <span className="tt-first">1ST</span>}
-      </div>
-      <div className="tt-name">{part.name}</div>
-      <div className={`tt-sockets${cap > 12 ? ' dense' : ''}`}>
-        {Array.from({ length: cap }, (_, i) => {
-          const on = i < slot.energy;
-          const isArrived = on && i >= slot.energy - arrived;
-          const canDrag = on && !isArrived && !!onChitDown && sendable !== null;
-          const landing = on && !isArrived && prev !== null && i >= prev;
-          return (
-            <span key={i} className="tt-sock">
-              {on && (
-                <span
-                  className={`tt-chit${canDrag || chit ? ' drag' : ''}${isArrived ? ' arrived' : ''}${landing ? ' landing' : ''}`}
-                  {...(chit ? draggable(chit, chitGhost) : { onPointerDown: canDrag ? onChitDown : undefined })}
-                />
-              )}
-            </span>
-          );
-        })}
-      </div>
-      <div className="tt-stats">
-        {atk > 0 && (
-          <span>
-            ATK <b>{atk}</b>
-          </span>
-        )}
-        {gen > 0 && (
-          <span>
-            GEN <b>+{gen}</b>
-          </span>
-        )}
-        <span>
-          MAX <b>{part.energyCapacity}</b>
-        </span>
-      </div>
-    </div>
+      energy={slot.energy}
+      marker={(i) => {
+        const isArrived = i >= slot.energy - arrived;
+        const canDrag = !isArrived && !!onChitDown && sendable !== null;
+        const landing = !isArrived && prev !== null && i >= prev;
+        return (
+          <span
+            className={`tt-chit${canDrag || chit ? ' drag' : ''}${isArrived ? ' arrived' : ''}${landing ? ' landing' : ''}`}
+            {...(chit ? draggable(chit, chitGhost) : { onPointerDown: canDrag ? onChitDown : undefined })}
+          />
+        );
+      }}
+    />
   );
 }
 
@@ -340,57 +309,5 @@ function OpenCell({ id, cell, build, style }: { id: string; cell: Cell; build: S
       title={takes ? 'Put it here' : undefined}
       onClick={takes && build.inHand ? () => build.cellDrop(build.inHand!, cell) : undefined}
     />
-  );
-}
-
-/**
- * A module or cockpit card lying face up off a ship: on the draft spread,
- * beside a seat waiting to be fitted, in a scrap deck laid out for a rebuild.
- * It prints what the card prints — its sockets are empty — plus its price.
- */
-export function PartFace({
-  cardId,
-  cls = '',
-  style,
-  title,
-  ...rest
-}: { cardId: CardId; cls?: string; style?: React.CSSProperties; title?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className' | 'style' | 'title'>) {
-  const part = getPart(cardId);
-  if (!part) return <div className="tt-guide" style={style} />;
-  const atk = attackOf(part);
-  const gen = outputOf(part);
-  return (
-    <div className={`tt-module role-${part.role} ${cls}`} style={style} data-peek={cardId} title={title ?? `${part.name} — ${printedText(part)}`} {...rest}>
-      <div className="tt-band" style={{ background: ROLE_COLOR[part.role] }}>
-        <span>{part.role}</span>
-        {part.firstDown && <span className="tt-first">1ST</span>}
-      </div>
-      <div className="tt-name">{part.name}</div>
-      <div className={`tt-sockets${part.energyCapacity > 12 ? ' dense' : ''}`}>
-        {Array.from({ length: part.energyCapacity }, (_, i) => (
-          <span key={i} className="tt-sock" />
-        ))}
-      </div>
-      <div className="tt-stats">
-        {atk > 0 && (
-          <span>
-            ATK <b>{atk}</b>
-          </span>
-        )}
-        {gen > 0 && (
-          <span>
-            GEN <b>+{gen}</b>
-          </span>
-        )}
-        <span>
-          MAX <b>{part.energyCapacity}</b>
-        </span>
-        {part.role !== 'COCKPIT' && (
-          <span>
-            COST <b>{powerCostOf(part)}</b>
-          </span>
-        )}
-      </div>
-    </div>
   );
 }

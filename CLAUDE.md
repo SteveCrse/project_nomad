@@ -21,8 +21,8 @@ React 19 + Zustand + Tailwind 4 + Vite, TypeScript. No test suite; verify with `
 | State | `src/store/` | `gameStore` (run), `configStore` (+ `configFields.ts` form schema), `deckStore` (editor), `uiStore` |
 | Derived view logic | `src/lib/` | `combatView`, `combatControls`, `cardHints`, `palette` |
 | Screens | `src/views/` | `TableView` (the whole game, on the tabletop), `CardBrowserView` (deck editor). There is no separate map, builder or prompt screen |
-| Play UI (tabletop) | `src/components/game/table/` | `Tabletop` (table, seats with purse/rack/berth, centre with draft and loot spreads, mission strip, hand, card flights), `TableShip` (ship grid, `PartFace`, build-mode drop cells), `TableDie`, `TableHud` (panel under the table: every phase's buttons and headline), `TweakDrawer`, `useCamera`, `play.ts` (combat: engine ↔ clicks), `build.ts` (draft, layout, tokens, rebuild: what may be dropped where); look: `src/styles/tabletop.css`; reference mockup: `docs/mockups/tabletop.html` |
-| Shared game UI | `src/components/game/` | `CardTile` (a full printed card: the editor, and the table's read-a-card peek) |
+| Play UI (tabletop) | `src/components/game/table/` | `Tabletop` (table, seats with purse/rack/berth, centre with draft and loot spreads, mission strip, hand, card flights), `TableCard` (any card on the table: a `CardTile` at the table's scale, with its markers), `TableShip` (ship grid, build-mode drop cells), `TableDie`, `TableHud` (panel under the table: every phase's buttons and headline), `TweakDrawer`, `useCamera`, `play.ts` (combat: engine ↔ clicks), `build.ts` (draft, layout, tokens, rebuild: what may be dropped where); look: `src/styles/tabletop.css`; reference mockup: `docs/mockups/tabletop.html` |
+| Shared game UI | `src/components/game/` | `CardTile` (the printed card, and the only drawing of one: the editor, the Cards tab, every card on the table and in the hand, and the read-a-card peek) |
 | Animation | `src/components/fx/` | `FxLayer`, `tableFx` (marker/card flights on the tabletop), `DiceOverlay` (off the table tab), `drag` |
 | Deck editor UI | `src/components/editor/` | `DeckTable`, `CardPanel`, `inputs` |
 | Design system | `src/components/ds/`, `src/styles/tokens.css`, `src/index.css` | |
@@ -30,6 +30,7 @@ React 19 + Zustand + Tailwind 4 + Vite, TypeScript. No test suite; verify with `
 ## Working conventions
 
 - The tool is the physical game table. Anything that happens physically in the real game (dealing, taking a card, paying or placing tokens, moving a mini, stripping a wreck) happens on the table, by dragging or clicking the component itself. The panel under the table is only for what has no physical counterpart (declaring an attack, passing, ending a turn) and for tool shortcuts. No pop-ups, no extra screens.
+- A card has one look. Anything that shows a card renders `CardTile` (on the table through `TableCard`); don't draw a second, simplified face for it.
 - Every state change is animated; every roll is clicked and shown before it applies; turns end on a button.
 - Engine steps are pure `(state, …) → state`. Keep UI logic out of `src/engine/`.
 
