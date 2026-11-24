@@ -12,7 +12,7 @@ import { SEAT_ANGLE, seatOf, seatsFor, useTablePlay, type SeatPos, type TablePla
 import { TableCard } from './TableCard';
 import { TableDie } from './TableDie';
 import { TableHud } from './TableHud';
-import { TableShip, cardGhost, draggable, shipExtent, type ShipBuild } from './TableShip';
+import { PlacedCard, TableShip, cardGhost, draggable, shipExtent, type ShipBuild } from './TableShip';
 import { TweakDrawer } from './TweakDrawer';
 import { useCamera } from './useCamera';
 
@@ -37,7 +37,7 @@ const shipBox = (cols: number, rows: number, size: TableTweaks['size']) => ({
  * moved along the board, an event is turned over, loot is handed round, a
  * wreck is stripped, a ship is rebuilt from its scrap deck. Everything a
  * screen adds — whose turn, the downs, what is being asked, the log, every
- * button for something said rather than done — is in the panel below, and the
+ * button for something said rather than done — is in the panel beside it, and the
  * few marks the screen does draw on the table (a selection, a legal target,
  * an empty cell, a label) are in a blue no card is printed in.
  */
@@ -64,6 +64,7 @@ export function Tabletop({ state }: { state: GameState }) {
 
   return (
     <div className="tt">
+      <TableHud play={play} camera={camera} />
       <div ref={stage} className="tt-stage" aria-label="Game table. Scroll or pinch to zoom, drag to pan.">
         <div ref={cam} className="tt-cam">
           <div ref={table} className="tt-table">
@@ -79,8 +80,8 @@ export function Tabletop({ state }: { state: GameState }) {
             <CardTile card={peek} />
           </div>
         )}
+        <div id="tt-flash" />
       </div>
-      <TableHud play={play} camera={camera} />
       <TweakDrawer />
     </div>
   );
@@ -160,6 +161,7 @@ function Seat({ player, pos, play }: { player: PlayerState; pos: SeatPos; play: 
 
   const cockpit = shipEngine.cockpitIndex(player.ship);
   const editing = build.canEdit(player);
+  const set = build.placed?.player === player.id ? build.placed : null;
   const shipBuild: ShipBuild | null = editing
     ? {
         inHand: build.inHand,
@@ -175,6 +177,7 @@ function Seat({ player, pos, play }: { player: PlayerState; pos: SeatPos; play: 
         onPick: (slot) => {
           if (slot.index !== cockpit) build.pick({ kind: 'grid', player: player.id, slot: slot.index, cardId: slot.partId });
         },
+        placed: set && typeof set.where === 'object' ? { ...placedProps(build)!, cell: set.where } : null,
       }
     : null;
 
@@ -262,15 +265,26 @@ function Seat({ player, pos, play }: { player: PlayerState; pos: SeatPos; play: 
   );
 }
 
+/** What drawing the card set down takes, wherever at the seat it lies. */
+function placedProps(build: TablePlay['build']) {
+  const set = build.placed;
+  if (!set) return null;
+  const inHand = build.inHand?.kind === 'table' && build.inHand.at === set.at;
+  return { cardId: set.cardId, payload: set.payload, inHand, onPick: () => build.pick(set.payload) };
+}
+
 /** Where a seat's cockpit goes, before it has drafted one. */
 function Berth({ player, play }: { player: PlayerState; play: TablePlay }) {
   const { build } = play;
   const zone = useDropZone(`berth:${player.id}`, { accepts: (p) => build.berthAccepts(player, p), onDrop: (p) => build.berthDrop(player, p) });
   const takes = !zone.dragging && !!build.inHand && build.berthAccepts(player, build.inHand);
+  const set = build.placed?.player === player.id && build.placed.where === 'berth' ? placedProps(build) : null;
   return (
     <div className="tt-ship" style={{ gridTemplateColumns: 'repeat(3, var(--tt-cw))', gridTemplateRows: 'repeat(3, var(--tt-ch))' }}>
       {Array.from({ length: 9 }, (_, i) =>
-        i === 4 ? (
+        i === 4 && set ? (
+          <PlacedCard key="placed" set={{ ...set, cell: { x: 0, y: 0 } }} />
+        ) : i === 4 ? (
           <div
             key={i}
             {...zone.props}
@@ -321,6 +335,7 @@ function Rack({ player, play }: { player: PlayerState; play: TablePlay }) {
   const cards = build.rebuilding ? player.scrapDeck : player.carriedParts;
   const inHand = build.inHand;
   const takes = !zone.dragging && !!inHand && build.rackAccepts(player, inHand);
+  const set = build.placed?.player === player.id && build.placed.where === 'rack' ? placedProps(build) : null;
   return (
     <div
       {...zone.props}
@@ -329,10 +344,10 @@ function Rack({ player, play }: { player: PlayerState; play: TablePlay }) {
       onClick={takes && inHand ? () => build.rackDrop(player, inHand) : undefined}
     >
       <span className="tt-ui-tag">{build.rebuilding ? 'SCRAP DECK' : 'NOT FITTED'}</span>
-      {cards.length === 0 && <div className="tt-guide tt-rack-empty" />}
+      {cards.length === 0 && !set && <div className="tt-guide tt-rack-empty" />}
       {cards.map((cardId, i) => {
-        const payload = { kind, player: player.id, cardId } as const;
-        const sel = (inHand?.kind === 'hold' || inHand?.kind === 'scrap') && inHand.player === player.id && inHand.cardId === cardId;
+        const payload = { kind, player: player.id, cardId, at: i } as const;
+        const sel = (inHand?.kind === 'hold' || inHand?.kind === 'scrap') && inHand.player === player.id && inHand.at === i;
         return (
           <TableCard
             key={`${cardId}-${i}`}
@@ -346,6 +361,7 @@ function Rack({ player, play }: { player: PlayerState; play: TablePlay }) {
           />
         );
       })}
+      {set && <PlacedCard set={{ ...set, cell: { x: 0, y: 0 } }} />}
     </div>
   );
 }
@@ -493,18 +509,30 @@ function Center({ play, size }: { play: TablePlay; size: TableTweaks['size'] }) 
           </div>
         )}
 
-        <div className="tt-adecks">
+        {/* One column a down: the deck, and its top card turned face up in front of it. */}
+        <div className="tt-adecks" aria-label="Enemy action decks">
           {(fight?.actionDecks ?? Array.from({ length: play.config.downCount }, () => null)).map((deck, i) => {
             const now = play.side?.kind === 'enemy' && fight?.down === i;
+            const open = deck?.faceUp && getCard(deck.faceUp) ? deck.faceUp : null;
+            // Before a fight the whole deck lies face down; in one, what's under the open card.
+            const pile = deck ? deck.drawPile.length : 3;
             return (
               <div key={i} className={`tt-adeck${now ? ' now' : ''}`}>
                 <span className="tt-ui-num">{i + 1}</span>
-                {deck?.faceUp && getCard(deck.faceUp) ? (
-                  <TableCard key={`${deck.faceUp}-${deck.drawPile.length}-${deck.discardPile.length}`} cardId={deck.faceUp} cls="flip" />
+                <div className="tt-adeck-pile" title={`Action deck, down ${i + 1} · ${pile} face down`}>
+                  {pile === 0 && <div className="tt-guide" />}
+                  {pile > 2 && <div className="tt-back l2" />}
+                  {pile > 1 && <div className="tt-back l1" />}
+                  {pile > 0 && (
+                    <div className="tt-back">
+                      N.O.M.A.D.<small>ACTION</small>
+                    </div>
+                  )}
+                </div>
+                {open ? (
+                  <TableCard key={`${open}-${deck!.drawPile.length}-${deck!.discardPile.length}`} cardId={open} cls="flip" />
                 ) : (
-                  <div className="tt-back">
-                    N.O.M.A.D.<small>ACTION</small>
-                  </div>
+                  <div className="tt-guide" />
                 )}
               </div>
             );
@@ -531,7 +559,9 @@ function piecesLeft(ship: Ship, pieces: CardId[]): Ship {
 /**
  * The draft, dealt face up into the middle: one card more than there are
  * seats still drafting. The seat on the clock carries one to its ship — a
- * drag, or a click and then a click on where it goes.
+ * drag, or a click and then a click on where it goes — and sets it down
+ * there; it is theirs once they say they draft it. Until then it can be
+ * carried back.
  */
 function DraftSpread({ play }: { play: TablePlay }) {
   const { state, build } = play;
@@ -541,16 +571,26 @@ function DraftSpread({ play }: { play: TablePlay }) {
   // takes the first copy, so every other card keeps its key.
   const after = (i: number) => table.slice(i + 1).filter((id) => id === table[i]).length;
   const inHand = build.inHand;
+  const set = build.placed;
+  const zone = useDropZone('spread', set ? { accepts: (p) => p.kind === 'table' && p.at === set.at, onDrop: build.unplace } : null);
+  const back = !zone.dragging && !!set && inHand?.kind === 'table' && inHand.at === set.at;
   return (
-    <div className="tt-spread" aria-label="Draft cards" style={{ gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, table.length))}, var(--tt-cw))` }}>
+    <div
+      {...zone.props}
+      className={`tt-spread${zone.over ? ' over' : zone.active || back ? ' lit' : ''}`}
+      aria-label="Draft cards"
+      onClick={back ? build.unplace : undefined}
+      style={{ gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, table.length))}, var(--tt-cw))` }}>
       {table.map((cardId, i) => {
         const error = build.draftError(cardId);
-        const payload = error ? null : ({ kind: 'table', cardId } as const);
+        const payload = error ? null : ({ kind: 'table', cardId, at: i } as const);
+        // The card set down at a seat has left the spread; its place stays open for it.
+        const away = set?.at === i;
         return (
           <TableCard
             key={`${round}:${cardId}:${after(i)}`}
             cardId={cardId}
-            cls={`${error ? 'off' : 'can tt-drag'}${inHand?.kind === 'table' && inHand.cardId === cardId ? ' sel' : ''}`}
+            cls={`${error ? 'off' : 'can tt-drag'}${inHand?.kind === 'table' && inHand.at === i ? ' sel' : ''}${away ? ' away' : ''}`}
             style={{ animationDelay: `${i * 70}ms` }}
             {...(error ? { title: `Can't take it: ${error}` } : {})}
             onClick={() => payload && build.pick(payload)}

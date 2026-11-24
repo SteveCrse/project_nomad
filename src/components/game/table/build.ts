@@ -27,6 +27,12 @@ export interface TableBuild {
   inHand: DragPayload | null;
   /** Pick something up with a click; the same thing again puts it back. */
   pick: (payload: DragPayload | null) => void;
+  /** The card the seat on the clock carried from the spread and set down at its seat: not drafted until it says so. */
+  placed: Placed | null;
+  /** Draft the card set down, where it lies. */
+  draftPlaced: () => void;
+  /** Carry the card set down back to the middle. */
+  unplace: () => void;
   /** A seat has a ship on the table (not so before its cockpit is drafted). */
   hasShip: (player: PlayerState) => boolean;
   canEdit: (player: PlayerState) => boolean;
@@ -50,11 +56,23 @@ export interface TableBuild {
   seatDrop: (player: PlayerState, p: DragPayload) => void;
 }
 
+/** A card off the draft spread, set down at a seat: on a cell of its ship, on its cockpit's place, or beside the ship. */
+export interface Placed {
+  cardId: CardId;
+  /** Where it lay in the spread. */
+  at: number;
+  player: PlayerId;
+  where: Cell | 'berth' | 'rack';
+  /** Picking it up again carries this. */
+  payload: DragPayload;
+}
+
 const same = (a: DragPayload | null, b: DragPayload | null): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export function useTableBuild(state: GameState, config: GameConfig): TableBuild {
   const store = useGameStore();
   const [held, setHeld] = useState<DragPayload | null>(null);
+  const [set, setSet] = useState<(Omit<Placed, 'payload'> & { stamp: string }) | null>(null);
 
   const setup = state.setup;
   const drafting = state.phase === 'setup' && !!setup;
@@ -73,11 +91,11 @@ export function useTableBuild(state: GameState, config: GameConfig): TableBuild 
     if (!p) return false;
     switch (p.kind) {
       case 'table':
-        return drafting && !!setup!.table.includes(p.cardId) && !!drafter;
+        return drafting && setup!.table[p.at] === p.cardId && !!drafter;
       case 'hold':
-        return drafting && !!seat(p.player)?.carriedParts.includes(p.cardId);
+        return drafting && seat(p.player)?.carriedParts[p.at] === p.cardId;
       case 'scrap':
-        return rebuilding && !!seat(p.player)?.scrapDeck.includes(p.cardId);
+        return rebuilding && seat(p.player)?.scrapDeck[p.at] === p.cardId;
       case 'grid': {
         const owner = seat(p.player);
         return !!owner && canEdit(owner) && owner.ship.slots[p.slot]?.partId === p.cardId;
@@ -90,6 +108,17 @@ export function useTableBuild(state: GameState, config: GameConfig): TableBuild 
   };
   const inHand = live(held) ? held : null;
   const done = () => setHeld(null);
+
+  // A card set down stays set down only while the same seat is on the same pick.
+  const stamp = drafting ? `${setup!.round}:${setup!.picked.length}:${drafter}` : '';
+  const placed: Placed | null =
+    set && set.stamp === stamp && set.player === drafter && setup!.table[set.at] === set.cardId
+      ? { ...set, payload: { kind: 'table', cardId: set.cardId, at: set.at } }
+      : null;
+  /** Dropping a card of the spread at a seat sets it down there; the Draft button takes it. */
+  const place = (player: PlayerState, p: DragPayload, where: Placed['where']) => {
+    if (p.kind === 'table') setSet({ cardId: p.cardId, at: p.at, player: player.id, where, stamp });
+  };
 
   const fitsAt = (player: PlayerState, cardId: CardId, cell: Cell): boolean => {
     const part = getPart(cardId);
@@ -113,6 +142,17 @@ export function useTableBuild(state: GameState, config: GameConfig): TableBuild 
       store.clearError();
       setHeld(payload && !same(payload, inHand) ? payload : null);
     },
+    placed,
+    draftPlaced: () => {
+      if (!placed) return;
+      store.draftCard(placed.cardId, typeof placed.where === 'object' ? placed.where : undefined);
+      setSet(null);
+      done();
+    },
+    unplace: () => {
+      setSet(null);
+      done();
+    },
     hasShip,
     canEdit,
     draftError,
@@ -134,7 +174,7 @@ export function useTableBuild(state: GameState, config: GameConfig): TableBuild 
     },
     cellDrop: (player, p, cell) => {
       if (p.kind === 'grid') store.moveModule(player.id, p.slot, cell);
-      else if (p.kind === 'table') store.draftCard(p.cardId, cell);
+      else if (p.kind === 'table') place(player, p, cell);
       else if (p.kind === 'hold') store.assemblePart(player.id, p.cardId, cell);
       else if (p.kind === 'scrap') store.fitFromScrap(player.id, p.cardId, cell);
       done();
@@ -158,8 +198,8 @@ export function useTableBuild(state: GameState, config: GameConfig): TableBuild 
     },
 
     berthAccepts: (player, p) => cockpitRound && p.kind === 'table' && player.id === drafter && !draftError(p.cardId),
-    berthDrop: (_player, p) => {
-      if (p.kind === 'table') store.draftCard(p.cardId);
+    berthDrop: (player, p) => {
+      place(player, p, 'berth');
       done();
     },
 
@@ -169,7 +209,7 @@ export function useTableBuild(state: GameState, config: GameConfig): TableBuild 
       return false;
     },
     rackDrop: (player, p) => {
-      if (p.kind === 'table') store.draftCard(p.cardId);
+      if (p.kind === 'table') place(player, p, 'rack');
       else if (p.kind === 'grid') {
         if (rebuilding) store.stowToScrap(player.id, p.slot);
         else store.returnPart(player.id, p.slot);
