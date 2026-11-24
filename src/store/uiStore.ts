@@ -27,6 +27,55 @@ export type CombatMode =
   | { kind: 'use'; slot: SlotIndex | null }
   | { kind: 'item'; cardId: CardId | null };
 
+/** How the tabletop looks and moves — the Tweak drawer's switches. */
+export interface TableTweaks {
+  surface: 'putty' | 'felt' | 'walnut' | 'night';
+  size: 's' | 'm' | 'l';
+  chit: 'cube' | 'disc' | 'hex';
+  die: 'ivory' | 'red' | 'crt';
+  hand: 'fan' | 'row';
+  /** Screen guides: empty cells, FRONT tags, seat names, deck numbers. */
+  grid: 'on' | 'off';
+  /** The seated camera's tilt. */
+  tilt: 'on' | 'off';
+  /** Turn the table so the seat on the clock sits at the bottom. */
+  follow: 'on' | 'off';
+}
+
+export const TWEAK_DEFAULTS: TableTweaks = {
+  surface: 'putty',
+  size: 'm',
+  chit: 'cube',
+  die: 'ivory',
+  hand: 'fan',
+  grid: 'on',
+  tilt: 'on',
+  follow: 'on',
+};
+
+const TWEAK_KEY = 'nomad-table-tweaks-v1';
+
+function loadTweaks(): TableTweaks {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TWEAK_KEY) ?? '{}') as Partial<TableTweaks>;
+    const out = { ...TWEAK_DEFAULTS };
+    for (const key of Object.keys(TWEAK_DEFAULTS) as (keyof TableTweaks)[]) {
+      if (typeof saved[key] === 'string') (out as Record<string, string>)[key] = saved[key];
+    }
+    return out;
+  } catch {
+    return { ...TWEAK_DEFAULTS };
+  }
+}
+
+function saveTweaks(tweaks: TableTweaks): void {
+  try {
+    localStorage.setItem(TWEAK_KEY, JSON.stringify(tweaks));
+  } catch {
+    // Private mode, or storage full: the tweaks just don't outlive the tab.
+  }
+}
+
 /** View state only — nothing here is game state or tuning. */
 interface UiStore {
   tab: TabId;
@@ -59,6 +108,23 @@ interface UiStore {
   manualDamage: number;
   /** The run transcript is open beside the table. */
   logOpen: boolean;
+
+  // ---- tabletop ----
+  tweaks: TableTweaks;
+  tweaksOpen: boolean;
+  /** The module the seat on the clock has picked up on the table, before choosing what it does. */
+  tableSel: SlotIndex | null;
+  /** A line for the panel about a click the table refused. */
+  tableNote: string | null;
+  /** Rolls of the step in hand whose dice have landed on the table. */
+  rollsLanded: number;
+
+  setTweak: <K extends keyof TableTweaks>(key: K, value: TableTweaks[K]) => void;
+  resetTweaks: () => void;
+  toggleTweaks: (open?: boolean) => void;
+  selectTableModule: (slot: SlotIndex | null) => void;
+  setTableNote: (note: string | null) => void;
+  setRollsLanded: (n: number) => void;
 
   setTab: (tab: TabId) => void;
   toggleConfig: () => void;
@@ -102,6 +168,27 @@ export const useUiStore = create<UiStore>((set) => ({
   combatMode: null,
   manualDamage: 0,
   logOpen: true,
+
+  tweaks: loadTweaks(),
+  tweaksOpen: false,
+  tableSel: null,
+  tableNote: null,
+  rollsLanded: 0,
+
+  setTweak: (key, value) =>
+    set((s) => {
+      const tweaks = { ...s.tweaks, [key]: value };
+      saveTweaks(tweaks);
+      return { tweaks };
+    }),
+  resetTweaks: () => {
+    saveTweaks(TWEAK_DEFAULTS);
+    set({ tweaks: { ...TWEAK_DEFAULTS } });
+  },
+  toggleTweaks: (open) => set((s) => ({ tweaksOpen: open ?? !s.tweaksOpen })),
+  selectTableModule: (tableSel) => set({ tableSel }),
+  setTableNote: (tableNote) => set({ tableNote }),
+  setRollsLanded: (rollsLanded) => set({ rollsLanded }),
 
   setTab: (tab) => set({ tab }),
   toggleConfig: () => set((s) => ({ configOpen: !s.configOpen })),

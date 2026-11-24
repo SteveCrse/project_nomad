@@ -34,7 +34,9 @@ export default function App() {
     if (phase === 'combat') setTab('table');
     // The draft and the assembly both happen on the builder's grid.
     else if (phase === 'setup') setTab('builder');
-    else if (phase === 'map' || phase === 'victory' || phase === 'defeat') setTab('mission');
+    // The table carries the mission board too: a seat already there stays for the next move.
+    else if (phase === 'map' && useUiStore.getState().tab !== 'table') setTab('mission');
+    else if (phase === 'victory' || phase === 'defeat') setTab('mission');
   }, [phase, autoFollow, setTab]);
 
   const state = useGame();

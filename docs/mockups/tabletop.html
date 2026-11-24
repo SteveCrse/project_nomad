@@ -1,0 +1,1098 @@
+<title>NOMAD Table</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Barlow+Condensed:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: the table holds only physical components (cards, tiles, minis, energy cubes, the die).
+   Everything a screen adds (controls, downs, log, crew, highlights) lives in the panel below it or in --ui blue. */
+:root {
+  color-scheme: dark;
+  --font-display: 'Unbounded', 'Arial Black', sans-serif;
+  --font-body: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+
+  /* NOMAD design system */
+  --n-950:#0d0f0c; --n-900:#14170f; --n-800:#1e2318; --n-700:#2a3122; --n-600:#3b4530; --n-400:#7a8563;
+  --cream-100:#f4eedc; --cream-200:#e8dcb8;
+  --putty-500:#a89877; --putty-700:#6e6450;
+  --crt-glass:#0b0d08; --crt-white:#edead9; --crt-green-300:#c9ebc2; --crt-green-500:#9fd9a0; --crt-green-700:#5c8a5e;
+  --red-300:#e08578; --red-500:#b33b2e; --red-700:#7a2a20;
+  --amber-300:#f0c77a; --amber-500:#d99a3e; --amber-700:#9c6c24;
+  --steel-500:#9ba08f; --steel-700:#6b6f5f;
+  --role-GEN:#5c8a5e; --role-WPN:#b33b2e; --role-SHD:#6b6f5f; --role-COCKPIT:#1e2318;
+
+  /* screen UI: deliberately outside the game's palette so it never reads as printed */
+  --ui:#3d9bff; --ui-soft:rgb(61 155 255 / .35); --ui-tgt:#ff4f6e; --ui-ok:#38d39f;
+  --hud:#101310; --hud-2:#1a1f18; --hud-line:#2c3428; --hud-ink:#e8eadf; --hud-dim:#8b957c;
+
+  /* table surface (swapped by the Surface tweak) */
+  --table:#cbbf9f; --table-2:#c2b593;
+  --page:#0c0e0b;
+  --cw:104px; --ch:118px; --gap:8px;
+}
+html[data-surface="felt"]  { --table:#2e4a3b; --table-2:#294334; }
+html[data-surface="walnut"]{ --table:#5b3d29; --table-2:#4f3423; }
+html[data-surface="night"] { --table:#1a1e14; --table-2:#161a11; }
+html[data-size="s"] { --cw:92px;  --ch:106px; }
+html[data-size="l"] { --cw:116px; --ch:130px; }
+
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body {
+  background: var(--page); color: var(--hud-ink); font-family: var(--font-body); font-size: 15px; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 20px; box-sizing: border-box; overflow-x: hidden;
+}
+button { font: inherit; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--ui); outline-offset: 2px; }
+
+/* ---------- stage + table ---------- */
+#stage { position: relative; width: 100%; height: 640px; overflow: hidden; perspective: 2400px; border-radius: 16px; touch-action: none; cursor: grab; }
+#stage.panning { cursor: grabbing; }
+#cam { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.3,.7,.3,1); }
+#cam.live { transition: none; }
+#table {
+  position: absolute; left: 0; top: 0; width: max-content; transform-origin: 50% 50%;
+  display: grid; grid-template-areas: ". top ." "left center right" ". bottom ."; grid-template-columns: auto auto auto; grid-template-rows: auto auto auto;
+  gap: 10px 30px; padding: 26px 34px; box-sizing: border-box;
+  color: var(--n-900); border-radius: 22px;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgb(255 255 255 / .10), transparent 65%),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / .025) 0 2px, transparent 2px 5px),
+    linear-gradient(var(--table), var(--table-2));
+  box-shadow: 0 0 0 10px #2b2218, 0 0 0 12px #000, 0 30px 60px rgb(0 0 0 / .6);
+  transition: transform 1s cubic-bezier(.45,0,.2,1);
+}
+html[data-surface="walnut"] #table { background:
+  radial-gradient(ellipse at 50% 45%, rgb(255 255 255 / .08), transparent 65%),
+  repeating-linear-gradient(92deg, rgb(0 0 0 / .08) 0 3px, transparent 3px 11px, rgb(255 255 255 / .03) 11px 13px, transparent 13px 26px),
+  linear-gradient(var(--table), var(--table-2)); }
+html[data-surface="felt"] #table { background:
+  radial-gradient(ellipse at 50% 45%, rgb(255 255 255 / .09), transparent 65%),
+  repeating-radial-gradient(circle at 30% 40%, rgb(0 0 0 / .04) 0 1px, transparent 1px 3px),
+  linear-gradient(var(--table), var(--table-2)); }
+
+/* UI guides (screen-only) */
+.guide { border: 1.5px dashed var(--ui-soft); border-radius: 8px; }
+html[data-grid="off"] .guide, html[data-grid="off"] .front-tag { display: none; }
+.front-tag {
+  position: absolute; left: 50%; transform: translateX(-50%); padding: 2px 7px; border-radius: 99px; white-space: nowrap;
+  background: var(--ui); color: #fff; font: 700 10px/1.2 var(--font-body); letter-spacing: .16em; opacity: .85;
+}
+.front-tag.top { top: -8px; } .front-tag.bottom { bottom: -8px; }
+
+/* ---------- mission track: step tiles, boss sheet, player minis ---------- */
+#track { position: relative; width: 900px; height: 150px; justify-self: center; }
+#track-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#track-svg path { fill: none; stroke: rgb(20 23 15 / .22); stroke-width: 3; stroke-dasharray: 2 7; stroke-linecap: round; }
+#track-svg path.walked { stroke: rgb(20 23 15 / .45); stroke-dasharray: none; }
+html[data-surface="felt"] #track-svg path, html[data-surface="walnut"] #track-svg path, html[data-surface="night"] #track-svg path { stroke: rgb(255 255 255 / .25); }
+.step {
+  position: absolute; width: 68px; height: 60px; margin: -30px 0 0 -34px; display: grid; place-items: center;
+  border: 0; padding: 6px 0 0; border-radius: 10px; color: var(--n-900);
+  background: var(--cream-100); box-shadow: 0 3px 0 rgb(0 0 0 / .35), inset 0 0 0 1.5px var(--n-900);
+  font: 700 10.5px/1 var(--font-body); letter-spacing: .1em; text-transform: uppercase; cursor: default;
+}
+.step .ico { font: 800 17px/1 var(--font-display); }
+.step.combat .ico { color: var(--red-500); }
+.step.loot .ico { color: var(--amber-700); }
+.step.event .ico { color: var(--steel-700); }
+.step.start .ico { color: var(--crt-green-700); }
+.step.rarity { background: var(--amber-300); }
+.step.boss {
+  width: 140px; height: 96px; margin: -48px 0 0 -70px; background: var(--n-800); color: var(--crt-green-500); padding: 8px;
+  box-shadow: 0 4px 0 rgb(0 0 0 / .45), inset 0 0 0 2px var(--n-950), inset 0 0 0 6px var(--n-800), inset 0 0 0 7px var(--red-500);
+  grid-template-rows: auto 1fr auto; gap: 2px;
+}
+.step.boss .k { font: 700 9px/1 var(--font-mono); color: var(--n-400); letter-spacing: .12em; }
+.step.boss .ico { color: var(--red-300); font-size: 15px; letter-spacing: .02em; }
+.step.boss .s { font: 700 10px/1 var(--font-mono); color: var(--crt-white); letter-spacing: .04em; }
+.step.next { cursor: pointer; outline: 2.5px solid var(--ui); outline-offset: 3px; }
+.step.next:hover { transform: translateY(-2px); }
+.minis { position: absolute; display: flex; gap: 0; margin: -50px 0 0 14px; pointer-events: none; z-index: 3;
+  transition: left .7s cubic-bezier(.3,1.4,.5,1), top .7s cubic-bezier(.3,1.4,.5,1); }
+.minis svg { width: 22px; height: 30px; margin-left: -6px; filter: drop-shadow(0 4px 2px rgb(0 0 0 / .45)); }
+
+/* ---------- center (shared) and seats ---------- */
+#center { grid-area: center; display: grid; gap: 18px; align-content: center; justify-items: center; padding: 6px 0; }
+.center-main { display: grid; grid-template-columns: auto auto auto auto; gap: 30px; align-items: center; }
+.mid-col { display: grid; gap: 18px; justify-items: center; }
+.enemy-box { width: 372px; height: 372px; display: grid; place-items: center; }
+.enemy-turn { transition: transform .8s cubic-bezier(.3,1.2,.5,1); }
+#seat-bottom { grid-area: bottom; width: 600px; height: 410px; }
+.seat-tag.on { background: var(--ui-ok); color: var(--n-900); }
+.seat-cell { position: relative; }
+.seat-cell.empty { display: none; }
+#seat-top { grid-area: top; width: 600px; height: 410px; }
+#seat-left { grid-area: left; width: 410px; height: 600px; }
+#seat-right { grid-area: right; width: 410px; height: 600px; }
+.seat-in { display: grid; grid-template-columns: auto auto auto; gap: 26px; align-items: center; position: absolute; left: 50%; top: 50%; width: max-content; }
+.rot-180 { transform: translate(-50%, -50%) rotate(180deg); } .rot-90 { transform: translate(-50%, -50%) rotate(90deg); } .rot--90 { transform: translate(-50%, -50%) rotate(-90deg); }
+.seat-side { display: grid; gap: 22px; justify-items: center; }
+.held { position: relative; width: 70px; height: 70px; }
+.held .back { position: absolute; width: 44px; height: 62px; bottom: 0; left: 12px; font-size: 6px; transform-origin: 50% 120%; }
+.seat-tag { position: absolute; left: 50%; bottom: -14px; transform: translateX(-50%); padding: 3px 9px; border-radius: 99px; background: var(--ui); color: #fff; font: 700 12px/1 var(--font-body); letter-spacing: .1em; white-space: nowrap; }
+html[data-grid="off"] .seat-tag { display: none; }
+.seat-in .ship .module { cursor: default; }
+.ship-wrap { position: relative; padding: 14px 10px; }
+.ship { display: grid; grid-template-columns: repeat(3, var(--cw)); grid-template-rows: repeat(3, var(--ch)); gap: var(--gap); position: relative; }
+
+/* module card */
+.module {
+  position: relative; border-radius: 8px; background: var(--cream-100); color: var(--n-900);
+  box-shadow: 0 0 0 1.5px var(--n-900), 3px 4px 0 rgb(0 0 0 / .28);
+  display: grid; grid-template-rows: auto auto 1fr auto; cursor: pointer; user-select: none;
+  transition: transform .18s ease, box-shadow .18s ease, outline-color .18s;
+  outline: 3px solid transparent; outline-offset: 4px;
+}
+.module:hover { transform: translateY(-2px); }
+.module .band { display: flex; justify-content: space-between; align-items: center; height: 17px; padding: 0 6px; border-radius: 7px 7px 0 0; color: var(--cream-100); font: 700 10px/1 var(--font-body); letter-spacing: .14em; }
+.module .name { padding: 4px 6px 0; font: 700 13px/1.02 var(--font-body); text-transform: uppercase; letter-spacing: .02em; min-height: 26px; }
+.module .sockets { display: flex; flex-wrap: wrap; align-content: center; gap: 4px; padding: 2px 6px; }
+.module .stats { display: flex; gap: 8px; padding: 0 6px 5px; font: 700 10px/1 var(--font-mono); color: var(--putty-700); }
+.module .stats b { color: var(--n-900); }
+.module.role-COCKPIT { background: var(--n-800); color: var(--crt-white); box-shadow: 0 0 0 1.5px var(--n-950), 0 0 0 4px var(--crt-green-700), 3px 5px 0 4px rgb(0 0 0 / .25); }
+.module.role-COCKPIT .stats { color: var(--n-400); } .module.role-COCKPIT .stats b { color: var(--crt-green-500); }
+.module.role-COCKPIT .band { color: var(--crt-green-500); background: var(--crt-glass) !important; }
+.first-icon { display: inline-grid; place-items: center; height: 13px; padding: 0 4px; border-radius: 3px; background: var(--amber-300); color: var(--n-900); font: 800 8.5px/1 var(--font-display); }
+.sock { width: 17px; height: 17px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgb(20 23 15 / .25); display: grid; place-items: center; }
+.role-COCKPIT .sock { box-shadow: inset 0 0 0 1.5px rgb(159 217 160 / .25); }
+/* screen-only states on cards */
+.module.sel { transform: translateY(-4px); outline-color: var(--ui); z-index: 4; }
+.module.attacker { outline-color: var(--ui); }
+.module.tgt { outline: 3px dashed var(--ui-tgt); animation: blink 1s steps(2) infinite; }
+.module.targeted { outline: 3px solid var(--ui-tgt); }
+@keyframes blink { 50% { outline-color: transparent; } }
+.module.drop-ok { outline: 3px dashed var(--ui-ok); }
+.module.drop-hover { outline-style: solid; transform: translateY(-4px) scale(1.03); }
+.module.drop-no { opacity: .6; }
+
+/* energy marker */
+.chit {
+  width: 14px; height: 14px; position: relative; display: block; touch-action: none; border-radius: 3px;
+  background: linear-gradient(135deg, #c8f2c4 0 38%, #6cc27a 38% 68%, #3f8550 68%); box-shadow: 0 2px 0 #24522f, 0 2px 3px rgb(0 0 0 / .3);
+}
+html[data-chit="disc"] .chit { border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffe8b0, var(--amber-500) 55%, var(--amber-700)); box-shadow: 0 1.5px 0 #6d4a16, 0 2px 3px rgb(0 0 0 / .35); }
+html[data-chit="hex"] .chit { border-radius: 0; clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); width: 16px; background: linear-gradient(160deg, #a9e8a9, var(--crt-green-700)); box-shadow: none; }
+.chit.drag { cursor: grab; }
+.chit.drag:hover { transform: translateY(-1px) scale(1.12); }
+.chit.arrived { outline: 2px solid var(--ui-ok); outline-offset: 1px; }
+.chit.lifted { opacity: .25; }
+
+/* enemy action decks */
+.adecks { display: grid; grid-template-columns: repeat(2, 86px); gap: 22px 18px; }
+.adeck { position: relative; }
+.acard {
+  position: relative; width: 86px; height: 120px; border-radius: 8px; background: var(--crt-glass); color: var(--crt-green-500);
+  box-shadow: 0 0 0 1.5px var(--n-950), 2px 2px 0 var(--n-700), 4px 4px 0 var(--n-800), 6px 6px 0 rgb(0 0 0 / .35);
+  display: grid; grid-template-rows: auto 1fr auto; padding: 8px 7px; box-sizing: border-box; text-align: center;
+  outline: 3px solid transparent; outline-offset: 5px;
+}
+.acard::after { content: ''; position: absolute; inset: 0; border-radius: 8px; pointer-events: none; background: repeating-linear-gradient(0deg, rgb(0 0 0 / .25) 0 1px, transparent 1px 3px); }
+.acard .k { font: 700 9px/1 var(--font-mono); color: var(--n-400); letter-spacing: .1em; }
+.acard .glyph { display: grid; place-items: center; font: 800 30px/1 var(--font-display); }
+.acard .nm { font: 700 13px/1.05 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--crt-white); }
+.acard.attack .glyph { color: var(--red-300); } .acard.generate .glyph { color: var(--crt-green-500); } .acard.reroute .glyph { color: var(--amber-300); }
+.adeck.now .acard { outline-color: var(--ui); }
+.adeck .ui-num { position: absolute; top: -10px; left: -8px; z-index: 2; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--ui); color: #fff; font: 700 11px/1 var(--font-mono); }
+html[data-grid="off"] .adeck .ui-num { display: none; }
+
+/* middle of the table: where the die lands and events are revealed */
+.die-zone { position: relative; width: 170px; height: 140px; display: grid; place-items: center; perspective: 600px; }
+.die-view { transform-style: preserve-3d; transform: rotateX(-14deg) rotateY(14deg); }
+#die { position: relative; width: 56px; height: 56px; transform-style: preserve-3d; cursor: pointer; outline: none; }
+#die .face {
+  position: absolute; inset: 0; border-radius: 11px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 8px; box-sizing: border-box;
+  background: var(--die-bg, #f4eedc); box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / .25), inset -4px -5px 8px rgb(0 0 0 / .14); backface-visibility: hidden;
+}
+#die .pip { width: 10px; height: 10px; border-radius: 50%; background: var(--die-pip, #14170f); place-self: center; }
+#die .f1 { transform: translateZ(28px); } #die .f6 { transform: rotateY(180deg) translateZ(28px); }
+#die .f2 { transform: rotateY(90deg) translateZ(28px); } #die .f5 { transform: rotateY(-90deg) translateZ(28px); }
+#die .f3 { transform: rotateX(90deg) translateZ(28px); } #die .f4 { transform: rotateX(-90deg) translateZ(28px); }
+html[data-die="red"] #die { --die-bg: #c2453a; --die-pip: #f4eedc; }
+html[data-die="crt"] #die { --die-bg: #1e2318; --die-pip: #9fd9a0; }
+.die-shadow { position: absolute; bottom: 26px; width: 52px; height: 12px; border-radius: 50%; background: rgb(0 0 0 / .35); filter: blur(4px); }
+.die-ring { position: absolute; inset: 22px 40px; border-radius: 50%; border: 2.5px dashed var(--ui); opacity: 0; pointer-events: none; }
+.die-zone.await .die-ring { opacity: 1; animation: spin 6s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.reveal-spot { position: relative; width: 120px; height: 150px; }
+
+/* cards: backs, item, event */
+.back {
+  border-radius: 8px; background: var(--n-800); position: relative; overflow: hidden; color: var(--crt-green-500);
+  background-image: linear-gradient(rgb(159 217 160 / .08) 1px, transparent 1px), linear-gradient(90deg, rgb(159 217 160 / .08) 1px, transparent 1px);
+  background-size: 9px 9px; box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(159 217 160 / .35);
+  display: grid; place-content: center; text-align: center; gap: 4px; font: 800 10px/1 var(--font-display); letter-spacing: .06em;
+}
+.back small { font: 700 8.5px/1 var(--font-mono); letter-spacing: .14em; opacity: .8; }
+.back.items { color: var(--amber-300); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(217 154 62 / .6); }
+.back.events { color: var(--steel-500); box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(155 160 143 / .6); }
+.back.rare { color: #9cc0dd; box-shadow: inset 0 0 0 1.5px var(--n-950), inset 0 0 0 5px var(--n-800), inset 0 0 0 6px rgb(94 124 150 / .9); }
+.back.cockpits { color: var(--crt-green-300); }
+.back.scrap { color: var(--cream-200); }
+.ecard { position: absolute; inset: 0; border-radius: 9px; background: var(--cream-100); color: var(--n-900); box-shadow: 0 0 0 1.5px var(--n-900), 3px 5px 0 rgb(0 0 0 / .28); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+.ecard .band { padding: 5px 8px; background: var(--steel-700); color: var(--cream-100); font: 700 10px/1 var(--font-body); letter-spacing: .16em; }
+.ecard h4 { margin: 7px 8px 0; font: 800 12.5px/1.05 var(--font-display); }
+.ecard p { margin: 5px 8px; font: 500 11.5px/1.2 var(--font-body); }
+
+.decks { display: grid; grid-template-columns: repeat(3, 84px); gap: 22px 16px; justify-content: center; }
+.deck { position: relative; width: 84px; height: 118px; background: none; border: 0; padding: 0; color: inherit; }
+.deck .back { position: absolute; inset: 0; }
+.deck .back.l1 { transform: translate(3px, 3px); filter: brightness(.7); }
+.deck .back.l2 { transform: translate(6px, 6px); filter: brightness(.5); }
+.deck .back.top { transition: transform .15s ease; }
+.deck.can { cursor: pointer; }
+.deck.can:hover .back.top { transform: translateY(-4px) rotate(-2deg); }
+.deck.can:hover { outline: 2.5px solid var(--ui); outline-offset: 6px; border-radius: 8px; }
+.deck.empty .back { display: none; }
+
+/* your side */
+.home-left { display: grid; gap: 22px; justify-items: center; }
+.bank { position: relative; width: 120px; height: 90px; }
+.bank .chit { position: absolute; }
+.scrap { position: relative; width: 64px; height: 90px; }
+.scrap .back { position: absolute; inset: 0; font-size: 7.5px; }
+
+/* hand (held cards) */
+/* the active player's hand: held in front of the screen, not on the table */
+#hand { position: absolute; right: 18px; bottom: -40px; width: 440px; height: 200px; pointer-events: none; z-index: 20; }
+@media (max-width: 900px) { #hand { transform: scale(.6); transform-origin: 100% 100%; } }
+#hand .icard { pointer-events: auto; }
+.zoom { display: flex; gap: 4px; }
+.zoom .btn { padding: 7px 11px; }
+.icard {
+  position: absolute; bottom: 0; width: 122px; height: 170px; border-radius: 9px; box-sizing: border-box; padding: 0; border: 0; text-align: left;
+  background: var(--cream-100); color: var(--n-900); box-shadow: 0 0 0 1.5px var(--n-900), 3px 5px 10px rgb(0 0 0 / .35);
+  transform-origin: 50% 120%; transition: transform .22s cubic-bezier(.2,.8,.2,1), outline-color .2s; display: grid; grid-template-rows: auto auto 1fr auto;
+  outline: 3px solid transparent; outline-offset: 4px;
+}
+.icard .band { height: 20px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border-radius: 8px 8px 0 0; background: var(--amber-500); font: 700 10px/1 var(--font-body); letter-spacing: .16em; }
+.icard .nm { padding: 7px 8px 0; font: 800 13px/1.1 var(--font-display); }
+.icard .tx { padding: 6px 8px; font: 500 13.5px/1.25 var(--font-body); }
+.icard .ft { padding: 0 8px 7px; font: 700 9px/1 var(--font-mono); color: var(--putty-700); }
+.icard.sel { outline-color: var(--ui); }
+html[data-hand="row"] .icard { transform-origin: 50% 50%; }
+
+#fx { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+.fxg { position: fixed; pointer-events: none; z-index: 41; }
+
+/* ---------- screen panel (extradiegetic) ---------- */
+#hud {
+  position: relative; margin: 22px auto 0; max-width: 1400px; display: grid; gap: 10px 22px;
+  grid-template-columns: 230px minmax(320px, 1fr) minmax(240px, 380px) 210px;
+  padding: 14px; border-radius: 14px; background: var(--hud); box-shadow: 0 0 0 1px var(--hud-line);
+}
+@media (max-width: 1100px) { #hud { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { #hud { grid-template-columns: 1fr; } }
+.hud-box { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.hud-k { font: 700 11px/1 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: var(--hud-dim); }
+.turn { font: 800 18px/1.1 var(--font-display); }
+.turn.enemy { color: var(--ui-tgt); }
+.pips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.pip-d { height: 34px; border-radius: 6px; display: grid; place-items: center; font: 700 16px/1 var(--font-mono); color: var(--hud-dim); background: var(--hud-2); }
+.pip-d.used { opacity: .45; text-decoration: line-through; }
+.pip-d.now { background: var(--ui); color: #fff; }
+.pip-d.now.enemy { background: var(--ui-tgt); }
+.hud-note { margin: 0; font: 500 13px/1.3 var(--font-body); color: var(--hud-dim); }
+.hud-note b { color: var(--hud-ink); }
+.prompt { font: 700 16px/1.3 var(--font-mono); color: var(--hud-ink); }
+.roll-line { font: 700 15px/1.2 var(--font-mono); }
+.roll-line .hit { color: var(--ui-ok); } .roll-line .miss { color: var(--ui-tgt); }
+.log { margin: 0; padding: 0; list-style: none; font: 400 12px/1.5 var(--font-mono); color: var(--hud-dim); }
+.log li:first-child { color: #c6cbb7; }
+.acts { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
+.btn {
+  border: 0; border-radius: 8px; padding: 10px 14px; font: 700 14px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase;
+  background: var(--hud-2); color: var(--hud-ink); box-shadow: inset 0 0 0 1px var(--hud-line);
+}
+.btn:hover:not([disabled]) { background: #242b21; }
+.btn.pri { background: var(--ui); color: #fff; box-shadow: none; }
+.btn.pri:hover:not([disabled]) { background: #2f86e6; }
+.btn.danger { background: var(--ui-tgt); color: #fff; box-shadow: none; }
+.btn[disabled] { opacity: .35; cursor: default; }
+.btn.pulse { animation: pulse 1.3s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px var(--ui-soft); } }
+.spend { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.spend .n { min-width: 44px; text-align: center; font: 700 20px/1 var(--font-mono); }
+.spend .odds { font: 400 12px/1.2 var(--font-mono); color: var(--hud-dim); }
+.crew { display: grid; gap: 5px; }
+.mate { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 7px; background: var(--hud-2); font: 600 14px/1.1 var(--font-body); }
+.mate .dot { width: 12px; height: 12px; border-radius: 50%; }
+.mate.active { box-shadow: inset 0 0 0 1.5px var(--ui); }
+.mate .tag { font: 700 10px/1 var(--font-mono); color: var(--hud-dim); }
+.mate .tag.aggro { color: var(--ui-tgt); }
+.flash { position: absolute; left: 50%; top: 0; transform: translate(-50%, -60%); z-index: 5; padding: 10px 26px; border-radius: 10px; white-space: nowrap;
+  background: var(--ui); color: #fff; font: 800 26px/1 var(--font-display); letter-spacing: .02em; box-shadow: 0 10px 30px rgb(0 0 0 / .5); pointer-events: none; }
+.flash.bad { background: var(--ui-tgt); }
+
+/* tweak drawer */
+#tweaks {
+  position: fixed; z-index: 61; top: 0; right: 0; bottom: 0; width: min(320px, 92vw); overflow-y: auto; box-sizing: border-box;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) 24px 18px;
+  background: var(--hud); color: var(--hud-ink); box-shadow: -10px 0 30px rgb(0 0 0 / .5); display: grid; gap: 16px; align-content: start;
+}
+#tweaks h2 { margin: 0; font: 800 18px/1.1 var(--font-display); }
+#tweaks .hint { margin: 0; font: 400 14px/1.35 var(--font-body); color: var(--hud-dim); }
+.tw { display: grid; gap: 6px; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { flex: 1 1 auto; border: 0; border-radius: 6px; padding: 8px; background: var(--hud-2); color: var(--hud-ink); font: 600 14px/1 var(--font-body); box-shadow: inset 0 0 0 1px var(--hud-line); }
+.seg button.on { background: var(--ui); color: #fff; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+
+<div id="stage" aria-label="Game table. Scroll or pinch to zoom, drag to pan.">
+  <div id="cam">
+    <div id="table">
+      <div class="seat-cell" id="seat-top"></div>
+      <div class="seat-cell" id="seat-left"></div>
+      <section id="center" aria-label="Shared play area">
+        <div id="track" aria-label="Mission board"></div>
+        <div class="center-main">
+          <div class="decks" id="decks"></div>
+          <div class="mid-col">
+            <div class="reveal-spot" id="reveal-spot"></div>
+            <div class="die-zone" id="die-zone">
+              <div class="die-ring"></div><div class="die-shadow"></div>
+              <div class="die-view"><div id="die" role="button" tabindex="0" aria-label="d6, click to roll"></div></div>
+            </div>
+            <div class="bank" id="bank" title="Energy markers (shared supply)"></div>
+          </div>
+          <div class="enemy-box"><div class="ship-wrap enemy-turn" id="enemy-wrap"></div></div>
+          <div class="adecks" id="adecks"></div>
+        </div>
+      </section>
+      <div class="seat-cell" id="seat-right"></div>
+      <div class="seat-cell" id="seat-bottom"></div>
+    </div>
+  </div>
+  <div id="hand" aria-label="Cards in hand"></div>
+</div>
+
+<div id="hud" aria-label="Game controls">
+  <div class="hud-box" id="hud-turn"></div>
+  <div class="hud-box" id="hud-log" aria-live="polite"></div>
+  <div class="hud-box" id="hud-acts"></div>
+  <div class="hud-box" id="hud-crew"></div>
+  <div id="flash"></div>
+</div>
+<aside id="tweaks" hidden aria-label="Table tweaks"></aside>
+<div id="fx"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep = ms => new Promise(r => setTimeout(r, REDUCED ? Math.min(ms, 60) : ms));
+const rnd = n => Math.floor(Math.random() * n);
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+/* ================= tweaks ================= */
+const TW_KEY = 'nomad-table-tweaks-v4';
+const TW_DEFAULT = { surface: 'putty', size: 'm', chit: 'cube', die: 'ivory', players: 4, hand: 'fan', grid: 'on', tilt: 'on', follow: 'on' };
+const TW_OPTS = {
+  surface: { label: 'Table surface', opts: [['putty', 'Putty'], ['felt', 'Felt'], ['walnut', 'Walnut'], ['night', 'Night']] },
+  size:    { label: 'Card size', opts: [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']] },
+  chit:    { label: 'Energy markers', opts: [['cube', 'Green cube'], ['disc', 'Amber disc'], ['hex', 'Green hex']] },
+  die:     { label: 'Die', opts: [['ivory', 'Ivory'], ['red', 'Red'], ['crt', 'CRT black']] },
+  players: { label: 'Players', opts: [[1, '1'], [2, '2'], [3, '3'], [4, '4']] },
+  hand:    { label: 'Hand', opts: [['fan', 'Fanned'], ['row', 'Laid out']] },
+  grid:    { label: 'Screen guides (empty cells, front, seat names)', opts: [['on', 'Show'], ['off', 'Hide']] },
+  tilt:    { label: 'Camera', opts: [['off', 'Top-down'], ['on', 'Seated']] },
+  follow:  { label: 'Turn the table to the active player', opts: [['on', 'Yes'], ['off', 'No']] },
+};
+let tw = { ...TW_DEFAULT };
+try { Object.assign(tw, JSON.parse(localStorage.getItem(TW_KEY) || '{}')); } catch (e) {}
+function saveTw() { try { localStorage.setItem(TW_KEY, JSON.stringify(tw)); } catch (e) {} }
+function applyTw() { const h = document.documentElement; for (const k of ['surface', 'size', 'chit', 'die', 'hand', 'grid']) h.dataset[k] = tw[k]; }
+const nP = () => +tw.players;
+
+/* ================= content (from src/data) ================= */
+const ITEMS = [
+  { name: 'Directed EMP', text: 'Drain a target module to 0⚡. It isn’t destroyed and can still be looted.' },
+  { name: 'Omega-13', text: 'Reroll any die roll.' },
+  { name: 'Patch Kit', text: 'Repair: put 2⚡ back on one of your modules.' },
+  { name: 'Scrap Torch', text: 'Cut 1 module off a downed ship into your scrap deck.' },
+];
+const EVENTS = [
+  { name: 'Shipwreck', text: 'INVESTIGATE: roll a d6. ⚀ Trap! Draw 1 enemy · ⚁⚂ Nothing · ⚃⚄ 1 common loot · ⚅ 1 rare loot. Or leave it be.' },
+  { name: 'Gravity Well', text: 'Players must spend 1⚡ from any module to leave this sector.' },
+  { name: 'Debris Field', text: 'Every ship takes a hit on its front-most module.' },
+];
+const ACTION = { attack: { nm: 'Open Fire', glyph: '⨯' }, generate: { nm: 'Spin Up', glyph: '+' }, reroute: { nm: 'Divert Power', glyph: '⇄' } };
+const NODES = {
+  start: { x: 40, y: 75, kind: 'start', label: 'Launch', ico: '▲' },
+  n1: { x: 130, y: 75, kind: 'combat', label: 'Combat', ico: '✕' },
+  n2: { x: 220, y: 75, kind: 'loot', label: 'Loot', ico: '◆' },
+  n3a: { x: 315, y: 36, kind: 'event', label: 'Event', ico: '?' },
+  n3b: { x: 315, y: 114, kind: 'combat', label: 'Combat', ico: '✕' },
+  n4a: { x: 410, y: 36, kind: 'combat', label: 'Combat', ico: '✕' },
+  n4b: { x: 410, y: 114, kind: 'loot', label: 'Loot', ico: '◆' },
+  n5: { x: 505, y: 75, kind: 'rarity', label: 'Rarity', ico: '★' },
+  n6: { x: 595, y: 75, kind: 'event', label: 'Event', ico: '?' },
+  n7: { x: 685, y: 75, kind: 'combat', label: 'Combat', ico: '✕' },
+  boss: { x: 820, y: 75, kind: 'boss', label: 'The Rustmaw', ico: 'RUSTMAW' },
+};
+const EDGES = [['start','n1'],['n1','n2'],['n2','n3a'],['n2','n3b'],['n3a','n4a'],['n3b','n4b'],['n4a','n5'],['n4b','n5'],['n5','n6'],['n6','n7'],['n7','boss']];
+const SEATS = { 1: ['bottom'], 2: ['bottom', 'top'], 3: ['bottom', 'left', 'right'], 4: ['bottom', 'left', 'top', 'right'] };
+const ROT = { bottom: '', top: 'rot-180', left: 'rot-90', right: 'rot--90' };
+const SEAT_ANGLE = { bottom: 0, left: 90, top: 180, right: -90 };
+const COLORS = ['#b33b2e', '#5e7c96', '#d99a3e', '#6f5aa8'];
+const NAMES = ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
+
+function mod(id, name, role, r, c, o) { return { id, name, role, r, c, cap: o.cap, atk: o.atk || 0, gen: o.gen || 0, first: !!o.first, e: o.e, dead: false }; }
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function freshState() {
+  return {
+    cur: 0, turn: 'player', down: 1, enemyDown: 0, firstDownHit: false, busy: false,
+    sel: null, mode: null, attacker: null, target: null, spend: 1, reroute: null, aggressor: 0,
+    lastRoll: null, handSel: null, awaitRoll: null, event: null,
+    head: 'Select one of your modules to act, or drag energy between connected modules to reroute.',
+    log: ['Combat: enemy ship drawn (cockpit + 4 modules), 1⚡ on each module.'],
+    pos: 'n3b', visited: ['start', 'n1', 'n2', 'n3b'],
+    ships: [
+      [mod('a-shd', 'Kinetic Shield', 'SHD', 0, 1, { cap: 3, first: true, e: 2 }), mod('a-wpn', 'Photon Canon', 'WPN', 1, 0, { cap: 6, atk: 2, e: 3 }),
+       mod('a-cp', 'Basic Cockpit 2000', 'COCKPIT', 1, 1, { cap: 6, atk: 3, gen: 2, first: true, e: 2 }), mod('a-gen', 'Generator', 'GEN', 1, 2, { cap: 4, gen: 3, e: 1 }),
+       mod('a-gau', 'Gauss Canon', 'WPN', 2, 1, { cap: 4, atk: 4, e: 2 })],
+      [mod('b-shd', 'Medium Shields', 'SHD', 0, 1, { cap: 5, first: true, e: 3 }), mod('b-wpn', 'Photon Canon', 'WPN', 1, 0, { cap: 6, atk: 2, e: 2 }),
+       mod('b-cp', 'Larry - The Marauder', 'COCKPIT', 1, 1, { cap: 8, atk: 3, gen: 2, first: true, e: 3 }), mod('b-gen', 'Generator', 'GEN', 1, 2, { cap: 4, gen: 3, e: 1 })],
+      [mod('c-shd', 'Kinetic Shield', 'SHD', 0, 1, { cap: 3, first: true, e: 2 }), mod('c-cp', 'BFC', 'COCKPIT', 1, 1, { cap: 7, atk: 4, gen: 2, first: true, e: 2 }),
+       mod('c-gau', 'Gauss Canon', 'WPN', 1, 2, { cap: 4, atk: 4, e: 3 }), mod('c-sol', 'Solar Panels', 'GEN', 2, 1, { cap: 4, gen: 4, e: 1 })],
+      [mod('d-shd', 'Kinetic Shield', 'SHD', 0, 1, { cap: 3, first: true, e: 1 }), mod('d-las', 'Laser Array', 'WPN', 1, 0, { cap: 3, atk: 5, e: 2 }),
+       mod('d-cp', 'Advanced CP 3K', 'COCKPIT', 1, 1, { cap: 8, atk: 4, gen: 3, first: true, e: 3 }), mod('d-gen', 'Generator', 'GEN', 2, 1, { cap: 4, gen: 3, e: 2 })],
+    ],
+    hands: [[ITEMS[0], ITEMS[1], ITEMS[2]], [ITEMS[3], ITEMS[1]], [ITEMS[2]], [ITEMS[0], ITEMS[3]]],
+    e: [
+      mod('e-gau', 'Gauss Canon', 'WPN', 0, 1, { cap: 4, atk: 4, e: 1 }),
+      mod('e-wpn', 'Photon Canon', 'WPN', 1, 0, { cap: 6, atk: 2, e: 1 }),
+      mod('e-cp', 'Smol boi', 'COCKPIT', 1, 1, { cap: 5, atk: 4, gen: 2, first: true, e: 1 }),
+      mod('e-gen', 'Generator', 'GEN', 1, 2, { cap: 4, gen: 3, e: 1 }),
+      mod('e-shd', 'Medium Shields', 'SHD', 2, 1, { cap: 5, first: true, e: 1 }),
+    ],
+    edecks: [0, 1, 2, 3].map(() => shuffle(['attack', 'generate', 'reroute'])),
+    decks: { parts: 31, cockpits: 9, items: 14, events: 11, rare: 12 },
+    discard: 0, scrap: [1, 1, 0, 2],
+  };
+}
+let S = freshState();
+
+const me = () => S.ships[S.cur];
+const hand = () => S.hands[S.cur];
+const byId = id => [...S.ships.flat(), ...S.e].find(m => m.id === id);
+const isMine = id => me().some(m => m.id === id);
+const adjacent = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1;
+const legalTarget = m => !m.dead && !S.e.some(o => !o.dead && o.c === m.c && o.r > m.r);
+function enemyTargetOn(ship) {
+  const cp = ship.find(m => m.role === 'COCKPIT');
+  return ship.filter(m => !m.dead && m.c === cp.c && m.r <= cp.r).sort((a, b) => a.r - b.r)[0] || cp;
+}
+function log(t) { S.log.unshift(t); S.log = S.log.slice(0, 3); }
+const canAct = () => S.turn === 'player' && !S.busy && S.down <= 4 && !S.event;
+
+/* ================= table (diegetic) ================= */
+const miniSVG = fill => `<svg viewBox="0 0 26 34" aria-hidden="true"><circle cx="13" cy="8" r="6.5" fill="${fill}" stroke="#14170f" stroke-width="1.5"/><path d="M5 32 C5 20 8 15 13 15 C18 15 21 20 21 32 Z" fill="${fill}" stroke="#14170f" stroke-width="1.5"/><rect x="2" y="30" width="22" height="3.5" rx="1.5" fill="${fill}" stroke="#14170f" stroke-width="1.5"/></svg>`;
+const cardBack = (cls, kind) => `<div class="back ${cls}">N.O.M.A.D.<small>${kind}</small></div>`;
+
+function moduleHTML(m, mine, isEnemy) {
+  const cls = ['module', 'role-' + m.role];
+  if (mine && S.sel === m.id) cls.push('sel');
+  if (S.attacker === m.id) cls.push('attacker');
+  if (isEnemy && S.mode === 'target' && legalTarget(m)) cls.push('tgt');
+  if (S.target === m.id) cls.push('targeted');
+  const arrived = (mine && S.reroute && S.reroute.arrived[m.id]) || 0;
+  const canDrag = mine && canAct() && !S.mode;
+  let socks = '';
+  for (let i = 0; i < m.cap; i++) {
+    let chit = '';
+    if (i < m.e) {
+      const isArr = i >= m.e - arrived;
+      chit = `<span class="chit${canDrag && !isArr ? ' drag' : ''}${isArr ? ' arrived' : ''}" data-mod="${m.id}" data-i="${i}"></span>`;
+    }
+    socks += `<span class="sock">${chit}</span>`;
+  }
+  const stats = [m.atk ? `<span>ATK <b>${m.atk}</b></span>` : '', m.gen ? `<span>GEN <b>+${m.gen}</b></span>` : '', `<span>MAX <b>${m.cap}</b></span>`].join('');
+  return `<div class="${cls.join(' ')}" data-mod="${m.id}" style="grid-row:${m.r + 1};grid-column:${m.c + 1}">
+    <div class="band" style="background:var(--role-${m.role})"><span>${m.role}</span>${m.first ? '<span class="first-icon">1ST</span>' : ''}</div>
+    <div class="name">${esc(m.name)}</div><div class="sockets">${socks}</div><div class="stats">${stats}</div></div>`;
+}
+function shipHTML(mods, mine = false, isEnemy = false) {
+  let h = '';
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+    const m = mods.find(x => x.r === r && x.c === c && !x.dead);
+    h += m ? moduleHTML(m, mine, isEnemy) : `<div class="guide" style="grid-row:${r + 1};grid-column:${c + 1}"></div>`;
+  }
+  return h;
+}
+function renderEnemy() {
+  $('#adecks').innerHTML = S.edecks.map((d, i) => `<div class="adeck${S.turn === 'enemy' && S.enemyDown === i + 1 ? ' now' : ''}" data-adeck="${i}">
+      <span class="ui-num">${i + 1}</span>
+      <div class="acard ${d[0]}"><div class="k">ENEMY ACTION</div><div class="glyph">${ACTION[d[0]].glyph}</div><div class="nm">${ACTION[d[0]].nm}</div></div></div>`).join('');
+  const seat = SEATS[nP()][S.aggressor] || 'bottom';
+  const w = $('#enemy-wrap');
+  w.innerHTML = `<div class="ship" id="enemy-ship">${shipHTML(S.e, false, true)}</div><span class="front-tag bottom">FRONT ▼</span>`;
+  w.style.transform = `rotate(${SEAT_ANGLE[seat]}deg)`;
+}
+function renderSeats() {
+  const seats = SEATS[nP()];
+  for (const pos of ['bottom', 'top', 'left', 'right']) {
+    const cell = $('#seat-' + pos);
+    const i = seats.indexOf(pos);
+    cell.classList.toggle('empty', i < 0);
+    if (i < 0) { cell.innerHTML = ''; continue; }
+    const active = i === S.cur && S.turn !== 'enemy';
+    // the active player has their cards in hand (shown in front of the screen); everyone else's lie face down
+    const held = i === S.cur ? '' : S.hands[i].map((_, k, a) => `<div class="back" style="transform:rotate(${(k - (a.length - 1) / 2) * 12}deg)">N.O.M.A.D.</div>`).join('');
+    const scrap = Array.from({ length: S.scrap[i] }, (_, k) => `<div class="back scrap" style="transform:translate(${k * 2}px,${k * 2}px)">N.O.M.A.D.<small>MODULE</small></div>`).join('');
+    cell.innerHTML = `<div class="seat-in ${ROT[pos] || 'rot-0'}" style="${pos === 'bottom' ? 'transform:translate(-50%,-50%)' : ''}">
+      <div class="seat-side"><div class="scrap" title="Scrap deck · ${S.scrap[i]}/4">${scrap || '<div class="guide" style="position:absolute;inset:0"></div>'}</div></div>
+      <div class="ship-wrap"><span class="front-tag top">FRONT ▲</span><div class="ship${i === S.cur ? ' mine' : ''}" data-seat="${i}">${shipHTML(S.ships[i], i === S.cur)}</div></div>
+      <div class="held" title="Cards in hand">${held}</div>
+      <span class="seat-tag${active ? ' on' : ''}">${NAMES[i]}${active ? ' · their turn' : ''}</span></div>`;
+  }
+}
+function renderHand() {
+  const cards = hand().map((c, i) => `<button class="icard${S.handSel === i ? ' sel' : ''}" data-card="${i}">
+      <div class="band"><span>ITEM</span><span>◆</span></div><div class="nm">${esc(c.name)}</div><div class="tx">${esc(c.text)}</div><div class="ft">1 ACTION</div></button>`).join('');
+  $('#hand').innerHTML = S.turn === 'enemy' ? '' : cards;
+  layoutHand();
+}
+function layoutHand() {
+  const els = $$('#hand .icard'); const n = els.length; if (!n) return;
+  const W = $('#hand').offsetWidth || 520;
+  const fanStep = n > 1 ? Math.min(80, (W - 172) / (n - 1)) : 0;
+  const rowStep = n > 1 ? Math.min(132, (W - 126) / (n - 1)) : 0;
+  const start = tw.hand === 'fan' ? (W - (122 + fanStep * (n - 1))) / 2 : (W - (122 + rowStep * (n - 1))) / 2;
+  els.forEach((el, i) => {
+    if (tw.hand === 'fan') {
+      const mid = (n - 1) / 2, rot = (i - mid) * 7, y = Math.abs(i - mid) * 7;
+      el.style.left = start + i * fanStep + 'px';
+      el.style.transform = `translateY(${y - (S.handSel === i ? 40 : 0)}px) rotate(${S.handSel === i ? 0 : rot}deg)`;
+    } else {
+      el.style.left = start + i * rowStep + 'px';
+      el.style.transform = `translateY(${S.handSel === i ? -26 : 0}px)`;
+    }
+    el.style.zIndex = S.handSel === i ? 20 : i + 1;
+  });
+}
+function renderDecks() {
+  const d = S.decks;
+  const stack = (key, cls, kind, can) => `<button class="deck${can ? ' can' : ''}${d[key] ? '' : ' empty'}" data-deck="${key}" title="${kind} · ${d[key]} cards${can ? ' · click to draw' : ''}" ${can ? '' : 'tabindex="-1"'}>
+    <div class="back ${cls} l2"></div><div class="back ${cls} l1"></div><div class="back ${cls} top" data-top="${key}">N.O.M.A.D.<small>${kind.toUpperCase()}</small></div></button>`;
+  $('#decks').innerHTML = `${stack('parts', '', 'Parts', false)}${stack('cockpits', 'cockpits', 'Cockpits', false)}
+    ${stack('items', 'items', 'Items', canAct())}${stack('events', 'events', 'Events', canAct())}
+    ${stack('rare', 'rare', 'Rare parts', false)}
+    <div class="deck" id="discard" title="Discard · ${S.discard} cards">${S.discard ? cardBack('', 'DISCARD') : '<div class="guide" style="position:absolute;inset:0"></div>'}</div>`;
+}
+function renderBank() {
+  if ($('#bank').childElementCount) return;
+  $('#bank').innerHTML = Array.from({ length: 22 }, (_, i) => `<span class="chit" style="left:${6 + (i * 37) % 86}%;top:${8 + (i * 53) % 76}%;transform:rotate(${i * 29}deg)"></span>`).join('');
+}
+function renderReveal() {
+  $('#reveal-spot').innerHTML = S.event ? `<div class="ecard"><div class="band">EVENT</div><h4>${esc(S.event.name)}</h4><p>${esc(S.event.text)}</p></div>` : '';
+}
+let trackBuilt = false;
+function renderTrack() {
+  const next = EDGES.filter(([a]) => a === S.pos).map(([, b]) => b);
+  const walked = new Set(S.visited);
+  if (!trackBuilt) { $('#track').innerHTML = `<svg viewBox="0 0 900 150" id="track-svg"></svg><div id="track-nodes"></div><div class="minis" id="minis"></div>`; trackBuilt = true; }
+  $('#track-svg').innerHTML = EDGES.map(([a, b]) => `<path${walked.has(a) && walked.has(b) ? ' class="walked"' : ''} d="M${NODES[a].x} ${NODES[a].y} L${NODES[b].x} ${NODES[b].y}"/>`).join('');
+  $('#track-nodes').innerHTML = Object.entries(NODES).map(([k, n]) => {
+    const isNext = next.includes(k) && canAct();
+    const inner = n.kind === 'boss' ? `<span class="k">BOSS SHEET</span><span class="ico">${n.ico}</span><span class="s">THE RUSTMAW</span>` : `<span class="ico">${n.ico}</span><span>${esc(n.label)}</span>`;
+    return `<button class="step ${n.kind}${isNext ? ' next' : ''}" data-step="${k}" style="left:${n.x}px;top:${n.y}px" ${isNext ? '' : 'tabindex="-1"'}>${inner}</button>`;
+  }).join('');
+  const P = NODES[S.pos], mi = $('#minis');
+  mi.innerHTML = Array.from({ length: nP() }, (_, i) => miniSVG(COLORS[i])).join('');
+  Object.assign(mi.style, { left: P.x + 'px', top: P.y + 'px' });
+}
+
+/* ================= screen panel (extradiegetic) ================= */
+function renderHud() {
+  const enemy = S.turn === 'enemy';
+  const cur = enemy ? S.enemyDown : S.down;
+  const pips = [1, 2, 3, 4].map(d => `<div class="pip-d${d < cur ? ' used' : ''}${d === cur ? ' now' + (enemy ? ' enemy' : '') : ''}">${d}</div>`).join('');
+  $('#hud-turn').innerHTML = `<div class="hud-k">${S.turn === 'over' ? 'Fight over' : enemy ? 'Enemy turn' : `${NAMES[S.cur]}'s turn`}</div>
+    <div class="turn${enemy ? ' enemy' : ''}">${enemy ? `Enemy down ${S.enemyDown}` : S.down > 4 ? 'Out of downs' : `Down ${S.down} of 4`}</div>
+    <div class="pips">${pips}</div>
+    <p class="hud-note"><b>1st down:</b> destroy a 1ST module or the cockpit. Then the next player goes.</p>`;
+  const r = S.lastRoll;
+  $('#hud-log').innerHTML = `<div class="hud-k">What's happening</div><div class="prompt">${esc(S.head)}</div>
+    ${r ? `<div class="roll-line">d6 → ${r.v} · needed ≤ ${r.spend} · <span class="${r.hit ? 'hit' : 'miss'}">${r.hit ? 'HIT' : 'NO HIT'}</span></div>` : ''}
+    <ul class="log">${S.log.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+
+  let a = '';
+  const sel = S.sel && byId(S.sel);
+  if (S.turn === 'over') a = `<button class="btn pri" data-act="reset">New fight</button>`;
+  else if (S.awaitRoll) a = `<button class="btn pri pulse" data-act="roll-await">Roll the die</button>`;
+  else if (S.event) a = `${S.event.name === 'Shipwreck' ? '<button class="btn pri" data-act="investigate">Investigate (roll)</button>' : ''}<button class="btn" data-act="event-done">${S.event.name === 'Shipwreck' ? 'Leave it be' : 'Resolve and discard'}</button>`;
+  else if (S.mode === 'spend') {
+    const att = byId(S.attacker);
+    a = `<div class="spend"><button class="btn" data-act="spend-" aria-label="Spend less">−</button><span class="n">${S.spend}⚡</span><button class="btn" data-act="spend+" aria-label="Spend more">+</button>
+      <span class="odds">from ${esc(att.name)} · hits on ≤ ${S.spend} (${Math.round(Math.min(S.spend, 6) / 6 * 100)}%)</span></div>
+      <button class="btn pri pulse" data-act="roll">Spend and roll</button><button class="btn" data-act="cancel">Cancel</button>`;
+  }
+  else if (S.mode === 'target') a = `<button class="btn" data-act="cancel">Cancel attack</button>`;
+  else if (S.reroute) a = `<button class="btn pri pulse" data-act="finish-reroute">Finish reroute (${S.reroute.moves}⚡ moved)</button><button class="btn" data-act="cancel-reroute">Undo</button>`;
+  else if (enemy || S.busy) a = `<button class="btn" disabled>Waiting…</button>`;
+  else {
+    if (sel && S.down <= 4) {
+      if ((sel.role === 'WPN' || sel.role === 'COCKPIT') && sel.e > 0) a += `<button class="btn pri" data-act="attack">Attack with ${esc(sel.name)}</button>`;
+      if ((sel.role === 'GEN' || sel.role === 'COCKPIT') && sel.e < sel.cap) a += `<button class="btn pri" data-act="generate">Generate +${sel.gen}⚡</button>`;
+      if (!a) a = `<span class="hud-note">${esc(sel.name)} has no action right now.</span>`;
+    }
+    if (S.handSel != null && S.down <= 4) a += `<button class="btn pri" data-act="play">Play ${esc(hand()[S.handSel].name)}</button>`;
+    a += `<button class="btn${S.down > 4 ? ' pri pulse' : ''}" data-act="end-turn">End turn</button>`;
+  }
+  $('#hud-acts').innerHTML = `<div class="hud-k">Actions</div><div class="acts">${a}</div>`;
+
+  $('#hud-crew').innerHTML = `<div class="hud-k" style="display:flex;justify-content:space-between;align-items:center;gap:6px">View
+      <span class="zoom"><button class="btn" data-act="zoom-out" aria-label="Zoom out">−</button><button class="btn" data-act="zoom-fit">Fit</button><button class="btn" data-act="zoom-in" aria-label="Zoom in">+</button><button class="btn" data-act="tweaks" aria-expanded="${!$('#tweaks').hidden}">Tweak</button></span></div>
+    <div class="crew">${Array.from({ length: nP() }, (_, i) => `<div class="mate${i === S.cur && S.turn === 'player' ? ' active' : ''}"><span class="dot" style="background:${COLORS[i]}"></span><span>${NAMES[i]}</span>
+      <span class="tag${S.aggressor === i ? ' aggro' : ''}">${S.aggressor === i ? 'AGGRO · ' : ''}${S.ships[i].filter(m => !m.dead).reduce((s, m) => s + m.e, 0)}⚡</span></div>`).join('')}</div>`;
+}
+
+function render() {
+  if (S.cur >= nP()) S.cur = 0;
+  if (S.aggressor >= nP()) S.aggressor = 0;
+  renderEnemy(); renderSeats(); renderHand(); renderDecks(); renderBank(); renderReveal(); renderTrack(); renderHud();
+  $('#die-zone').classList.toggle('await', !!S.awaitRoll || S.mode === 'spend');
+  camera();
+}
+
+/* ================= camera: fit, zoom, pan, table rotation ================= */
+const view = { zoom: 1, px: 0, py: 0, angle: 0 };
+let SCALE = 1, FIT = 1;
+function targetAngle() {
+  if (tw.follow !== 'on') return 0;
+  const seat = SEATS[nP()][S.cur] || 'bottom';
+  return -SEAT_ANGLE[seat];
+}
+function camera(live = false) {
+  const stage = $('#stage'), table = $('#table'), cam = $('#cam');
+  const h = Math.max(360, window.innerHeight - $('#hud').offsetHeight - 50);
+  stage.style.height = h + 'px';
+  // turn the table the short way round so the active seat comes to the bottom
+  const want = targetAngle();
+  let d = ((want - view.angle) % 360 + 540) % 360 - 180;
+  view.angle += d;
+  const natW = table.offsetWidth, natH = table.offsetHeight;
+  const sideways = Math.abs(Math.round(view.angle / 90)) % 2 === 1;
+  const rw = sideways ? natH : natW, rh = sideways ? natW : natH;
+  FIT = Math.min(stage.clientWidth / rw, h / rh) * (tw.tilt === 'on' ? .86 : .96);
+  SCALE = FIT * view.zoom;
+  cam.classList.toggle('live', live);
+  cam.style.transform = `translate(${view.px}px, ${view.py}px) scale(${SCALE})${tw.tilt === 'on' ? ' rotateX(18deg)' : ''}`;
+  table.style.transform = `translate(-50%, -50%) rotate(${view.angle}deg)`;
+}
+function zoomAt(f, cx, cy) {
+  const z = Math.min(5, Math.max(1, view.zoom * f));
+  f = z / view.zoom;
+  const r = $('#stage').getBoundingClientRect();
+  const ox = cx - (r.left + r.width / 2), oy = cy - (r.top + r.height / 2);
+  view.px = (view.px - ox) * f + ox; view.py = (view.py - oy) * f + oy;
+  view.zoom = z;
+  if (z === 1) { view.px = 0; view.py = 0; }
+  camera(true);
+}
+function resetView() { view.zoom = 1; view.px = 0; view.py = 0; camera(); }
+addEventListener('resize', () => camera());
+$('#stage').addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? .012 : .0018)), e.clientX, e.clientY);
+}, { passive: false });
+$('#stage').addEventListener('dblclick', e => { if (!e.target.closest('button, .module, .icard, #die')) resetView(); });
+
+/* pan with one pointer on empty table, pinch with two */
+const pointers = new Map();
+let pan = null, pinch = null, suppressClick = false;
+$('#stage').addEventListener('pointerdown', e => {
+  if (e.target.closest('.chit.drag')) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: view.zoom }; pan = null; return;
+  }
+  if (e.target.closest('#hand')) return;
+  pan = { x: e.clientX, y: e.clientY, px: view.px, py: view.py, moved: false };
+});
+addEventListener('pointermove', e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    zoomAt((pinch.zoom * d / pinch.d) / view.zoom, (a.x + b.x) / 2, (a.y + b.y) / 2); return;
+  }
+  if (!pan) return;
+  const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+  if (!pan.moved && Math.hypot(dx, dy) < 5) return;
+  pan.moved = true; $('#stage').classList.add('panning');
+  view.px = pan.px + dx; view.py = pan.py + dy; camera(true);
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (pan && pan.moved) suppressClick = true;
+  pan = null; $('#stage').classList.remove('panning');
+}
+addEventListener('pointerup', endPointer); addEventListener('pointercancel', endPointer);
+
+/* ================= fx ================= */
+function centerRect(el, w, h) { const r = el.getBoundingClientRect(); return { left: r.left + r.width / 2 - w / 2, top: r.top + r.height / 2 - h / 2, width: w, height: h }; }
+function fly(from, to, cls, html = '', dur = 480, scaleTo = 1, arc = 40) {
+  const g = document.createElement('div');
+  g.className = 'fxg ' + cls; g.innerHTML = html;
+  Object.assign(g.style, { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px' });
+  $('#fx').appendChild(g);
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2), dy = to.top + to.height / 2 - (from.top + from.height / 2);
+  return g.animate([
+    { transform: 'translate(0,0) scale(1) rotate(0deg)' },
+    { transform: `translate(${dx / 2}px, ${dy / 2 - arc}px) scale(${(1 + scaleTo) / 2 * 1.15}) rotate(8deg)`, offset: .5 },
+    { transform: `translate(${dx}px, ${dy}px) scale(${scaleTo}) rotate(0deg)` },
+  ], { duration: REDUCED ? 1 : dur, easing: 'cubic-bezier(.3,.7,.3,1)' }).finished.then(() => g.remove());
+}
+const chitPx = () => 14 * SCALE;
+const chitEls = id => $$(`.chit[data-mod="${id}"]`).sort((a, b) => +b.dataset.i - +a.dataset.i);
+async function chitsFly(els, toEl, stagger = 70) {
+  const toR = centerRect(toEl, chitPx(), chitPx());
+  await Promise.all(els.map((el, i) => new Promise(res => setTimeout(() => {
+    const r = el.getBoundingClientRect(); el.classList.add('lifted');
+    fly({ left: r.left, top: r.top, width: r.width, height: r.height }, toR, 'chit', '', 460).then(res);
+  }, i * stagger))));
+}
+async function chitsFromBank(toEl, n) {
+  const s = chitPx();
+  await Promise.all(Array.from({ length: n }, (_, i) => new Promise(res => setTimeout(() => fly(centerRect($('#bank'), s, s), centerRect(toEl, s, s), 'chit', '', 520).then(res), i * 90))));
+}
+async function flash(text, kind = '') {
+  const f = $('#flash'); f.innerHTML = `<div class="flash ${kind}">${esc(text)}</div>`;
+  await f.firstChild.animate([{ opacity: 0, transform: 'translate(-50%,-30%) scale(.8)' }, { opacity: 1, transform: 'translate(-50%,-60%) scale(1)', offset: .2 }, { opacity: 1, offset: .8 }, { opacity: 0, transform: 'translate(-50%,-80%)' }], { duration: REDUCED ? 500 : 1400 }).finished;
+  f.innerHTML = '';
+}
+
+/* ================= die ================= */
+const PIPS = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
+const FACE = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] };
+let dieCur = 'translateY(0px) rotateX(0deg) rotateY(0deg)';
+function buildDie() {
+  $('#die').innerHTML = [1, 2, 3, 4, 5, 6].map(f => `<div class="face f${f}">${Array.from({ length: 9 }, (_, i) => PIPS[f].includes(i + 1) ? `<span class="pip" style="grid-area:${Math.floor(i / 3) + 1}/${i % 3 + 1}"></span>` : '').join('')}</div>`).join('');
+  $('#die').style.transform = dieCur;
+}
+async function rollDie() {
+  const v = 1 + rnd(6), [fx, fy] = FACE[v];
+  const tx = fx + 360 * (2 + rnd(2)), ty = fy + 360 * (2 + rnd(2));
+  $('#die-zone').classList.remove('await');
+  await $('#die').animate([
+    { transform: dieCur },
+    { transform: `translateY(-50px) rotateX(${tx * .45}deg) rotateY(${ty * .55}deg)`, offset: .35 },
+    { transform: `translateY(0px) rotateX(${tx * .9}deg) rotateY(${ty * .92}deg)`, offset: .7 },
+    { transform: `translateY(-10px) rotateX(${tx * .97}deg) rotateY(${ty * .98}deg)`, offset: .84 },
+    { transform: `translateY(0px) rotateX(${tx}deg) rotateY(${ty}deg)` },
+  ], { duration: REDUCED ? 1 : 1150, easing: 'cubic-bezier(.25,.6,.3,1)' }).finished;
+  dieCur = `translateY(0px) rotateX(${fx}deg) rotateY(${fy}deg)`;
+  $('#die').style.transform = dieCur;
+  return v;
+}
+function waitForRoll() { return new Promise(res => { S.awaitRoll = res; render(); }); }
+
+/* ================= rules ================= */
+async function destroy(m) {
+  const el = $(`.module[data-mod="${m.id}"]`);
+  const r = el.getBoundingClientRect();
+  m.dead = true; render();
+  await fly(r, centerRect($('#discard'), r.width * .8, r.height * .8), 'back', 'N.O.M.A.D.', 620, .8, 60);
+  S.discard++; renderDecks();
+}
+async function resolveHit(att, tgt, spend, v, who) {
+  const hit = v <= spend;
+  S.lastRoll = { v, spend, hit };
+  S.head = `Rolled a ${v}. ${hit ? 'Hit!' : 'No hit.'}`;
+  log(`${who}: ${att.name} → ${tgt.name}, ${v} vs ${spend}⚡, ${hit ? 'hit' : 'miss'}.`);
+  render();
+  await sleep(750);
+  if (!hit) return;
+  if (tgt.e === 0) {
+    log(`${tgt.name} destroyed${tgt.first ? ' (1st down)' : ''}.`);
+    if (tgt.first) S.firstDownHit = true;
+    await destroy(tgt);
+  } else {
+    const n = Math.min(Math.max(att.atk, 1), tgt.e);
+    await chitsFly(chitEls(tgt.id).slice(0, n), $('#bank'));
+    tgt.e -= n;
+    log(`${tgt.name} loses ${n}⚡${tgt.e === 0 ? '. At 0, one more hit destroys it' : ''}.`);
+    render();
+  }
+}
+async function spendChits(att, n) { await chitsFly(chitEls(att.id).slice(0, n), $('#bank'), 50); att.e -= n; render(); }
+
+async function nextPlayer(why) {
+  S.cur = (S.cur + 1) % nP(); S.down = 1; S.sel = null; S.handSel = null; S.lastRoll = null; S.turn = 'player'; S.busy = false;
+  S.head = `${why} ${NAMES[S.cur]}'s turn.`;
+  render();
+  await flash(`${NAMES[S.cur].toUpperCase()}'S TURN`);
+}
+async function playerAttack() {
+  const att = byId(S.attacker), tgt = byId(S.target), spend = S.spend;
+  S.busy = true; S.mode = null;
+  S.head = `${att.name} spends ${spend}⚡ at ${tgt.name}.`; render();
+  await spendChits(att, spend);
+  const v = await rollDie();
+  S.aggressor = S.cur;
+  await resolveHit(att, tgt, spend, v, NAMES[S.cur]);
+  S.attacker = null; S.target = null; S.sel = null;
+  await endDown('Attack');
+}
+async function endDown(what) {
+  if (S.e.find(m => m.role === 'COCKPIT').dead) { S.busy = false; S.turn = 'over'; S.head = 'Enemy ship down. Salvage what survived.'; render(); await flash('SHIP DOWN'); return; }
+  if (S.firstDownHit) {
+    S.firstDownHit = false;
+    await flash('1ST DOWN');
+    if (nP() > 1) return nextPlayer('1st down!');
+    S.down = 1; S.busy = false; S.head = '1st down! Fresh set of downs.'; render(); return;
+  }
+  S.down++;
+  S.head = S.down > 4 ? 'No 1st down in 4 downs. End your turn to hand it to the enemy.' : `${what} done.`;
+  S.busy = false; render();
+}
+async function generate(m, who) {
+  const add = Math.min(m.gen, m.cap - m.e);
+  if (add <= 0) return false;
+  S.busy = true; render();
+  await chitsFromBank($(`.module[data-mod="${m.id}"] .sockets`), add);
+  m.e += add; log(`${who}: ${m.name} generates +${add}⚡.`); render();
+  return true;
+}
+
+/* enemy turn */
+async function flipDeck(i) {
+  const card = $(`.adeck[data-adeck="${i}"] .acard`);
+  if (card) await card.animate([{ transform: 'rotateY(0)' }, { transform: 'rotateY(90deg)' }], { duration: REDUCED ? 1 : 160, fill: 'forwards' }).finished;
+  const d = S.edecks[i]; d.push(d.shift()); renderEnemy();
+  const n = $(`.adeck[data-adeck="${i}"] .acard`);
+  if (n) await n.animate([{ transform: 'rotateY(-90deg)' }, { transform: 'rotateY(0)' }], { duration: REDUCED ? 1 : 180 }).finished;
+}
+async function enemyAct(a) {
+  const alive = S.e.filter(m => !m.dead);
+  if (a === 'attack') {
+    const att = alive.filter(m => (m.role === 'WPN' || m.role === 'COCKPIT') && m.e > 0).sort((x, y) => y.e - x.e || y.atk - x.atk)[0];
+    if (!att) return false;
+    const ship = S.ships[S.aggressor];
+    const tgt = enemyTargetOn(ship), spend = Math.min(att.e, 6);
+    S.target = tgt.id;
+    S.head = `Open Fire: enemy ${att.name} spends ${spend}⚡ at ${NAMES[S.aggressor]}'s ${tgt.name} (they have aggro). Roll for the enemy.`;
+    render();
+    await spendChits(att, spend);
+    await waitForRoll(); S.awaitRoll = null;
+    const v = await rollDie();
+    await resolveHit(att, tgt, spend, v, 'Enemy');
+    S.target = null;
+    return true;
+  }
+  if (a === 'generate') {
+    const g = alive.filter(m => (m.role === 'GEN' || m.role === 'COCKPIT') && m.e < m.cap).sort((x, y) => y.gen - x.gen)[0];
+    if (!g) return false;
+    S.head = `Spin Up: enemy ${g.name} generates.`; render();
+    await generate(g, 'Enemy'); S.busy = true;
+    return true;
+  }
+  if (a === 'reroute') {
+    for (const from of alive.filter(m => m.e > 0 && m.role !== 'WPN')) {
+      const to = alive.find(m => adjacent(m, from) && (m.role === 'WPN' || m.role === 'SHD') && m.e < m.cap);
+      if (!to) continue;
+      const n = Math.min(from.e, to.cap - to.e, 2);
+      S.head = `Divert Power: enemy moves ${n}⚡ from ${from.name} to ${to.name}.`; render();
+      await chitsFly(chitEls(from.id).slice(0, n), $(`.module[data-mod="${to.id}"] .sockets`));
+      from.e -= n; to.e += n; log(`Enemy reroutes ${n}⚡ ${from.name} → ${to.name}.`); render();
+      return true;
+    }
+    return false;
+  }
+}
+async function enemyTurn() {
+  S.turn = 'enemy'; S.sel = null; S.mode = null; S.handSel = null; S.enemyDown = 1; S.busy = true; S.lastRoll = null;
+  S.head = 'The enemy plays the face-up card on each of its 4 action decks, in order.';
+  log(`${NAMES[S.cur]} ends their turn.`); render();
+  await flash('ENEMY TURN', 'bad');
+  let guard = 0;
+  while (S.enemyDown <= 4 && guard++ < 12) {
+    render(); await sleep(500);
+    const i = S.enemyDown - 1;
+    let ok = false, tries = 0;
+    while (!ok && tries < S.edecks[i].length) {
+      const a = S.edecks[i][0];
+      ok = await enemyAct(a);
+      if (!ok) { log(`Enemy down ${S.enemyDown}: ${ACTION[a].nm} can't resolve, card to the bottom.`); S.head = `${ACTION[a].nm} can't resolve. It goes to the bottom and the next card is revealed.`; render(); await sleep(600); await flipDeck(i); tries++; }
+    }
+    await sleep(350);
+    await flipDeck(i);
+    if (S.ships.slice(0, nP()).every(sh => sh.find(m => m.role === 'COCKPIT').dead)) { S.turn = 'over'; S.busy = false; S.head = 'Every cockpit is destroyed.'; render(); await flash('SHIP DOWN', 'bad'); return; }
+    if (S.firstDownHit) { S.firstDownHit = false; S.enemyDown = 1; S.head = 'Enemy 1st down. It starts again at down 1.'; render(); await flash('ENEMY 1ST DOWN', 'bad'); continue; }
+    S.enemyDown++;
+  }
+  S.enemyDown = 0; log('Enemy turn over.');
+  await nextPlayer('Enemy turn over.');
+}
+
+/* reroute by dragging energy markers on your own ship */
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  const c = e.target.closest('.chit.drag'); if (!c) return;
+  e.preventDefault();
+  const from = byId(c.dataset.mod), r = c.getBoundingClientRect();
+  const g = document.createElement('div'); g.className = 'fxg chit';
+  Object.assign(g.style, { left: r.left + 'px', top: r.top + 'px', width: r.width * 1.3 + 'px', height: r.height * 1.3 + 'px' });
+  $('#fx').appendChild(g); c.classList.add('lifted');
+  drag = { from, el: c, g, ox: r.width * .65, oy: r.height * .65, r, over: null };
+  $$('.ship.mine .module').forEach(el => { const m = byId(el.dataset.mod); if (m !== from) el.classList.add(adjacent(m, from) && m.e < m.cap ? 'drop-ok' : 'drop-no'); });
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  drag.g.style.left = e.clientX - drag.ox + 'px'; drag.g.style.top = e.clientY - drag.oy + 'px';
+  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.ship.mine .module.drop-ok');
+  if (drag.over && drag.over !== el) drag.over.classList.remove('drop-hover');
+  if (el) el.classList.add('drop-hover');
+  drag.over = el;
+});
+document.addEventListener('pointerup', async e => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  $$('.ship.mine .module').forEach(el => el.classList.remove('drop-ok', 'drop-no', 'drop-hover'));
+  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.ship.mine .module');
+  const to = el && byId(el.dataset.mod);
+  if (to && to !== d.from && adjacent(to, d.from) && to.e < to.cap) {
+    d.g.remove();
+    if (!S.reroute) S.reroute = { arrived: {}, snapshot: me().map(m => m.e), moves: 0 };
+    d.from.e--; to.e++;
+    S.reroute.arrived[to.id] = (S.reroute.arrived[to.id] || 0) + 1; S.reroute.moves++;
+    S.head = 'Rerouting. Energy that arrived this reroute stays put. Finish to use the down.';
+    S.sel = null; render();
+  } else {
+    if (to && to !== d.from) { S.head = !adjacent(to, d.from) ? 'Energy only moves to a connected module, one step per reroute.' : `${to.name} is full. No overloading while rerouting.`; renderHud(); }
+    const gr = d.g.getBoundingClientRect(); d.g.remove();
+    await fly(gr, d.r, 'chit', '', 260, 1, 0); d.el.classList.remove('lifted');
+  }
+});
+
+/* clicks */
+document.addEventListener('click', async e => {
+  if (suppressClick) { suppressClick = false; if (e.target.closest('#stage')) return; }
+  const t = e.target;
+  const twb = t.closest('[data-tw]');
+  if (twb) { tw[twb.dataset.tw] = isNaN(+twb.dataset.v) ? twb.dataset.v : +twb.dataset.v; saveTw(); applyTw(); renderTweaks(); render(); return; }
+  const act = t.closest('[data-act]')?.dataset.act;
+  if (act === 'tweaks') return toggleTweaks();
+  if (act === 'tw-close') return toggleTweaks(false);
+  if (act === 'tw-reset') { tw = { ...TW_DEFAULT }; saveTw(); applyTw(); renderTweaks(); render(); return; }
+  if (act === 'zoom-in') { const r = $('#stage').getBoundingClientRect(); return zoomAt(1.4, r.left + r.width / 2, r.top + r.height / 2); }
+  if (act === 'zoom-out') { const r = $('#stage').getBoundingClientRect(); return zoomAt(1 / 1.4, r.left + r.width / 2, r.top + r.height / 2); }
+  if (act === 'zoom-fit') return resetView();
+  if (act === 'reset') { S = freshState(); render(); return; }
+  if (t.closest('#die') || act === 'roll-await') {
+    if (S.awaitRoll) return S.awaitRoll();
+    if (S.mode === 'spend' && !S.busy) return playerAttack();
+    return;
+  }
+  if (S.busy) return;
+  if (act === 'attack') { const m = byId(S.sel); S.mode = 'target'; S.attacker = m.id; S.head = `Pick a target for ${m.name}. The front-most module in a column goes first.`; render(); return; }
+  if (act === 'generate') { const m = byId(S.sel); S.sel = null; await generate(m, NAMES[S.cur]); await endDown('Generate'); return; }
+  if (act === 'spend-') { S.spend = Math.max(1, S.spend - 1); renderHud(); return; }
+  if (act === 'spend+') { S.spend = Math.min(byId(S.attacker).e, 6, S.spend + 1); renderHud(); return; }
+  if (act === 'roll') return playerAttack();
+  if (act === 'cancel') { S.mode = null; S.attacker = null; S.target = null; S.head = 'Attack cancelled.'; render(); return; }
+  if (act === 'end-turn') return enemyTurn();
+  if (act === 'finish-reroute') { log(`${NAMES[S.cur]} reroutes ${S.reroute.moves}⚡.`); S.reroute = null; await endDown('Reroute'); return; }
+  if (act === 'cancel-reroute') { me().forEach((m, i) => m.e = S.reroute.snapshot[i]); S.reroute = null; S.head = 'Reroute undone.'; render(); return; }
+  if (act === 'play') return playCard(S.handSel);
+  if (act === 'investigate') return investigate();
+  if (act === 'event-done') return discardEvent();
+
+  const em = t.closest('#enemy-ship .module');
+  if (em && S.mode === 'target') {
+    const m = byId(em.dataset.mod);
+    if (!legalTarget(m)) { S.head = `${m.name} is covered. Hit what stands in front of it first.`; renderHud(); return; }
+    S.target = m.id; S.mode = 'spend'; S.spend = Math.min(byId(S.attacker).e, 6);
+    S.head = `Target: ${m.name}. Choose how much ⚡ to spend, then roll.`; render(); return;
+  }
+  const pm = t.closest('.ship.mine .module');
+  if (pm && canAct() && !S.mode && !S.reroute) { S.sel = S.sel === pm.dataset.mod ? null : pm.dataset.mod; S.handSel = null; render(); return; }
+  const card = t.closest('[data-card]');
+  if (card && canAct() && !S.mode) { const i = +card.dataset.card; S.handSel = S.handSel === i ? null : i; S.sel = null; render(); return; }
+  const deck = t.closest('.deck.can');
+  if (deck) return draw(deck.dataset.deck);
+  const step = t.closest('.step.next');
+  if (step) {
+    S.pos = step.dataset.step; S.visited.push(S.pos); const n = NODES[S.pos];
+    log(`Moved to ${n.label}.`);
+    S.head = { combat: 'Combat: draw an enemy cockpit and depth + players modules.', loot: 'Loot: draw from the item deck.', event: 'Event: draw from the event deck.', rarity: 'Rarity checkpoint: shuffle the rare parts into the parts deck.', boss: 'Boss fight: set up the boss sheet.' }[n.kind] || '';
+    render(); return;
+  }
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.id === 'die') { e.preventDefault(); e.target.click(); }
+  if (e.key === 'Escape') toggleTweaks(false);
+  if ((e.key === '+' || e.key === '=') && !e.target.closest('input')) $('[data-act="zoom-in"]')?.click();
+  if (e.key === '-' && !e.target.closest('input')) $('[data-act="zoom-out"]')?.click();
+  if (e.key === '0') resetView();
+});
+
+async function draw(kind) {
+  if (S.decks[kind] <= 0) return;
+  S.busy = true; S.decks[kind]--;
+  const src = $(`[data-top="${kind}"]`).getBoundingClientRect();
+  renderDecks();
+  if (kind === 'items') {
+    const h = $('#hand').getBoundingClientRect();
+    await fly(src, { left: h.left + h.width / 2 - 61, top: h.top + 10, width: 122, height: 170 }, 'back items', 'N.O.M.A.D.', 620, 1, 60);
+    const c = ITEMS[rnd(ITEMS.length)]; hand().push(c);
+    log(`${NAMES[S.cur]} drew ${c.name}.`); S.head = `Drew ${c.name} from the item deck.`;
+    S.busy = false; render();
+  } else {
+    const c = EVENTS[rnd(EVENTS.length)];
+    const spot = $('#reveal-spot').getBoundingClientRect();
+    await fly(src, spot, 'back events', 'N.O.M.A.D.', 600, 1, 30);
+    S.event = c; log(`Event: ${c.name}.`); S.head = `Event: ${c.name}. ${c.name === 'Shipwreck' ? 'Investigate or leave it be.' : 'Resolve it, then discard.'}`;
+    S.busy = false; render();
+    $('#reveal-spot .ecard')?.animate([{ transform: 'rotateY(90deg)' }, { transform: 'rotateY(0)' }], { duration: 260 });
+  }
+}
+async function discardEvent() {
+  const el = $('#reveal-spot .ecard'); const r = el.getBoundingClientRect();
+  S.event = null; render();
+  await fly(r, centerRect($('#discard'), r.width * .7, r.height * .7), 'back events', 'N.O.M.A.D.', 520, .7, 40);
+  S.discard++; renderDecks();
+}
+async function investigate() {
+  S.busy = true; S.head = 'Investigating the wreck. Roll the die.';
+  await waitForRoll(); S.awaitRoll = null;
+  const v = await rollDie();
+  const out = v === 1 ? 'It’s a trap! Draw 1 enemy.' : v <= 3 ? 'Nothing valuable.' : v <= 5 ? 'Draw 1 common loot.' : 'Draw 1 rare loot.';
+  S.head = `Rolled a ${v}: ${out}`; log(`Shipwreck: rolled ${v}. ${out}`);
+  S.busy = false; await discardEvent();
+}
+async function playCard(i) {
+  const el = $(`[data-card="${i}"]`), r = el.getBoundingClientRect(), c = hand()[i];
+  S.busy = true; el.style.visibility = 'hidden';
+  const dr = $('#discard').getBoundingClientRect();
+  await fly(r, centerRect($('#discard'), dr.width, dr.height), 'back items', 'N.O.M.A.D.', 560, 1, 70);
+  hand().splice(i, 1); S.handSel = null; S.discard++;
+  log(`${NAMES[S.cur]} played ${c.name}. Resolve its effect by hand in this mockup.`);
+  await endDown('Card');
+}
+
+/* tweak drawer */
+function renderTweaks() {
+  $('#tweaks').innerHTML = `<h2>Tweak the table</h2>
+    <p class="hint">Changes apply live and are remembered in this browser. Zoom: scroll, pinch, or + / −. Pan: drag the table. Double-click the felt or press 0 to fit.</p>
+    ${Object.entries(TW_OPTS).map(([k, o]) => `<div class="tw"><span class="hud-k">${o.label}</span><div class="seg">${o.opts.map(([v, l]) => `<button data-tw="${k}" data-v="${v}" class="${String(tw[k]) === String(v) ? 'on' : ''}" aria-pressed="${String(tw[k]) === String(v)}">${l}</button>`).join('')}</div></div>`).join('')}
+    <div class="seg"><button data-act="tw-reset">Reset tweaks</button><button data-act="reset">Restart fight</button></div>
+    <button class="btn" data-act="tw-close" style="justify-self:start">Close</button>`;
+}
+function toggleTweaks(force) { const p = $('#tweaks'); const open = force ?? p.hidden; p.hidden = !open; if (open) renderTweaks(); renderHud(); }
+
+buildDie(); applyTw(); render();
+document.fonts && document.fonts.ready.then(() => camera());
+})();
+</script>

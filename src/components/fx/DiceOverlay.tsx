@@ -27,9 +27,11 @@ const STAGGER_MS = 380;
 export function DiceOverlay() {
   const staged = useGameStore((s) => s.staged);
   const state = useGameStore((s) => s.state);
+  // On the tabletop the die is rolled on the table itself, and read in the panel under it.
+  const onTable = useUiStore((s) => s.tab === 'table');
   return (
     <AnimatePresence>
-      {staged && state && <DiceTray key={staged.rolls[0]?.id ?? 0} staged={staged} state={state} />}
+      {staged && state && !onTable && <DiceTray key={staged.rolls[0]?.id ?? 0} staged={staged} state={state} />}
     </AnimatePresence>
   );
 }

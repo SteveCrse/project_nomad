@@ -1,9 +1,26 @@
 import type { CardEffect, DownAction, GameConfig, GameState, PlayerState, Ship, SlotIndex } from '@engine/types';
 import { abilityEffects, activeEffects, attackOf, combat, hitChance, isDamageEffect, ship as shipEngine, spendRange } from '@engine';
 import { CONTENT, getCard, getPart } from '@data';
-import type { PanelControls } from '@/components/game/PlayerPanel';
 import { battleOf, moduleOptions, reroutePlan, type ModuleOptions } from '@/lib/combatView';
 import type { CombatMode } from '@/store/uiStore';
+
+/** How the seat's own ship takes part in what it's doing this down. */
+export interface PanelControls {
+  /** Modules that can be picked for the action in hand. */
+  armed: SlotIndex[];
+  /** Modules something can go to — a reroute's destinations. */
+  open: SlotIndex[];
+  selected: SlotIndex | null;
+  /** Planned ⚡ change per module, while a reroute is being built. */
+  deltas: Record<number, number>;
+  onSlotClick: (slot: SlotIndex) => void;
+  /** Dragging ⚡ between modules, while rerouting. */
+  drag: {
+    source: (slot: SlotIndex) => boolean;
+    accepts: (from: SlotIndex, to: SlotIndex) => boolean;
+    onDrop: (from: SlotIndex, to: SlotIndex) => void;
+  } | null;
+}
 
 /**
  * What the seat on the clock can click right now.

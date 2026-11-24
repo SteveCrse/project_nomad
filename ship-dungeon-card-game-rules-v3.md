@@ -336,3 +336,22 @@ are the questions the next design session should close.
     tiles are joined. Every step has a way in and a way out, and no two paths
     cross. Open: whether the table builds the route this way, or the tiles
     themselves print their exits.
+
+**Added with the tabletop screen**
+
+26. **When does a destroyed module leave the table?** The tabletop shows a
+    destroyed module leaving its ship for the discard at once, and counts it in
+    the discard pile on the table. Underneath, the tool still keeps its cell
+    reserved until the fight is over (so what is covered by what doesn't
+    shuffle mid-fight) and only then moves the card (see 15). Open: whether, at
+    a real table, the cell a destroyed module leaves counts as empty for cover
+    and connection for the rest of the fight.
+27. **Who rolls and paces the enemy's turn?** The tabletop turns the enemy's
+    action cards by itself, one at a time, and stops for a click whenever the
+    enemy rolls — whoever is at the screen rolls for it. Open: whether a
+    particular seat (the one with aggro, the one whose turn handed over) rolls
+    for the enemy.
+28. **Does a cockpit print the 1st-down icon?** Destroying a cockpit earns a
+    1st down (see 24), but no cockpit card is marked with the icon, so the
+    tabletop prints `1ST` only on the modules that carry it. Open: whether
+    cockpit cards should print it too.

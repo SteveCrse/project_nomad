@@ -21,8 +21,9 @@ React 19 + Zustand + Tailwind 4 + Vite, TypeScript. No test suite; verify with `
 | State | `src/store/` | `gameStore` (run), `configStore` (+ `configFields.ts` form schema), `deckStore` (editor), `uiStore` |
 | Derived view logic | `src/lib/` | `combatView`, `combatControls`, `cardHints`, `palette` |
 | Screens | `src/views/` | `TableView` (play), `MissionView` (map), `ShipBuilderView` (+ `views/shipBuilder/`: `DraftPanel`, `GridEditor`, `Rack`, `RebuildBar`, `SelectedPanel`), `CardBrowserView` |
-| Play UI | `src/components/game/` | `ActionBar`, `PromptOverlay`, `CardTile`, `ModuleTile`, `ShipGrid`, panels |
-| Animation | `src/components/fx/` | `FxLayer`, `DiceOverlay`, `drag` |
+| Play UI (tabletop) | `src/components/game/table/` | `Tabletop` (table, seats, centre, hand), `TableShip`, `TableDie`, `TableHud` (panel under the table), `TweakDrawer`, `useCamera`, `play.ts` (engine ↔ clicks); look: `src/styles/tabletop.css`; reference mockup: `docs/mockups/tabletop.html` |
+| Shared game UI | `src/components/game/` | `PromptOverlay`, `CardTile`, `ModuleTile`, `ShipGrid`, `LogPanel` |
+| Animation | `src/components/fx/` | `FxLayer`, `tableFx` (marker/card flights on the tabletop), `DiceOverlay` (off the table tab), `drag` |
 | Deck editor UI | `src/components/editor/` | `DeckTable`, `CardPanel`, `inputs` |
 | Design system | `src/components/ds/`, `src/styles/tokens.css`, `src/index.css` | |
 
