@@ -23,25 +23,33 @@ Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
 
 ## Playing a round
 
-1. **Draft** — press *Start a run*; the run opens in the Ship Builder on the
-   snake draft. Every seat has **10 energy tokens** (`draft_tokens`). The
-   cockpit round deals seats + 1 cockpits, free; then **3 module rounds**
-   (`draft_rounds`) each deal seats-still-drafting + 1 modules, which cost 1–3
-   tokens (rarer being dearer). Pick order reverses each round. Drag a card
-   onto a cell of your ship (or into the hold), or click it and *Take* it — or
-   *Pass* the round to keep your tokens. *Draft the rest* finishes it for
-   everyone.
+Everything is played on the one table: every seat's ship lies in front of it
+the whole time, and the middle holds the decks, the mission board, the die, the
+energy supply and whatever is being dealt or fought. The panel under the table
+is the screen's own — whose turn, the log, and buttons for things that are
+said rather than done.
+
+1. **Draft** — press *Set up a game*. Every seat has **10 energy tokens**
+   (`draft_tokens`) in a pile at its seat. The cockpit round deals seats + 1
+   cockpits into the middle, free; then **3 module rounds** (`draft_rounds`)
+   each deal seats-still-drafting + 1 modules, which cost 1–3 tokens (rarer
+   being dearer; the tokens go to the supply). Pick order reverses each round.
+   Carry a card from the middle to your ship — drag it onto a cell, or click it
+   and click where it goes — or *Pass* the round to keep your tokens. *Draft
+   the rest* finishes it for everyone.
 2. **Arrange & charge** — a ship is a grid around its cockpit: rows above it
    are the front, below it the back. Weapons go beside or behind the cockpit;
    nothing goes in front of a shield, and a shield covers its column. Every
    module has to touch the ship. Pick a card up and every cell it may land on
-   lights up; drop a module on another to swap them. Then put your **leftover
-   tokens** on your modules as starting ⚡ — drag a token onto a module, or use
-   its + / − (`draft_start_energy` adds a flat amount to every module, 0 by
-   default). *Start the mission*.
-3. **Mission** — click a reachable step. Each combat step shows how big an
-   enemy to expect there: mission depth + players modules. With 2+ seats the
-   *split party* switch lets seats take different branches.
+   lights up; drop a module on another to swap them, or beside the ship to
+   leave it unfitted. Then put your **leftover tokens** on your modules as
+   starting ⚡ — drag them off your pile (`draft_start_energy` adds a flat
+   amount to every module, 0 by default). *Start the mission*.
+3. **Mission** — click a reachable step tile and the minis move there. A combat
+   tile's tooltip says how big an enemy to expect: mission depth + players
+   modules. With 2+ seats *Split up* lets seats take different branches. An
+   event is turned onto the reveal spot (click it to carry it out); loot is
+   laid in the middle and carried to the seat that takes it.
 4. **Table** — the enemy has the top of the table, its ship flipped to face
    you; every seat sits side by side below it, the one on the clock lit and the
    rest greyed. Along the bottom: **Attack**, **Generate**, **Reroute** (plus
@@ -63,10 +71,11 @@ Then open http://localhost:5173. (`PORT=5174 npm run dev` if that port is busy.)
    attack, generate and reroute, shuffled once; every card turned — played
    or not — goes to the bottom, so a deck just repeats; a 1st down sends it back to
    Down 1. Its attacks go to the **aggressor**, the seat that attacked last.
-6. **Loot** — destroyed modules are gone. After a kill one seat may abandon its
-   ship and take the wreck over, keeping one old module in its scrap deck. The
-   boss is taken in pieces: its surviving parts go round the table into scrap
-   decks.
+6. **Loot** — destroyed modules are gone. The wreck stays where it was shot
+   down. After a kill one seat may abandon its ship and take the wreck over:
+   click the one old module to keep for the scrap deck. The boss is taken in
+   pieces: seats take cards straight off its wreck, round the table, into
+   their scrap decks.
 7. **Rebuild** — at the end of the mission, rebuild from what you fly plus the
    scrap deck (a cockpit there can be installed). *Next sector* rolls on.
 
@@ -91,10 +100,10 @@ src/
   components/
     ds/        design-system primitives ported from Claude Design
     fx/        drag and drop, the dice overlay, the table's effects layer
-    game/      module tiles, ship grids, panels, action bar, log, prompt overlay
+    game/      the tabletop (table/), printed cards
     editor/    the deck spreadsheet, card panel, effect + art pickers
     layout/    top bar + config sidebar
-  views/       Mission, Table, Ship Builder, Cards
+  views/       Table (the whole game), Cards (the deck editor)
   styles/      design tokens as CSS custom properties
 ```
 

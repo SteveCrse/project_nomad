@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { CombatState, GameConfig, GameState, PlayerId, PlayerState, RerouteMove, SideRef, SlotIndex } from '@engine/types';
 import { abilityEffects, activeEffects, combat, ship as shipEngine } from '@engine';
 import { CONTENT, getCard, getPart } from '@data';
@@ -7,6 +7,7 @@ import { aimsAtEnemy, combatControls, targetAction, type CombatControls } from '
 import { useConfig } from '@/store/configStore';
 import { useGameStore, type Staged } from '@/store/gameStore';
 import { useUiStore, type CombatMode } from '@/store/uiStore';
+import { useTableBuild, type TableBuild } from './build';
 
 /** Where each seat sits, by how many are at the table. P1 is always nearest the screen. */
 export type SeatPos = 'bottom' | 'left' | 'top' | 'right';
@@ -68,6 +69,17 @@ export interface TablePlay {
   /** Why a marker can't go from one module to another; null when it can. */
   dropError: (from: SlotIndex, to: SlotIndex) => string | null;
   dropChit: (from: SlotIndex, to: SlotIndex) => void;
+  /** Drafting, laying ships out, placing tokens, rebuilding. */
+  build: TableBuild;
+  /** A wreck to claim: who is claiming it, the module kept from the old ship, the one module stripped instead. */
+  loot: {
+    who: PlayerId | null;
+    setWho: (id: PlayerId) => void;
+    keep: SlotIndex | null;
+    setKeep: (slot: SlotIndex | null) => void;
+    take: SlotIndex | null;
+    setTake: (slot: SlotIndex | null) => void;
+  };
   clickOwn: (slot: SlotIndex) => void;
   clickEnemy: (slot: SlotIndex) => void;
   /** Start the action a picked module's button names. */
@@ -93,6 +105,15 @@ export function useTablePlay(state: GameState): TablePlay {
   const tableSel = useUiStore((s) => s.tableSel);
   const select = useUiStore((s) => s.selectTableModule);
   const setNote = useUiStore((s) => s.setTableNote);
+  const viewSeat = useUiStore((s) => s.viewSeat);
+  const build = useTableBuild(state, config);
+
+  // A wreck on the table: the choices made about it before anyone says "take it".
+  const claimants = state.prompt?.kind === 'loot' ? state.prompt.claimants : [];
+  const [claim, setClaim] = useState<{ who: PlayerId | null; keep: SlotIndex | null; take: SlotIndex | null }>({ who: null, keep: null, take: null });
+  const who = claim.who && claimants.includes(claim.who) ? claim.who : (claimants[0] ?? null);
+  const wreckId = state.prompt?.kind === 'loot' ? state.prompt.wreck.instanceId : null;
+  useEffect(() => setClaim({ who: null, keep: null, take: null }), [wreckId]);
 
   const busy = !!staged || !!flight;
   const fight = state.combat;
@@ -170,11 +191,29 @@ export function useTablePlay(state: GameState): TablePlay {
     side,
     acting,
     activeSeat:
-      side?.kind === 'player'
-        ? side.id
-        : fight
-          ? (fight.handedBy ?? aggro ?? fight.participants[0] ?? null)
-          : (state.awaitingMove[0] ?? state.party.players[0]?.id ?? null),
+      state.prompt?.kind === 'salvage'
+        ? (state.prompt.claimants[state.prompt.turn] ?? null)
+        : state.prompt?.kind === 'loot'
+          ? who
+          : side?.kind === 'player'
+            ? side.id
+            : fight && !fight.outcome
+              ? (fight.handedBy ?? aggro ?? fight.participants[0] ?? null)
+              : (build.drafter ??
+                // Nobody is on the clock: the table can be turned to any seat from the panel.
+                (state.phase === 'map' ? state.awaitingMove[0] : undefined) ??
+                (viewSeat && state.party.players.some((p) => p.id === viewSeat) ? viewSeat : null) ??
+                state.party.players[0]?.id ??
+                null),
+    build,
+    loot: {
+      who,
+      setWho: (id) => setClaim({ who: id, keep: null, take: claim.take }),
+      keep: who ? claim.keep : null,
+      setKeep: (keep) => setClaim({ ...claim, who, keep }),
+      take: claim.take,
+      setTake: (take) => setClaim({ ...claim, who, take }),
+    },
     aggro,
     busy,
     staged,
